@@ -13,5 +13,6 @@ export type CreatePracticeInput = {
   tenantId: string;
   userId: string;
   name: string;
-  kind: PracticeKind;
+  kind?: PracticeKind;
+  metadata?: Record<string, unknown>;
 };

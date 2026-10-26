@@ -39,9 +39,10 @@ export class PracticeWorkflow {
       const repo = new PracticeRepository(tx);
       const audit = new AuditService(tx);
 
+      const kind = input.kind ?? 'generic';
       const created = await repo.createPractice(input.tenantId, {
         userId: input.userId,
-        payload: buildPracticePayload(input.kind, name),
+        payload: buildPracticePayload(kind, name, input.metadata),
       });
 
       await audit.logEvent({

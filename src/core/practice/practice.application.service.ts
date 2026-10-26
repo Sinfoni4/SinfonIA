@@ -11,6 +11,7 @@ import { readPracticePayload } from './practice.payload.js';
 import type { PracticeCommand } from './practice.commands.js';
 import type { PracticeExportFilter } from './practice.export.js';
 import type { PracticeKind, PracticePayloadKind } from './practice.payload.js';
+import type { PaginatedResult } from '../../data/repositories/practice.repository.js';
 import type { PracticeDTO } from '../../data/types/domain.js';
 import type { PracticeState } from '../types/workflow.types.js';
 import type { PrismaClient } from '@prisma/client';
@@ -26,6 +27,7 @@ export type PracticeView = {
   userId: string;
   status: PracticeState;
   version: number;
+  schemaVersion: number;
   name: string;
   kind: PracticePayloadKind;
   typeLabel: string;
@@ -33,6 +35,17 @@ export type PracticeView = {
   payload: unknown;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type PracticePaginationParams = {
+  tenantId: string;
+  userId?: string;
+  status?: PracticeState;
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: 'createdAt' | 'updatedAt';
+  sortOrder?: 'asc' | 'desc';
 };
 
 export type PracticeExportResult = {
@@ -60,6 +73,7 @@ function toView(dto: PracticeDTO): PracticeView {
     userId: dto.userId,
     status: dto.status,
     version: dto.version,
+    schemaVersion: payload.schemaVersion,
     name,
     kind: payload.kind,
     typeLabel: payload.typeLabel,
@@ -90,7 +104,8 @@ export class PracticeApplicationService {
     tenantId: string;
     userId: string;
     name: string;
-    kind: PracticeKind;
+    kind?: PracticeKind;
+    metadata?: Record<string, unknown>;
   }): Promise<PracticeView> {
     const name = input.name.trim();
     if (!name) throw new NotFoundError('Practice name is required');
@@ -99,7 +114,8 @@ export class PracticeApplicationService {
       tenantId: input.tenantId,
       userId: input.userId,
       name,
-      kind: input.kind,
+      kind: input.kind ?? 'generic',
+      metadata: input.metadata,
     });
     return toView(dto);
   }
@@ -123,6 +139,7 @@ export class PracticeApplicationService {
     tenantId: string;
     userId?: string;
     status?: PracticeState;
+    search?: string;
     limit?: number;
   }): Promise<PracticeView[]> {
     requireDatabase();
@@ -130,10 +147,35 @@ export class PracticeApplicationService {
     const rows = await this.repository.listPractices(input.tenantId, {
       userId: input.userId,
       status: input.status,
+      search: input.search,
     });
     const views = rows.map(toView);
 
     return typeof input.limit === 'number' && input.limit > 0 ? views.slice(0, input.limit) : views;
+  }
+
+  async listPracticesPaginated(
+    input: PracticePaginationParams,
+  ): Promise<PaginatedResult<PracticeView>> {
+    requireDatabase();
+
+    const result = await this.repository.findPracticesPaginated(input.tenantId, {
+      userId: input.userId,
+      status: input.status,
+      search: input.search,
+      page: input.page,
+      limit: input.limit,
+      sortBy: input.sortBy,
+      sortOrder: input.sortOrder,
+    });
+
+    return {
+      items: result.items.map(toView),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
+    };
   }
 
   async getPractice(input: {

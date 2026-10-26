@@ -3,7 +3,25 @@ import { requireTenantId } from '../guard/tenant.js';
 
 import type { PracticeDTO } from '../types/domain.js';
 import type { PrismaLike } from '../types/prisma.js';
-import type { PracticeStatus } from '@prisma/client';
+import type { PracticeStatus, Prisma } from '@prisma/client';
+
+export type PracticeListFilter = {
+  userId?: string;
+  status?: PracticeStatus;
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: 'createdAt' | 'updatedAt';
+  sortOrder?: 'asc' | 'desc';
+};
+
+export type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
 
 function toPracticeDTO(row: {
   id: string;
@@ -73,20 +91,83 @@ export class PracticeRepository {
     }
   }
 
-  async listPractices(tenantId: string, filter?: { userId?: string; status?: PracticeStatus }) {
+  async listPractices(
+    tenantId: string,
+    filter?: { userId?: string; status?: PracticeStatus; search?: string },
+  ): Promise<PracticeDTO[]> {
     requireTenantId(tenantId);
     try {
+      const search = filter?.search?.trim();
       const rows = await this.prisma.practice.findMany({
         where: {
           tenantId,
           ...(filter?.userId ? { userId: filter.userId } : {}),
           ...(filter?.status ? { status: filter.status } : {}),
+          ...(search
+            ? {
+                payload: {
+                  path: ['name'],
+                  string_contains: search,
+                  mode: 'insensitive',
+                },
+              }
+            : {}),
         },
         orderBy: { createdAt: 'desc' },
       });
       return rows.map(toPracticeDTO);
     } catch (err: unknown) {
       throw new DatabaseError('Failed to list practices', err);
+    }
+  }
+
+  async findPracticesPaginated(
+    tenantId: string,
+    filter?: PracticeListFilter,
+  ): Promise<PaginatedResult<PracticeDTO>> {
+    requireTenantId(tenantId);
+    try {
+      const page = Math.max(1, filter?.page ?? 1);
+      const limit = Math.min(100, Math.max(1, filter?.limit ?? 20));
+      const skip = (page - 1) * limit;
+      const sortBy = filter?.sortBy ?? 'createdAt';
+      const sortOrder = filter?.sortOrder ?? 'desc';
+      const search = filter?.search?.trim();
+
+      const where: Prisma.PracticeWhereInput = {
+        tenantId,
+        ...(filter?.userId ? { userId: filter.userId } : {}),
+        ...(filter?.status ? { status: filter.status } : {}),
+        ...(search
+          ? {
+              payload: {
+                path: ['name'],
+                string_contains: search,
+                mode: 'insensitive',
+              },
+            }
+          : {}),
+      };
+
+      const [rows, total] = await Promise.all([
+        this.prisma.practice.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { [sortBy]: sortOrder },
+        }),
+        this.prisma.practice.count({ where }),
+      ]);
+
+      return {
+        items: rows.map(toPracticeDTO),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    } catch (err: unknown) {
+      throw new DatabaseError('Failed to find paginated practices', err);
     }
   }
 

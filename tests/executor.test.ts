@@ -12,6 +12,7 @@ function makePracticeView(): PracticeView {
     userId: '22222222-2222-2222-2222-222222222222',
     status: 'VALIDATED',
     version: 1,
+    schemaVersion: 1,
     name: 'Mario Rossi',
     kind: 'artist',
     typeLabel: 'artist practice',

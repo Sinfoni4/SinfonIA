@@ -4,5 +4,6 @@ export * from './practice/practice.application.service.js';
 export * from './practice/practice.commands.js';
 export * from './practice/practice.export.js';
 export * from './practice/practice.payload.js';
+export * from './scheduler/scheduler.service.js';
 export * from './types/workflow.types.js';
 export * from './workflow/practice.workflow.js';

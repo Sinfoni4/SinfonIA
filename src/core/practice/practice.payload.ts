@@ -11,9 +11,12 @@ export const PRACTICE_PAYLOAD_TYPES = [
 ] as const;
 export type PracticePayloadType = (typeof PRACTICE_PAYLOAD_TYPES)[number];
 
+export const CURRENT_PAYLOAD_SCHEMA_VERSION = 1;
+
 export const PracticeKindSchema = z.enum(PRACTICE_KINDS);
 export const PracticePayloadSchema = z
   .object({
+    schemaVersion: z.number().int().min(1).default(CURRENT_PAYLOAD_SCHEMA_VERSION),
     type: z.enum(PRACTICE_PAYLOAD_TYPES),
     name: z.string().trim().min(1),
   })
@@ -56,14 +59,21 @@ function payloadTypeLabel(kind: PracticePayloadKind): string {
   }
 }
 
-export function buildPracticePayload(kind: PracticeKind, name: string): PracticePayload {
+export function buildPracticePayload(
+  kind: PracticeKind,
+  name: string,
+  extra?: Record<string, unknown>,
+): PracticePayload {
   return PracticePayloadSchema.parse({
+    schemaVersion: CURRENT_PAYLOAD_SCHEMA_VERSION,
     type: PAYLOAD_TYPE_BY_KIND[kind],
     name: name.trim(),
+    ...(extra ?? {}),
   });
 }
 
 export function readPracticePayload(payload: unknown): {
+  schemaVersion: number;
   name: string | null;
   kind: PracticePayloadKind;
   typeLabel: string;
@@ -72,12 +82,18 @@ export function readPracticePayload(payload: unknown): {
   const record = asRecord(payload);
   if (!record) {
     return {
+      schemaVersion: CURRENT_PAYLOAD_SCHEMA_VERSION,
       name: null,
       kind: 'unknown',
       typeLabel: 'practice',
       summary: 'practice',
     };
   }
+
+  const schemaVersion =
+    typeof record.schemaVersion === 'number' && Number.isInteger(record.schemaVersion)
+      ? record.schemaVersion
+      : 1;
 
   const rawName = record.name ?? record.artistName;
   const name = typeof rawName === 'string' && rawName.trim().length > 0 ? rawName.trim() : null;
@@ -86,15 +102,15 @@ export function readPracticePayload(payload: unknown): {
   const typeLabel = payloadTypeLabel(kind);
 
   if (!name) {
-    return { name, kind, typeLabel, summary: typeLabel };
+    return { schemaVersion, name, kind, typeLabel, summary: typeLabel };
   }
 
   switch (kind) {
     case 'artist':
-      return { name, kind, typeLabel, summary: `pratica artista ${name}` };
+      return { schemaVersion, name, kind, typeLabel, summary: `pratica artista ${name}` };
     case 'music':
-      return { name, kind, typeLabel, summary: `pratica music ${name}` };
+      return { schemaVersion, name, kind, typeLabel, summary: `pratica music ${name}` };
     default:
-      return { name, kind, typeLabel, summary: `pratica ${name}` };
+      return { schemaVersion, name, kind, typeLabel, summary: `pratica ${name}` };
   }
 }
