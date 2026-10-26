@@ -127,12 +127,3 @@ model AuditLog {
   @@index([tenantId, eventType])
   @@map("audit_log")
 }
-
-// Music module persistence (simple CRUD) — separate from enterprise `Practice` to avoid schema collision.
-model MusicPractice {
-  id        Int      @id @default(autoincrement())
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@map("music_practice")
-}

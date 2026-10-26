@@ -1,13 +1,12 @@
-import { enrichWithAI } from '../../ai/module.enricher.js';
-import { aiSuggestModule } from '../../ai/module.router.ai.js';
+import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
 import { bindUserToTenant, getTenantIdByInvite } from '../../core/tenant/tenant.invite.store.js';
 import { getTenantByTelegramUserAsync } from '../../core/tenant/tenant.store.js';
 import { UserRepository } from '../../data/repositories/user.repository.js';
-import { routeModulesForTenant } from '../../modules/module.router.js';
 import { errorLabel } from '../../shared/errors.js';
 
 import { handleDevState } from './commands/devstate.command.js';
+import { formatPracticeCommandResult } from './practice.command.formatter.js';
 import { TelegramClient } from './telegram.client.js';
 import { mapTelegramErrorToMessage } from './telegram.errors.js';
 import {
@@ -19,10 +18,8 @@ import {
 import { runtimeAwareExecute } from './telegram.runtimeAware.js';
 import { safeReply } from './telegram.transport.js';
 
-import type { DomainContext } from '../../modules/domain.module.js';
+import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { PrismaClient, UserRole } from '@prisma/client';
-
-const MODULE_TAKEOVER_ENABLED = true;
 
 export type TelegramIdentity = {
   tenantId: string;
@@ -32,6 +29,7 @@ export type TelegramIdentity = {
 
 type BotDeps = {
   prisma: PrismaClient;
+  practiceService: Pick<PracticeApplicationService, 'executeCommand'>;
   handleMessage: (input: string, identity: TelegramIdentity) => Promise<string>;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
 };
@@ -106,19 +104,11 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
     // Identity is the Telegram user, never the chat/group id. This prevents
     // every member of a group from sharing the same tenant identity.
     const telegramId = String(msg.from.id);
-    let responseSent = false;
 
     try {
       const trimmed = text.trim();
-
-      let aiSuggestion: string | null = null;
-      try {
-        aiSuggestion = aiSuggestModule(trimmed);
-      } catch (err) {
-        deps.log?.error({ error: errorLabel(err), requestId }, 'Telegram AI router error');
-      }
-
       const lower = trimmed.toLowerCase();
+
       if (trimmed.startsWith('/start')) {
         const parts = trimmed.split(/\s+/);
         const inviteCode = parts[1];
@@ -160,86 +150,14 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
 
       const tenant = identity.tenant;
       const dbUser = { id: identity.userId, role: identity.role };
-      const routing = routeModulesForTenant(trimmed, tenant.module);
 
-      if (aiSuggestion) {
-        deps.log?.info(
-          { requestId, aiSuggestion, tenantModule: tenant.module },
-          'Telegram module suggestion',
-        );
-      }
-
-      let moduleHandled = false;
-
-      if (routing.length === 1) {
-        const match = routing[0];
-
-        if (match.module === 'music') {
-          let result: unknown;
-          let domainContext: DomainContext | undefined;
-          try {
-            const execContext = {
-              tenantId: tenant.id,
-              userId: dbUser.id,
-              integrationType: tenant.integration.type,
-            };
-
-            try {
-              domainContext = await match.instance.getContext(execContext);
-            } catch (err) {
-              deps.log?.error(
-                { error: errorLabel(err), requestId, module: match.module },
-                'Telegram context failed',
-              );
-            }
-
-            result = await match.instance.execute(match.command, execContext, domainContext);
-          } catch (err) {
-            deps.log?.error(
-              { error: errorLabel(err), requestId, module: match.module },
-              'Telegram module failed',
-            );
-          }
-
-          if (
-            result &&
-            typeof result === 'object' &&
-            'message' in result &&
-            typeof result.message === 'string'
-          ) {
-            let finalMessage = result.message;
-
-            try {
-              finalMessage = await enrichWithAI({
-                userInput: trimmed,
-                moduleName: match.module,
-                baseMessage: result.message,
-                domainContext,
-              });
-            } catch (err) {
-              deps.log?.error(
-                { error: errorLabel(err), requestId },
-                'Telegram AI enrichment failed',
-              );
-            }
-
-            await bot.sendMessage(chatId, finalMessage);
-            responseSent = true;
-            moduleHandled = true;
-          } else {
-            deps.log?.error(
-              { requestId, module: match.module },
-              'Telegram module invalid response',
-            );
-          }
-        }
-      }
-
-      if (responseSent && !MODULE_TAKEOVER_ENABLED) {
-        deps.log?.info({ requestId }, 'Telegram response without takeover');
-      }
-
-      if (moduleHandled && MODULE_TAKEOVER_ENABLED) {
+      const command = parsePracticeCommand(trimmed);
+      if (command) {
+        const result = await deps.practiceService.executeCommand(command, {
+          tenantId: tenant.id,
+          userId: dbUser.id,
+        });
+        await bot.sendMessage(chatId, formatPracticeCommandResult(result));
         return;
       }
 
@@ -318,9 +236,6 @@ Memory:
         userId: dbUser.id,
         role: dbUser.role,
       });
-      if (responseSent) {
-        deps.log?.info({ requestId }, 'Telegram double response blocked');
-      }
       await bot.sendMessage(chatId, response);
     } catch (err) {
       deps.log?.error({ error: errorLabel(err), requestId }, 'Telegram handler error');

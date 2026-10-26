@@ -140,4 +140,17 @@ export class PracticeRepository {
       throw new DatabaseError('Failed to update practice status with version', err);
     }
   }
+
+  async deletePracticeById(tenantId: string, id: string): Promise<void> {
+    requireTenantId(tenantId);
+    try {
+      const res = await this.prisma.practice.deleteMany({ where: { tenantId, id } });
+      if (res.count !== 1) {
+        throw new NotFoundError('Practice not found');
+      }
+    } catch (err: unknown) {
+      if (err instanceof NotFoundError) throw err;
+      throw new DatabaseError('Failed to delete practice', err);
+    }
+  }
 }

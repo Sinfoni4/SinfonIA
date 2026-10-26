@@ -19,12 +19,10 @@ import {
 } from '../../src/ai/validation/pre-execution.validator.js';
 import { ValidationError } from '../../src/ai/validation/validation.errors.js';
 import { validateTestEnv } from '../../src/config/env.validation.js';
-import { PracticeWorkflow } from '../../src/core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from '../../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../../src/data/db/prisma.js';
-import { PracticeRepository } from '../../src/data/repositories/practice.repository.js';
 import { TenantRepository } from '../../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../../src/data/repositories/user.repository.js';
-import { InMemoryPracticeRepository } from '../../src/domain/practice.repository.js';
 import { buildServer } from '../../src/interface/http/server.js';
 import { createLogger } from '../../src/shared/logger.js';
 import { authHeaders, TEST_AUTH_SECRET } from '../helpers/auth.js';
@@ -341,12 +339,11 @@ export async function runHarness(args: {
   await prisma.$queryRaw`SELECT 1`;
   environment.db = 'connected';
 
-  const workflow = new PracticeWorkflow(prisma);
-  const artistPracticeRepo = new InMemoryPracticeRepository();
-  const executor = new ExecutorService({ practiceWorkflow: workflow, artistPracticeRepo });
+  const practiceService = new PracticeApplicationService(prisma);
+  const executor = new ExecutorService({ practiceService });
   const decisionEngine = new DecisionEngine();
   const normalizerService = new NormalizerService();
-  const contextService = new ContextService(prisma, artistPracticeRepo);
+  const contextService = new ContextService(practiceService);
   const app = buildServer(
     {
       NODE_ENV: environment.llm === 'real' ? 'production' : 'test',
@@ -363,7 +360,7 @@ export async function runHarness(args: {
     },
     logger,
     {
-      practiceWorkflow: workflow,
+      practiceService,
       interpreterService: interpreter,
       executorService: executor,
       contextService,
@@ -374,20 +371,50 @@ export async function runHarness(args: {
 
   const tenantRepo = new TenantRepository(prisma);
   const userRepo = new UserRepository(prisma);
-  const practiceRepo = new PracticeRepository(prisma);
 
   const tenant = await tenantRepo.createTenant({ name: 'ai-segmented-tenant' });
   const user = await userRepo.createUser(tenant.id, {
     email: 'ai.segmented@test.local',
     role: 'OPERATOR',
   });
-  const practice = await practiceRepo.createPractice(tenant.id, {
+
+  async function clearArtistPractices(): Promise<void> {
+    await prisma.$executeRaw`
+      DELETE FROM "practice"
+      WHERE "tenant_id" = ${tenant.id}::uuid
+        AND "payload"->>'type' = 'artist_practice'
+    `;
+  }
+
+  async function seedArtistPractice(nextState: 'CREATED' | 'VALIDATED' = 'CREATED') {
+    const created = await practiceService.createPractice({
+      tenantId: tenant.id,
+      userId: user.id,
+      name: 'Mario Rossi',
+      kind: 'artist',
+    });
+    if (nextState === 'VALIDATED') {
+      await practiceService.transitionPractice({
+        tenantId: tenant.id,
+        userId: user.id,
+        practiceId: created.id,
+        nextState: 'VALIDATED',
+      });
+    }
+    return created;
+  }
+
+  const practice = await practiceService.createPractice({
+    tenantId: tenant.id,
     userId: user.id,
-    payload: { source: 'ai-segmented-harness' },
+    name: 'Harness practice',
+    kind: 'generic',
   });
-  const secondPractice = await practiceRepo.createPractice(tenant.id, {
+  const secondPractice = await practiceService.createPractice({
+    tenantId: tenant.id,
     userId: user.id,
-    payload: { source: 'ai-segmented-harness-secondary' },
+    name: 'Harness secondary practice',
+    kind: 'generic',
   });
 
   const selected = args.scenarios.filter((s) => args.filterTypes.includes(s.type));
@@ -396,10 +423,7 @@ export async function runHarness(args: {
   for (const scenario of selected) {
     const input = scenario.input.replaceAll('{{PRACTICE_ID}}', practice.id);
     await delayBeforeScenario(delayMs);
-    // Core tests must be isolated. Domain tests may intentionally be stateful.
-    if (scenario.type === 'core') {
-      artistPracticeRepo.clear();
-    }
+    await clearArtistPractices();
 
     const row: ScenarioResult = {
       scenarioId: scenario.id,
@@ -430,35 +454,18 @@ export async function runHarness(args: {
 
       // Domain seeding / isolation (kept here to ensure deterministic context for domain KPIs).
       if (scenario.type === 'domain') {
-        if (scenario.id === 'artist-01') {
-          // Start of the happy-path flow.
-          artistPracticeRepo.clear();
-        }
         if (scenario.id === 'artist-02') {
-          // Ensure a CREATED practice exists for validation.
-          if (artistPracticeRepo.findByArtistName(tenant.id, 'Mario Rossi').length === 0) {
-            artistPracticeRepo.create(tenant.id, 'Mario Rossi');
-          }
+          await seedArtistPractice('CREATED');
         }
         if (scenario.id === 'artist-03') {
-          // Ensure a VALIDATED practice exists for completion.
-          const existing =
-            artistPracticeRepo.findByArtistName(tenant.id, 'Mario Rossi')[0] ??
-            artistPracticeRepo.create(tenant.id, 'Mario Rossi');
-          if (existing.status === 'CREATED') {
-            artistPracticeRepo.updateStatus(tenant.id, existing.id, 'VALIDATED');
-          }
+          await seedArtistPractice('VALIDATED');
         }
         if (scenario.id === 'artist-invalid-01') {
-          // Invalid: try to complete without validating first.
-          artistPracticeRepo.clear();
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi'); // CREATED
+          await seedArtistPractice('CREATED');
         }
         if (scenario.id === 'artist-amb-01') {
-          // Ambiguous: two candidates with same name.
-          artistPracticeRepo.clear();
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
+          await seedArtistPractice('CREATED');
+          await seedArtistPractice('CREATED');
         }
       }
 

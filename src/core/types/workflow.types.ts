@@ -1,3 +1,5 @@
+import type { PracticeKind } from '../practice/practice.payload.js';
+
 export type PracticeState = 'CREATED' | 'VALIDATED' | 'SUBMITTED' | 'FAILED' | 'COMPLETED';
 
 export type TransitionInput = {
@@ -10,5 +12,6 @@ export type TransitionInput = {
 export type CreatePracticeInput = {
   tenantId: string;
   userId: string;
-  artistName: string;
+  name: string;
+  kind: PracticeKind;
 };

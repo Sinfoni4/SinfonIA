@@ -5,6 +5,7 @@ import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { ConcurrencyError } from '../errors/concurrency.errors.js';
 import { InvalidStateTransitionError } from '../errors/workflow.errors.js';
+import { buildPracticePayload } from '../practice/practice.payload.js';
 
 import { canTransition } from './state-machine.js';
 
@@ -29,9 +30,9 @@ export class PracticeWorkflow {
 
   async createPractice(input: CreatePracticeInput): Promise<PracticeDTO> {
     requireDatabase();
-    const artistName = input.artistName.trim();
-    if (artistName.length === 0) {
-      throw new NotFoundError('artistName is required');
+    const name = input.name.trim();
+    if (name.length === 0) {
+      throw new NotFoundError('Practice name is required');
     }
 
     return withTransaction(this.txHost, async (tx: PrismaTx) => {
@@ -40,10 +41,7 @@ export class PracticeWorkflow {
 
       const created = await repo.createPractice(input.tenantId, {
         userId: input.userId,
-        payload: {
-          type: 'artist_practice',
-          name: artistName,
-        },
+        payload: buildPracticePayload(input.kind, name),
       });
 
       await audit.logEvent({

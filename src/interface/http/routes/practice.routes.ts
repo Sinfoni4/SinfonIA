@@ -7,11 +7,11 @@ import {
   PracticeTransitionParamsSchema,
 } from '../validation/practice.validation.js';
 
-import type { PracticeWorkflow } from '../../../core/workflow/practice.workflow.js';
+import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
 import type { FastifyPluginCallback } from 'fastify';
 
 export type PracticeRoutesDeps = {
-  practiceWorkflow: PracticeWorkflow;
+  practiceService: PracticeApplicationService;
 };
 
 export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, deps, done) => {
@@ -22,7 +22,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       const params = PracticeTransitionParamsSchema.parse(req.params);
       const body = PracticeTransitionBodySchema.parse(req.body);
 
-      const updated = await deps.practiceWorkflow.transitionPractice({
+      const updated = await deps.practiceService.transitionPractice({
         tenantId: auth.tenantId,
         practiceId: params.id,
         nextState: body.nextState,

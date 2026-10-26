@@ -8,11 +8,11 @@ import { NormalizerService } from '../src/ai/normalization/normalizer.service.js
 import { createOpenAIProvider } from '../src/ai/providers/openai.provider.js';
 import { createDeterministicStubLLM } from '../src/ai/providers/stub.provider.js';
 import { enforceIdPriority } from '../src/ai/validation/pre-execution.validator.js';
-import { InMemoryPracticeRepository } from '../src/domain/practice.repository.js';
 import { loadConfig } from '../src/config/config.js';
-import { PracticeWorkflow } from '../src/core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
-import { buildServer } from '../src/interface/http/server.js';
+import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
+import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { createLogger } from '../src/shared/logger.js';
 
 dotenv.config({ path: '.env.test' });
@@ -31,26 +31,20 @@ async function main() {
   const interpreterService = new InterpreterService({ llm, log: logger });
   const normalizerService = new NormalizerService();
   const decisionEngine = new DecisionEngine();
-  const practiceWorkflow = new PracticeWorkflow(prisma);
-  const artistPracticeRepo = new InMemoryPracticeRepository();
-  const executorService = new ExecutorService({ practiceWorkflow, artistPracticeRepo });
-  const contextService = new ContextService(prisma, artistPracticeRepo);
+  const practiceService = new PracticeApplicationService(prisma);
+  const executorService = new ExecutorService({ practiceService });
+  const contextService = new ContextService(practiceService);
 
-  const app = buildServer(config, logger, {
-    practiceWorkflow,
-    interpreterService,
-    executorService,
-    contextService,
-    decisionEngine,
-    normalizerService,
+  const tenant = await new TenantRepository(prisma).createTenant({ name: 'sinfonia-demo' });
+  const user = await new UserRepository(prisma).createUser(tenant.id, {
+    email: `demo-${tenant.id}@test.local`,
+    role: 'OPERATOR',
   });
+  const context = { tenantId: tenant.id, userId: user.id };
 
   async function run(input: string) {
-    const interpreted = await interpreterService.interpret(input, {
-      tenantId: '11111111-1111-1111-1111-111111111111',
-      userId: '11111111-1111-1111-1111-111111111111',
-      practices: (await contextService.getPracticeContext('11111111-1111-1111-1111-111111111111', null)).practices,
-    });
+    const practices = (await contextService.getPracticeContext(tenant.id, user.id)).practices;
+    const interpreted = await interpreterService.interpret(input, { ...context, practices });
     const normalized = enforceIdPriority(normalizerService.normalize(interpreted));
 
     // Minimal router: create_practice bypasses DecisionEngine.
@@ -58,12 +52,11 @@ async function main() {
       normalized.action === 'create_practice'
         ? { action: 'create_practice', data: { artistName: normalized.artistName } }
         : decisionEngine.resolveCommand(normalized, {
-            tenantId: '11111111-1111-1111-1111-111111111111',
-            userId: '11111111-1111-1111-1111-111111111111',
-            practices: (await contextService.getPracticeContext('11111111-1111-1111-1111-111111111111', null)).practices,
+            ...context,
+            practices: (await contextService.getPracticeContext(tenant.id, user.id)).practices,
           });
 
-    const result = await executorService.execute(cmd, { tenantId: '11111111-1111-1111-1111-111111111111', userId: null });
+    const result = await executorService.execute(cmd, context);
     console.log('[DEMO]', { input, output: { interpreted, normalized, cmd, result } });
     return result;
   }
@@ -79,7 +72,6 @@ async function main() {
     await run(step);
   }
 
-  await app.close();
   await prisma.$disconnect();
 }
 
@@ -87,4 +79,3 @@ void main().catch((err: unknown) => {
   console.error('[DEMO] fatal', err);
   process.exitCode = 1;
 });
-

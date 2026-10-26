@@ -6,7 +6,7 @@ import { ExecutorService } from '../src/ai/execution/executor.service.js';
 import { InterpreterService } from '../src/ai/interpreter/interpreter.service.js';
 import { NormalizerService } from '../src/ai/normalization/normalizer.service.js';
 import { loadConfig } from '../src/config/config.js';
-import { PracticeWorkflow } from '../src/core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
 import { PracticeRepository } from '../src/data/repositories/practice.repository.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
@@ -37,13 +37,13 @@ function buildTestApp(prisma: ReturnType<typeof createPrismaClient>, llm: LLMCli
     ...TEST_AUTH_ENV,
   });
   const logger = createLogger(config);
-  const practiceWorkflow = new PracticeWorkflow(prisma);
+  const practiceService = new PracticeApplicationService(prisma);
 
   return buildServer(config, logger, {
-    practiceWorkflow,
+    practiceService,
     interpreterService: new InterpreterService(llm),
-    executorService: new ExecutorService({ practiceWorkflow }),
-    contextService: new ContextService(prisma),
+    executorService: new ExecutorService({ practiceService }),
+    contextService: new ContextService(practiceService),
     decisionEngine: new DecisionEngine(),
     normalizerService: new NormalizerService(),
   });

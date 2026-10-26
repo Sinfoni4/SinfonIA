@@ -15,11 +15,11 @@ import type { ExecutorService } from '../../ai/execution/executor.service.js';
 import type { InterpreterService } from '../../ai/interpreter/interpreter.service.js';
 import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
 import type { AppConfig } from '../../config/config.js';
-import type { PracticeWorkflow } from '../../core/workflow/practice.workflow.js';
+import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
 
 export type ServerDeps = {
-  practiceWorkflow: PracticeWorkflow;
+  practiceService: PracticeApplicationService;
   interpreterService: InterpreterService;
   executorService: ExecutorService;
   contextService: ContextService;

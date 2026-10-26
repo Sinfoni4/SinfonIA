@@ -14,8 +14,7 @@ import {
 } from './executor.types.js';
 
 import type { ExecutorContext, ExecutorInput, ExecutorResult } from './executor.types.js';
-import type { PracticeWorkflow } from '../../core/workflow/practice.workflow.js';
-import type { InMemoryPracticeRepository } from '../../domain/practice.repository.js';
+import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 
 const TransitionPracticeDataSchema = z.object({
   practiceId: z.string().uuid(),
@@ -29,8 +28,7 @@ const CreatePracticeDataSchema = z.object({
 export class ExecutorService {
   constructor(
     private readonly deps: {
-      practiceWorkflow: PracticeWorkflow;
-      artistPracticeRepo?: InMemoryPracticeRepository;
+      practiceService: Pick<PracticeApplicationService, 'createPractice' | 'transitionPractice'>;
     },
   ) {}
 
@@ -45,18 +43,16 @@ export class ExecutorService {
           if (!data.success) {
             throw new ExecutorValidationError('Invalid create_practice data');
           }
-          const created = this.deps.artistPracticeRepo
-            ? this.deps.artistPracticeRepo.create(parsedCtx.tenantId, data.data.artistName.trim())
-            : await (async () => {
-                if (!parsedCtx.userId) {
-                  throw new ExecutorValidationError('Authenticated user is required');
-                }
-                return this.deps.practiceWorkflow.createPractice({
-                  tenantId: parsedCtx.tenantId,
-                  userId: parsedCtx.userId,
-                  artistName: data.data.artistName.trim(),
-                });
-              })();
+          if (!parsedCtx.userId) {
+            throw new ExecutorValidationError('Authenticated user is required');
+          }
+
+          const created = await this.deps.practiceService.createPractice({
+            tenantId: parsedCtx.tenantId,
+            userId: parsedCtx.userId,
+            name: data.data.artistName.trim(),
+            kind: 'artist',
+          });
           return { success: true, result: created };
         }
         case 'transition_practice': {
@@ -64,30 +60,11 @@ export class ExecutorService {
           if (!data.success) {
             throw new ExecutorValidationError('Invalid transition_practice data');
           }
-
-          const artist =
-            this.deps.artistPracticeRepo?.findById(parsedCtx.tenantId, data.data.practiceId) ??
-            null;
-          if (artist) {
-            if (data.data.nextState !== 'VALIDATED' && data.data.nextState !== 'COMPLETED') {
-              throw new ExecutorValidationError(
-                `Invalid artist practice nextState: ${data.data.nextState}`,
-              );
-            }
-            try {
-              const updated = this.deps.artistPracticeRepo!.updateStatus(
-                parsedCtx.tenantId,
-                data.data.practiceId,
-                data.data.nextState,
-              );
-              return { success: true, result: updated };
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              throw new ExecutorValidationError(msg);
-            }
+          if (!parsedCtx.userId) {
+            throw new ExecutorValidationError('Authenticated user is required');
           }
 
-          const result = await this.deps.practiceWorkflow.transitionPractice({
+          const result = await this.deps.practiceService.transitionPractice({
             tenantId: parsedCtx.tenantId,
             userId: parsedCtx.userId,
             practiceId: data.data.practiceId,

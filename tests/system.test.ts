@@ -6,7 +6,7 @@ import { ExecutorService } from '../src/ai/execution/executor.service.js';
 import { InterpreterService } from '../src/ai/interpreter/interpreter.service.js';
 import { NormalizerService } from '../src/ai/normalization/normalizer.service.js';
 import { loadConfig } from '../src/config/config.js';
-import { PracticeWorkflow } from '../src/core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { runtimeState } from '../src/runtime/runtime.state.js';
@@ -54,14 +54,14 @@ describe('system bootstrap', () => {
 
     const logger = createLogger(config);
     const prisma = createPrismaClient(config.DATABASE_URL);
-    const practiceWorkflow = new PracticeWorkflow(prisma);
+    const practiceService = new PracticeApplicationService(prisma);
     const interpreterService = new InterpreterService(stubLLM);
-    const executorService = new ExecutorService({ practiceWorkflow });
-    const contextService = new ContextService(prisma);
+    const executorService = new ExecutorService({ practiceService });
+    const contextService = new ContextService(practiceService);
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
-      practiceWorkflow,
+      practiceService,
       interpreterService,
       executorService,
       contextService,

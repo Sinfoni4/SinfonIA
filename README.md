@@ -110,6 +110,21 @@ condivisa da workflow, validatore e normalizzatore AI.
 - `CREATED → COMPLETED` non è consentito: una pratica deve essere validata prima
   di poter essere completata.
 
+## Modello canonico pratica
+
+La tabella `practice` è l’unico modello canonico. I vecchi modelli in memoria
+(`ArtistPractice`) e la tabella `music_practice` sono stati rimossi; eventuali
+payload legacy vengono normalizzati dalla migrazione `phase2_canonical_practice`.
+
+`PracticeApplicationService` (`src/core/practice/`) è l’unico servizio
+applicativo per create, transition, list, export e delete. HTTP, Telegram e
+scheduler delegano a questo servizio e non accedono direttamente alla
+persistenza delle pratiche. Ogni scrittura richiede un utente reale già
+persistito e appartenente al tenant; non vengono generati UUID sintetici.
+
+Le eventuali integrazioni con sistemi esterni restano adapter di modulo e non
+possono contenere logica di dominio o scrivere direttamente su `practice`.
+
 ## Health check
 
 - `GET /healthz`: liveness del processo (HTTP 200 finché il processo risponde).

@@ -12,7 +12,7 @@ import {
   validateResolvedCommand,
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
-import { PracticeWorkflow } from './core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
 import { printRuntimeTestGuide } from './dev/dev.tests.js';
 import { buildServer } from './interface/http/server.js';
@@ -148,14 +148,14 @@ TEST 5 — /devstate health metrics
     llm,
     log: config.NODE_ENV === 'development' ? logger : undefined,
   });
-  const practiceWorkflow = new PracticeWorkflow(prisma);
-  const executorService = new ExecutorService({ practiceWorkflow });
-  const contextService = new ContextService(prisma);
+  const practiceService = new PracticeApplicationService(prisma);
+  const executorService = new ExecutorService({ practiceService });
+  const contextService = new ContextService(practiceService);
   const decisionEngine = new DecisionEngine();
   const normalizerService = new NormalizerService();
 
   const app = buildServer(config, logger, {
-    practiceWorkflow,
+    practiceService,
     interpreterService,
     executorService,
     contextService,
@@ -180,6 +180,7 @@ TEST 5 — /devstate health metrics
 
     const bot = new TelegramBotService({
       prisma,
+      practiceService,
       handleMessage: (input, identity) => adapter.handleMessage(input, identity),
       log: logger,
     });
@@ -202,7 +203,7 @@ TEST 5 — /devstate health metrics
   });
 
   // Self-healing: periodically re-check DB and recover runtime mode.
-  startDbWatcher(prisma);
+  startDbWatcher(prisma, practiceService);
 
   console.log('BOOTSTEP 6 — starting Telegram bootstrap');
   console.log('BOOTSTEP 7 — Telegram bootstrap completed');

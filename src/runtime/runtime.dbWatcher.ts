@@ -1,11 +1,12 @@
+import { normalizeExportFilter } from '../core/practice/practice.export.js';
 import { defaultSchedulerTasks, getAllTenants } from '../core/tenant/tenant.store.js';
 import { checkDatabaseConnection } from '../data/db/db.health.js';
-import { moduleRegistry } from '../modules/module.registry.js';
 import { errorLabel } from '../shared/errors.js';
 
 import { attemptDatabaseRecovery } from './runtime.db.recovery.js';
 import { runtimeState } from './runtime.state.js';
 
+import type { PracticeApplicationService } from '../core/practice/practice.application.service.js';
 import type { PrismaClient } from '@prisma/client';
 
 /** Per-tenant last fired period index (in-memory, volatile). */
@@ -56,7 +57,10 @@ function resolveDynamicPayload(payload: Record<string, unknown>): Record<string,
     : payload;
 }
 
-export function startDbWatcher(prisma: PrismaClient) {
+export function startDbWatcher(
+  prisma: PrismaClient,
+  practiceService: Pick<PracticeApplicationService, 'exportPractices'>,
+) {
   if (interval) return;
 
   interval = setInterval(() => {
@@ -134,40 +138,27 @@ export function startDbWatcher(prisma: PrismaClient) {
               continue;
             }
 
-            const execContext = {
-              tenantId: tenant.id,
-              userId: schedulerUser.id,
-              integrationType: tenant.integration.type,
-            };
-
-            const musicModule = moduleRegistry.find((m) => m.name === tenant.module);
-
-            if (!musicModule) {
-              console.warn(`⚠️ SCHEDULER — module not found for tenant=${tenant.id}`);
-              continue;
-            }
-
-            console.log(`🚀 SCHEDULER EXECUTION — tenant=${tenant.id} module=${tenant.module}`);
-
-            const domainContext = await musicModule.getContext(execContext);
-
             const tasks = tenant.tasks ?? defaultSchedulerTasks;
 
             for (const task of tasks) {
-              const resolvedPayload = resolveDynamicPayload(task.payload ?? {});
+              if (task.type !== 'EXPORT_PRACTICES') {
+                console.warn(`⚠️ SCHEDULER — unsupported task tenant=${tenant.id}`);
+                continue;
+              }
 
-              const command = {
-                type: task.type,
-                payload: resolvedPayload,
-              };
+              const resolvedPayload = resolveDynamicPayload(task.payload ?? {});
+              const filter = normalizeExportFilter(resolvedPayload);
 
               console.log(`📦 SCHEDULER TASK — tenant=${tenant.id} type=${task.type}`);
 
-              const result = await musicModule.execute(command, execContext, domainContext);
+              const result = await practiceService.exportPractices({
+                tenantId: tenant.id,
+                filter,
+              });
 
-              if (!result || typeof result !== 'object' || !('message' in result)) {
-                console.warn(`⚠️ SCHEDULER — invalid response tenant=${tenant.id}`);
-              }
+              console.log(
+                `📦 SCHEDULER EXPORT — tenant=${tenant.id} practices=${result.practices.length}`,
+              );
             }
           } catch (err) {
             console.error(`❌ SCHEDULER EXECUTION FAILED — tenant=${tenant.id}`, errorLabel(err));

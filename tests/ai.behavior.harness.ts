@@ -19,12 +19,10 @@ import {
 } from '../src/ai/validation/pre-execution.validator.js';
 import { ValidationError } from '../src/ai/validation/validation.errors.js';
 import { validateTestEnv } from '../src/config/env.validation.js';
-import { PracticeWorkflow } from '../src/core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
-import { PracticeRepository } from '../src/data/repositories/practice.repository.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../src/data/repositories/user.repository.js';
-import { InMemoryPracticeRepository } from '../src/domain/practice.repository.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
@@ -293,12 +291,11 @@ async function main(): Promise<void> {
   }
 
   try {
-    const workflow = new PracticeWorkflow(prisma);
-    const artistPracticeRepo = new InMemoryPracticeRepository();
-    const executor = new ExecutorService({ practiceWorkflow: workflow, artistPracticeRepo });
+    const practiceService = new PracticeApplicationService(prisma);
+    const executor = new ExecutorService({ practiceService });
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
-    const contextService = new ContextService(prisma, artistPracticeRepo);
+    const contextService = new ContextService(practiceService);
     const app = buildServer(
       {
         NODE_ENV: environment.llm === 'real' ? 'production' : 'test',
@@ -315,7 +312,7 @@ async function main(): Promise<void> {
       },
       logger,
       {
-        practiceWorkflow: workflow,
+        practiceService,
         interpreterService: interpreter,
         executorService: executor,
         contextService,
@@ -326,26 +323,56 @@ async function main(): Promise<void> {
 
     const tenantRepo = new TenantRepository(prisma);
     const userRepo = new UserRepository(prisma);
-    const practiceRepo = new PracticeRepository(prisma);
 
     const tenant = await tenantRepo.createTenant({ name: 'ai-behavior-tenant' });
     const user = await userRepo.createUser(tenant.id, {
       email: 'ai.behavior@test.local',
       role: 'OPERATOR',
     });
-    const practice = await practiceRepo.createPractice(tenant.id, {
+
+    async function clearArtistPractices(): Promise<void> {
+      await prisma.$executeRaw`
+        DELETE FROM "practice"
+        WHERE "tenant_id" = ${tenant.id}::uuid
+          AND "payload"->>'type' = 'artist_practice'
+      `;
+    }
+
+    async function seedArtistPractice(nextState: 'CREATED' | 'VALIDATED' = 'CREATED') {
+      const created = await practiceService.createPractice({
+        tenantId: tenant.id,
+        userId: user.id,
+        name: 'Mario Rossi',
+        kind: 'artist',
+      });
+      if (nextState === 'VALIDATED') {
+        await practiceService.transitionPractice({
+          tenantId: tenant.id,
+          userId: user.id,
+          practiceId: created.id,
+          nextState: 'VALIDATED',
+        });
+      }
+      return created;
+    }
+
+    const practice = await practiceService.createPractice({
+      tenantId: tenant.id,
       userId: user.id,
-      payload: { source: 'ai-behavior-harness' },
+      name: 'Harness practice',
+      kind: 'generic',
     });
-    const secondPractice = await practiceRepo.createPractice(tenant.id, {
+    const secondPractice = await practiceService.createPractice({
+      tenantId: tenant.id,
       userId: user.id,
-      payload: { source: 'ai-behavior-harness-secondary' },
+      name: 'Harness secondary practice',
+      kind: 'generic',
     });
 
     const results: ScenarioResult[] = [];
     for (const scenario of AI_BEHAVIOR_SCENARIOS) {
-      // Reset in-memory artist practices per scenario for isolation.
-      artistPracticeRepo.clear();
+      // Canonical DB isolation: only artist practices are reset per scenario.
+      await clearArtistPractices();
       const input = scenario.input.replaceAll('{{PRACTICE_ID}}', practice.id);
       await delayBeforeScenario(delayMs);
       const twoCreatedContext = scenario.id === 'context-02';
@@ -372,18 +399,17 @@ async function main(): Promise<void> {
       try {
         // Scenario-specific seeding for artist practices.
         if (scenario.id === 'artist-amb-01') {
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
+          await seedArtistPractice('CREATED');
+          await seedArtistPractice('CREATED');
         }
         if (scenario.id === 'artist-02') {
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi'); // CREATED
+          await seedArtistPractice('CREATED');
         }
         if (scenario.id === 'artist-03') {
-          const p = artistPracticeRepo.create(tenant.id, 'Mario Rossi');
-          artistPracticeRepo.updateStatus(tenant.id, p.id, 'VALIDATED');
+          await seedArtistPractice('VALIDATED');
         }
         if (scenario.id === 'artist-val-01') {
-          artistPracticeRepo.create(tenant.id, 'Mario Rossi'); // still CREATED, completing should fail validation
+          await seedArtistPractice('CREATED'); // still CREATED, completing should fail validation
         }
 
         const isArtistScenario = scenario.id.startsWith('artist-');

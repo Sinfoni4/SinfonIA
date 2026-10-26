@@ -6,7 +6,7 @@ import { ExecutorService } from '../src/ai/execution/executor.service.js';
 import { InterpreterService } from '../src/ai/interpreter/interpreter.service.js';
 import { NormalizerService } from '../src/ai/normalization/normalizer.service.js';
 import { loadConfig } from '../src/config/config.js';
-import { PracticeWorkflow } from '../src/core/workflow/practice.workflow.js';
+import { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
 import { PracticeRepository } from '../src/data/repositories/practice.repository.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
@@ -43,14 +43,14 @@ describe('interface http', () => {
     await prisma.$connect();
 
     const logger = createLogger(config);
-    const wf = new PracticeWorkflow(prisma);
+    const practiceService = new PracticeApplicationService(prisma);
     const interpreterService = new InterpreterService(stubLLM);
-    const executorService = new ExecutorService({ practiceWorkflow: wf });
-    const contextService = new ContextService(prisma);
+    const executorService = new ExecutorService({ practiceService });
+    const contextService = new ContextService(practiceService);
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
-      practiceWorkflow: wf,
+      practiceService,
       interpreterService,
       executorService,
       contextService,
@@ -104,14 +104,14 @@ describe('interface http', () => {
     await prisma.$connect();
 
     const logger = createLogger(config);
-    const wf = new PracticeWorkflow(prisma);
+    const practiceService = new PracticeApplicationService(prisma);
     const interpreterService = new InterpreterService(stubLLM);
-    const executorService = new ExecutorService({ practiceWorkflow: wf });
-    const contextService = new ContextService(prisma);
+    const executorService = new ExecutorService({ practiceService });
+    const contextService = new ContextService(practiceService);
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
-      practiceWorkflow: wf,
+      practiceService,
       interpreterService,
       executorService,
       contextService,
@@ -165,14 +165,14 @@ describe('interface http', () => {
     await prisma.$connect();
 
     const logger = createLogger(config);
-    const wf = new PracticeWorkflow(prisma);
+    const practiceService = new PracticeApplicationService(prisma);
     const interpreterService = new InterpreterService(stubLLM);
-    const executorService = new ExecutorService({ practiceWorkflow: wf });
-    const contextService = new ContextService(prisma);
+    const executorService = new ExecutorService({ practiceService });
+    const contextService = new ContextService(practiceService);
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
-      practiceWorkflow: wf,
+      practiceService,
       interpreterService,
       executorService,
       contextService,

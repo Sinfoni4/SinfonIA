@@ -2,27 +2,39 @@ import { describe, expect, it } from 'vitest';
 
 import { ExecutorService } from '../src/ai/execution/executor.service.js';
 
-import type { PracticeWorkflow } from '../src/core/workflow/practice.workflow.js';
-import type { PracticeDTO } from '../src/data/types/domain.js';
+import type { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
+import type { PracticeView } from '../src/core/practice/practice.application.service.js';
+
+function makePracticeView(): PracticeView {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    tenantId: '11111111-1111-1111-1111-111111111111',
+    userId: '22222222-2222-2222-2222-222222222222',
+    status: 'VALIDATED',
+    version: 1,
+    name: 'Mario Rossi',
+    kind: 'artist',
+    typeLabel: 'artist practice',
+    summary: 'pratica artista Mario Rossi',
+    payload: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+function makePracticeService(): Pick<
+  PracticeApplicationService,
+  'createPractice' | 'transitionPractice'
+> {
+  return {
+    createPractice: () => Promise.resolve(makePracticeView()),
+    transitionPractice: () => Promise.resolve(makePracticeView()),
+  };
+}
 
 describe('ai executor', () => {
   it('executes transition_practice with valid data', async () => {
-    const workflow: Pick<PracticeWorkflow, 'transitionPractice'> = {
-      transitionPractice: () =>
-        Promise.resolve({
-          id: '550e8400-e29b-41d4-a716-446655440000',
-          tenantId: '11111111-1111-1111-1111-111111111111',
-          userId: '22222222-2222-2222-2222-222222222222',
-          status: 'VALIDATED',
-          version: 1,
-          payload: {},
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        } satisfies PracticeDTO),
-    };
-    const executor = new ExecutorService({
-      practiceWorkflow: workflow as unknown as PracticeWorkflow,
-    });
+    const executor = new ExecutorService({ practiceService: makePracticeService() });
 
     const res = await executor.execute(
       {
@@ -49,22 +61,7 @@ describe('ai executor', () => {
   });
 
   it('returns error for unsupported action', async () => {
-    const workflow: Pick<PracticeWorkflow, 'transitionPractice'> = {
-      transitionPractice: () =>
-        Promise.resolve({
-          id: '550e8400-e29b-41d4-a716-446655440000',
-          tenantId: '11111111-1111-1111-1111-111111111111',
-          userId: '22222222-2222-2222-2222-222222222222',
-          status: 'CREATED',
-          version: 1,
-          payload: {},
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        } satisfies PracticeDTO),
-    };
-    const executor = new ExecutorService({
-      practiceWorkflow: workflow as PracticeWorkflow,
-    });
+    const executor = new ExecutorService({ practiceService: makePracticeService() });
 
     const res = await executor.execute(
       { action: 'unknown_action', data: {} },
@@ -78,22 +75,7 @@ describe('ai executor', () => {
   });
 
   it('returns validation error for invalid data', async () => {
-    const workflow: Pick<PracticeWorkflow, 'transitionPractice'> = {
-      transitionPractice: () =>
-        Promise.resolve({
-          id: '550e8400-e29b-41d4-a716-446655440000',
-          tenantId: '11111111-1111-1111-1111-111111111111',
-          userId: '22222222-2222-2222-2222-222222222222',
-          status: 'CREATED',
-          version: 1,
-          payload: {},
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        } satisfies PracticeDTO),
-    };
-    const executor = new ExecutorService({
-      practiceWorkflow: workflow as PracticeWorkflow,
-    });
+    const executor = new ExecutorService({ practiceService: makePracticeService() });
 
     const res = await executor.execute(
       { action: 'transition_practice', data: { practiceId: 'not-a-uuid', nextState: 'NOPE' } },
