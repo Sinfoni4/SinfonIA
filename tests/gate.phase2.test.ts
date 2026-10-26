@@ -292,6 +292,9 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
     try {
       type ExplainRow = { 'QUERY PLAN': string };
 
+      // Ensure PostgreSQL uses index scans even when row counts are minimal in test fixtures
+      await prisma.$executeRawUnsafe('SET enable_seqscan = off');
+
       // Query 1: Tenant + Status Index
       const plan1 = await prisma.$queryRawUnsafe<ExplainRow[]>(
         `EXPLAIN SELECT * FROM "practice" WHERE "tenant_id" = '00000000-0000-0000-0000-000000000000' AND "status" = 'CREATED' ORDER BY "created_at" DESC`,

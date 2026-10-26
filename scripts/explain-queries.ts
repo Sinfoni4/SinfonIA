@@ -17,6 +17,9 @@ async function main() {
   console.log('🔍 Running Phase 2D EXPLAIN Query Plan Verifications...\n');
 
   try {
+    // Ensure planner evaluates index plans regardless of test data cardinality
+    await prisma.$executeRawUnsafe('SET enable_seqscan = off');
+
     // 1. Index scan on practice (tenant_id, status)
     console.log('--- 1. Practice Tenant + Status Query Plan ---');
     const q1 = await prisma.$queryRawUnsafe<ExplainResult>(
