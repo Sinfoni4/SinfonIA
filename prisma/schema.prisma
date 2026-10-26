@@ -23,11 +23,14 @@ model Tenant {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @default(now()) @map("updated_at")
 
-  users       User[]
-  practices   Practice[]
-  auditLogs   AuditLog[]
-  invites     InviteCode[]
-  userTenants UserTenant[]
+  users          User[]
+  practices      Practice[]
+  auditLogs      AuditLog[]
+  invites        InviteCode[]
+  userTenants    UserTenant[]
+  schedulerJobs  SchedulerJob[]
+  schedulerRuns  SchedulerRun[]
+  outboxMessages OutboxMessage[]
 
   @@map("tenant")
 }
@@ -107,6 +110,7 @@ model Practice {
   @@index([tenantId, userId])
   @@index([tenantId, status])
   @@index([tenantId, id, version])
+  @@index([payload], type: Gin)
   @@map("practice")
 }
 
@@ -126,4 +130,75 @@ model AuditLog {
   @@index([createdAt])
   @@index([tenantId, eventType])
   @@map("audit_log")
+}
+
+enum SchedulerRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model SchedulerJob {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  taskType  String    @map("task_type")
+  frequency String    @default("monthly")
+  enabled   Boolean   @default(true)
+  payload   Json?
+  lastRunAt DateTime? @map("last_run_at")
+  nextRunAt DateTime? @map("next_run_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   SchedulerRun[]
+
+  @@index([tenantId])
+  @@index([enabled, nextRunAt])
+  @@map("scheduler_job")
+}
+
+model SchedulerRun {
+  id             String             @id @default(uuid()) @db.Uuid
+  jobId          String?            @map("job_id") @db.Uuid
+  tenantId       String             @map("tenant_id") @db.Uuid
+  idempotencyKey String             @unique @map("idempotency_key")
+  status         SchedulerRunStatus @default(RUNNING)
+  startedAt      DateTime           @default(now()) @map("started_at")
+  completedAt    DateTime?          @map("completed_at")
+  error          String?
+  result         Json?
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  job    SchedulerJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([jobId])
+  @@index([status])
+  @@map("scheduler_run")
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model OutboxMessage {
+  id          String       @id @default(uuid()) @db.Uuid
+  tenantId    String       @map("tenant_id") @db.Uuid
+  eventType   String       @map("event_type")
+  payload     Json
+  status      OutboxStatus @default(PENDING)
+  error       String?
+  processedAt DateTime?    @map("processed_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status, createdAt])
+  @@map("outbox_message")
 }
