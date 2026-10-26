@@ -69,6 +69,10 @@ curl -H "Authorization: Bearer <token>" \
 
 - `GET /healthz` e `GET /readyz` sono pubblici.
 - `GET /auth/whoami` restituisce subject, tenant e ruolo del token.
+- `POST /practices` crea una nuova pratica per l'utente autenticato (`ADMIN|OPERATOR|MEMBER`).
+- `GET /practices` restituisce la lista paginata con ricerca (`search`), filtri per stato e ordinamento.
+- `GET /practices/:id` restituisce il dettaglio di una singola pratica.
+- `POST /practices/export` esporta le pratiche in formato CSV con filtri temporali.
 - `POST /practices/:id/transition` richiede `ADMIN` o `OPERATOR`.
 - `POST /ai/execute` richiede un qualsiasi ruolo autenticato.
 
@@ -90,6 +94,15 @@ La configurazione del tenant (modulo, integrazione, scheduler) è persistita in
 `tenant`; lo scheduler usa solo tenant reali e richiede un utente `ADMIN` per
 l'esecuzione. I trigger PostgreSQL verificano che `practice.user_id` e
 `audit_log.user_id` appartengano allo stesso tenant.
+
+## Scheduler durevole e Outbox
+
+Lo scheduler (`src/core/scheduler/scheduler.service.ts`) è completamente durevole, idempotente e sicuro contro corse critiche:
+
+- **Persistenza & Idempotenza**: i job sono persistiti in `scheduler_job` e ogni esecuzione è tracciata in `scheduler_run` con vincolo UNIQUE su `idempotency_key` (`<tenantId>:<taskType>:<frequency>:<period>`).
+- **Nessun burst all'avvio**: lo stato non è più volatile in-memory; al riavvio del processo lo scheduler verifica nel DB le esecuzioni già completate per il periodo corrente evitando riesecuzioni immediate.
+- **PostgreSQL Advisory Lock**: esecuzione protetta da session lock advisory (`pg_try_advisory_lock`), garantendo che in presenza di repliche multiple solo un worker alla volta esegua il task per un tenant.
+- **Outbox Pattern**: gli export e le notifiche generate dai job vengono persistite nella tabella `outbox_message`.
 
 ## LLM (OpenAI)
 
@@ -145,8 +158,11 @@ possono contenere logica di dominio o scrivere direttamente su `practice`.
 - `npm run secret:scan`: scansione di token/chiavi nei file del repository
 - `npm run build` / `npm start`: build + avvio da `dist/`
 - `npm run audit:prod`: audit delle dipendenze di produzione
+- `npm run db:explain`: analizza con EXPLAIN i piani di esecuzione delle query principali (indici tenant, GIN payload, scheduler idempotency)
 - `npm run auth:token`: genera un bearer token locale firmato
 - `npm run tenant:provision`: crea tenant, invito e admin
+
+Per il report completo e dettagliato sull'implementazione di tutte le Fasi 1 e 2 (inclusi i 4 Gate di resilienza e concorrenza), consulta [docs/FASI_1_E_2_REPORT.md](docs/FASI_1_E_2_REPORT.md).
 
 I test Vitest caricano `.env.test` in modo deterministico. In CI il database è
 fornito dal servizio PostgreSQL e `DATABASE_URL` ha precedenza sul file locale.
