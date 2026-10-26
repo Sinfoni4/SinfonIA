@@ -70,6 +70,15 @@ if (!telegramToken) {
   warnings.push('TELEGRAM_BOT_TOKEN does not look like a valid Bot API token.');
 }
 
+const authSecret = getValue('AUTH_SECRET');
+if (!authSecret) {
+  errors.push('AUTH_SECRET is required to issue and verify bearer tokens.');
+} else if (authSecret.length < 32) {
+  errors.push('AUTH_SECRET must be at least 32 characters.');
+} else if (authSecret.includes('replace-with')) {
+  errors.push('AUTH_SECRET still contains the placeholder value.');
+}
+
 const enableLlm = (getValue('ENABLE_LLM') ?? 'false').toLowerCase();
 if ((enableLlm === 'true' || enableLlm === '1') && !getValue('OPENAI_API_KEY')) {
   errors.push('ENABLE_LLM is enabled but OPENAI_API_KEY is missing.');

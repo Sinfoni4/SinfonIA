@@ -14,11 +14,18 @@ import { NormalizationValidationError } from '../../../ai/normalization/normaliz
 import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import { ConcurrencyError, InvalidStateTransitionError } from '../../../core/index.js';
-import { NotFoundError } from '../../../data/errors/errors.js';
+import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
+import { AuthError } from '../auth/auth.errors.js';
 
 export type NormalizedError = { statusCode: number; code: string; message: string };
 
 export function mapErrorToHttp(err: unknown): NormalizedError {
+  if (err instanceof AuthError) {
+    return { statusCode: err.statusCode, code: err.code, message: err.message };
+  }
+  if (err instanceof UnauthorizedTenantAccessError) {
+    return { statusCode: 404, code: 'NOT_FOUND', message: 'Resource not found' };
+  }
   if (err instanceof InvalidStateTransitionError) {
     return { statusCode: 400, code: 'INVALID_STATE_TRANSITION', message: err.message };
   }

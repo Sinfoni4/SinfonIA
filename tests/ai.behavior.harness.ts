@@ -29,6 +29,7 @@ import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
 import { AI_BEHAVIOR_SCENARIOS, type ScenarioCategory } from './ai.behavior.scenarios.js';
+import { authHeaders, TEST_AUTH_SECRET } from './helpers/auth.js';
 
 import type { InterpreterOutput } from '../src/ai/interpreter/interpreter.types.js';
 
@@ -307,6 +308,10 @@ async function main(): Promise<void> {
         OPENAI_API_KEY: env.OPENAI_API_KEY,
         ENABLE_LLM: env.ENABLE_LLM === 'true' || env.ENABLE_LLM === '1',
         OPENAI_MODEL: env.OPENAI_MODEL ?? 'gpt-4o-mini',
+        AUTH_SECRET: TEST_AUTH_SECRET,
+        AUTH_ISSUER: 'sinfonia',
+        AUTH_AUDIENCE: 'sinfonia-api',
+        AUTH_TTL_SECONDS: 3600,
       },
       logger,
       {
@@ -367,18 +372,18 @@ async function main(): Promise<void> {
       try {
         // Scenario-specific seeding for artist practices.
         if (scenario.id === 'artist-amb-01') {
-          artistPracticeRepo.create('Mario Rossi');
-          artistPracticeRepo.create('Mario Rossi');
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
         }
         if (scenario.id === 'artist-02') {
-          artistPracticeRepo.create('Mario Rossi'); // CREATED
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi'); // CREATED
         }
         if (scenario.id === 'artist-03') {
-          const p = artistPracticeRepo.create('Mario Rossi');
-          artistPracticeRepo.updateStatus(p.id, 'VALIDATED');
+          const p = artistPracticeRepo.create(tenant.id, 'Mario Rossi');
+          artistPracticeRepo.updateStatus(tenant.id, p.id, 'VALIDATED');
         }
         if (scenario.id === 'artist-val-01') {
-          artistPracticeRepo.create('Mario Rossi'); // still CREATED, completing should fail validation
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi'); // still CREATED, completing should fail validation
         }
 
         const isArtistScenario = scenario.id.startsWith('artist-');
@@ -472,7 +477,7 @@ async function main(): Promise<void> {
         const http = await app.inject({
           method: 'POST',
           url: '/ai/execute',
-          headers: { 'x-tenant-id': tenant.id, 'x-user-id': user.id },
+          headers: authHeaders(tenant.id, user.id, 'ADMIN'),
           payload: { input },
         });
         row.httpResponse = { statusCode: http.statusCode, body: http.json() };

@@ -1,93 +1,49 @@
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
+import { NotFoundError } from '../../data/errors/errors.js';
 
-const inviteMap = new Map<string, string>();
-const userTenantMap = new Map<string, string>();
+import type { PrismaLike } from '../../data/types/prisma.js';
 
-let prisma: PrismaClient | null = null;
+export async function registerInviteCode(
+  prisma: PrismaLike,
+  code: string,
+  tenantId: string,
+): Promise<void> {
+  await prisma.inviteCode.create({
+    data: { code, tenantId },
+  });
+}
 
-function getPrisma(): PrismaClient {
-  if (!prisma) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+export async function getTenantIdByInvite(
+  prisma: PrismaLike,
+  code: string,
+): Promise<string | null> {
+  const record = await prisma.inviteCode.findUnique({ where: { code } });
+  return record?.tenantId ?? null;
+}
+
+export async function bindUserToTenant(
+  prisma: PrismaLike,
+  userId: string,
+  tenantId: string,
+): Promise<void> {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, tenantId },
+    select: { id: true },
+  });
+  if (!user) {
+    throw new NotFoundError('User not found in tenant');
   }
-  return prisma;
-}
 
-export function registerInviteCode(code: string, tenantId: string) {
-  inviteMap.set(code, tenantId);
-
-  void getPrisma()
-    .inviteCode.upsert({
-      where: { code },
-      update: { tenantId },
-      create: { code, tenantId },
-    })
-    .catch((err) => {
-      console.error('❌ INVITE STORE DB ERROR (registerInviteCode)', err);
-    });
-}
-
-export function getTenantIdByInvite(code: string): string | null {
-  const inMemory = inviteMap.get(code) ?? null;
-  if (inMemory) return inMemory;
-
-  void getPrisma()
-    .inviteCode.findUnique({ where: { code } })
-    .then((record) => {
-      if (record) {
-        inviteMap.set(code, record.tenantId);
-      }
-    })
-    .catch((err) => {
-      console.error('❌ INVITE STORE DB ERROR (getTenantIdByInvite)', err);
-    });
-
-  return null;
-}
-
-export function bindUserToTenant(userId: string, tenantId: string) {
-  userTenantMap.set(userId, tenantId);
-
-  void getPrisma()
-    .userTenant.upsert({
-      where: {
-        userId_tenantId: {
-          userId,
-          tenantId,
-        },
-      },
-      update: {},
-      create: {
+  await prisma.userTenant.upsert({
+    where: {
+      userId_tenantId: {
         userId,
         tenantId,
       },
-    })
-    .catch((err) => {
-      console.error('❌ INVITE STORE DB ERROR (bindUserToTenant)', err);
-    });
-}
-
-export function getTenantIdByUser(userId: string): string | null {
-  const inMemory = userTenantMap.get(userId) ?? null;
-  if (inMemory) {
-    return inMemory;
-  }
-
-  void getPrisma()
-    .userTenant.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    })
-    .then((record) => {
-      if (record) {
-        userTenantMap.set(userId, record.tenantId);
-      }
-    })
-    .catch((err) => {
-      console.error('❌ INVITE STORE DB ERROR (getTenantIdByUser)', err);
-    });
-
-  return null;
+    },
+    update: {},
+    create: {
+      userId,
+      tenantId,
+    },
+  });
 }

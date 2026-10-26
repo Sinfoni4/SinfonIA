@@ -6,6 +6,11 @@ import type { PracticeStatus, UserRole } from '@prisma/client';
 export type TenantDTO = {
   id: string;
   name: string;
+  module: string;
+  integrationType: string;
+  schedulerEnabled: boolean;
+  schedulerFrequency: string | null;
+  schedulerTasks: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -15,6 +20,7 @@ export type UserDTO = {
   tenantId: string;
   email: string;
   role: UserRole;
+  telegramId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

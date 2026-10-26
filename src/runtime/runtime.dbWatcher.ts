@@ -1,7 +1,7 @@
 import { defaultSchedulerTasks, getAllTenants } from '../core/tenant/tenant.store.js';
-import { uuidFromSeed } from '../core/tenant/tenant.uuid.js';
 import { checkDatabaseConnection } from '../data/db/db.health.js';
 import { moduleRegistry } from '../modules/module.registry.js';
+import { errorLabel } from '../shared/errors.js';
 
 import { attemptDatabaseRecovery } from './runtime.db.recovery.js';
 import { runtimeState } from './runtime.state.js';
@@ -67,7 +67,7 @@ export function startDbWatcher(prisma: PrismaClient) {
       try {
         const now = new Date();
 
-        const tenants = getAllTenants();
+        const tenants = await getAllTenants(prisma);
 
         for (const tenant of tenants) {
           if (!tenant.scheduler?.enabled) {
@@ -80,7 +80,7 @@ export function startDbWatcher(prisma: PrismaClient) {
           let shouldRun = false;
 
           if (frequency === 'monthly') {
-            const currentMonth = now.getMonth();
+            const currentMonth = now.getFullYear() * 12 + now.getMonth();
             const last = schedulerState.monthly.get(tenant.id);
 
             if (last !== currentMonth) {
@@ -90,10 +90,11 @@ export function startDbWatcher(prisma: PrismaClient) {
           }
 
           if (frequency === 'weekly') {
-            const currentWeek = Math.floor(
+            const weekOfYear = Math.floor(
               (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) /
                 (7 * 24 * 60 * 60 * 1000),
             );
+            const currentWeek = now.getFullYear() * 100 + weekOfYear;
 
             const last = schedulerState.weekly.get(tenant.id);
 
@@ -104,7 +105,8 @@ export function startDbWatcher(prisma: PrismaClient) {
           }
 
           if (frequency === 'daily') {
-            const currentDay = now.getDate();
+            const currentDay =
+              now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
             const last = schedulerState.daily.get(tenant.id);
 
             if (last !== currentDay) {
@@ -122,11 +124,20 @@ export function startDbWatcher(prisma: PrismaClient) {
           try {
             console.log(`🏢 SCHEDULER TENANT START — ${tenant.id}`);
 
-            const systemUserId = uuidFromSeed(`system-${tenant.id}`);
+            const schedulerUser = await prisma.user.findFirst({
+              where: { tenantId: tenant.id, role: 'ADMIN' },
+              orderBy: { createdAt: 'asc' },
+              select: { id: true },
+            });
+            if (!schedulerUser) {
+              console.warn(`⚠️ SCHEDULER — no ADMIN user for tenant=${tenant.id}`);
+              continue;
+            }
 
             const execContext = {
               tenantId: tenant.id,
-              userId: systemUserId,
+              userId: schedulerUser.id,
+              integrationType: tenant.integration.type,
             };
 
             const musicModule = moduleRegistry.find((m) => m.name === tenant.module);
@@ -154,18 +165,16 @@ export function startDbWatcher(prisma: PrismaClient) {
 
               const result = await musicModule.execute(command, execContext, domainContext);
 
-              if (result && typeof result === 'object' && 'message' in result) {
-                console.log(`📤 SCHEDULED RESPONSE — tenant=${tenant.id}:`, result.message);
-              } else {
+              if (!result || typeof result !== 'object' || !('message' in result)) {
                 console.warn(`⚠️ SCHEDULER — invalid response tenant=${tenant.id}`);
               }
             }
           } catch (err) {
-            console.error(`❌ SCHEDULER EXECUTION FAILED — tenant=${tenant.id}`, err);
+            console.error(`❌ SCHEDULER EXECUTION FAILED — tenant=${tenant.id}`, errorLabel(err));
           }
         }
       } catch (err) {
-        console.error('❌ SCHEDULER ERROR', err);
+        console.error('❌ SCHEDULER ERROR', errorLabel(err));
       }
 
       const prevMode = runtimeState.getMode();
@@ -200,7 +209,7 @@ export function startDbWatcher(prisma: PrismaClient) {
         console.log('💚 Database reconnected — switching to HEALTHY mode');
       }
     })().catch((error: unknown) => {
-      console.error('❌ WATCHER ERROR', error);
+      console.error('❌ WATCHER ERROR', errorLabel(error));
     });
   }, 10000);
 }

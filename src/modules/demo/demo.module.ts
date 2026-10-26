@@ -1,3 +1,5 @@
+import { errorLabel } from '../../shared/errors.js';
+
 import type { DomainCommand, DomainContext, DomainModule } from '../domain.module.js';
 
 export const demoModule: DomainModule = {
@@ -33,7 +35,7 @@ export const demoModule: DomainModule = {
           return Promise.resolve(null);
       }
     } catch (err) {
-      console.error('❌ DEMO MODULE ERROR', err);
+      console.error('❌ DEMO MODULE ERROR', errorLabel(err));
       return Promise.resolve({
         message: '⚠️ Errore interno modulo demo',
       });

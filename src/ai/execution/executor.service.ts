@@ -45,13 +45,19 @@ export class ExecutorService {
           if (!data.success) {
             throw new ExecutorValidationError('Invalid create_practice data');
           }
-          if (!this.deps.artistPracticeRepo) {
-            throw new ExecutorValidationError('Artist practice repository not configured');
-          }
-          const created = this.deps.artistPracticeRepo.create(data.data.artistName.trim());
-          const output: ExecutorResult<unknown> = { success: true, result: created };
-          console.log('[ai-flow]', { step: 'executor', input: parsedInput, output });
-          return output;
+          const created = this.deps.artistPracticeRepo
+            ? this.deps.artistPracticeRepo.create(parsedCtx.tenantId, data.data.artistName.trim())
+            : await (async () => {
+                if (!parsedCtx.userId) {
+                  throw new ExecutorValidationError('Authenticated user is required');
+                }
+                return this.deps.practiceWorkflow.createPractice({
+                  tenantId: parsedCtx.tenantId,
+                  userId: parsedCtx.userId,
+                  artistName: data.data.artistName.trim(),
+                });
+              })();
+          return { success: true, result: created };
         }
         case 'transition_practice': {
           const data = TransitionPracticeDataSchema.safeParse(parsedInput.data);
@@ -59,7 +65,9 @@ export class ExecutorService {
             throw new ExecutorValidationError('Invalid transition_practice data');
           }
 
-          const artist = this.deps.artistPracticeRepo?.findById(data.data.practiceId) ?? null;
+          const artist =
+            this.deps.artistPracticeRepo?.findById(parsedCtx.tenantId, data.data.practiceId) ??
+            null;
           if (artist) {
             if (data.data.nextState !== 'VALIDATED' && data.data.nextState !== 'COMPLETED') {
               throw new ExecutorValidationError(
@@ -68,12 +76,11 @@ export class ExecutorService {
             }
             try {
               const updated = this.deps.artistPracticeRepo!.updateStatus(
+                parsedCtx.tenantId,
                 data.data.practiceId,
                 data.data.nextState,
               );
-              const output: ExecutorResult<unknown> = { success: true, result: updated };
-              console.log('[ai-flow]', { step: 'executor', input: parsedInput, output });
-              return output;
+              return { success: true, result: updated };
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : String(err);
               throw new ExecutorValidationError(msg);
@@ -87,17 +94,13 @@ export class ExecutorService {
             nextState: data.data.nextState,
           });
 
-          const output: ExecutorResult<unknown> = { success: true, result };
-          console.log('[ai-flow]', { step: 'executor', input: parsedInput, output });
-          return output;
+          return { success: true, result };
         }
         default:
           throw new UnsupportedActionError(parsedInput.action);
       }
     } catch (err: unknown) {
-      const output: ExecutorResult<unknown> = { success: false, error: toExecutorError(err) };
-      console.log('[ai-flow]', { step: 'executor', input, output });
-      return output;
+      return { success: false, error: toExecutorError(err) };
     }
   }
 }

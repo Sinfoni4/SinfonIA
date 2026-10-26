@@ -1,3 +1,5 @@
+import { errorLabel } from '../../shared/errors.js';
+
 import { getMusicAdapter } from './music.datasource.js';
 
 import type {
@@ -136,7 +138,7 @@ export const musicModule: DomainModule = {
       };
     }
 
-    const adapter = getMusicAdapter(context.tenantId);
+    const adapter = getMusicAdapter(context.integrationType);
     return adapter.getContext({
       tenantId: context.tenantId,
       userId: context.userId,
@@ -155,7 +157,7 @@ export const musicModule: DomainModule = {
       }
 
       const { tenantId, userId } = context;
-      const adapter = getMusicAdapter(tenantId);
+      const adapter = getMusicAdapter(context.integrationType);
 
       const payload =
         typeof command.payload === 'object' && command.payload !== null ? command.payload : null;
@@ -165,7 +167,7 @@ export const musicModule: DomainModule = {
       switch (command.type) {
         case 'CREATE_PRACTICE': {
           if (!name) return null;
-          console.log(`🎵 [music] action=CREATE_PRACTICE name=${name}`);
+          console.log('🎵 [music] action=CREATE_PRACTICE');
 
           const created = await adapter.createPractice({
             name,
@@ -216,7 +218,7 @@ ${list}`,
 
         case 'GET_PRACTICE_STATUS': {
           if (!name) return null;
-          console.log(`🎵 [music] action=GET_STATUS name=${name}`);
+          console.log('🎵 [music] action=GET_STATUS');
 
           const practices = await adapter.listPractices({ tenantId, userId });
           const match = practices.find((p) => p.name === name);
@@ -228,13 +230,13 @@ ${list}`,
           }
 
           return {
-            message: `🎵 Stato pratica ${match.name}: attiva (simulazione)`,
+            message: `🎵 Stato pratica ${match.name}: ${match.status}`,
           };
         }
 
         case 'DELETE_PRACTICE': {
           if (!name) return null;
-          console.log(`🎵 [music] action=DELETE name=${name}`);
+          console.log('🎵 [music] action=DELETE');
 
           const deleted = await adapter.deletePractice({
             name,
@@ -343,7 +345,7 @@ ${list}`,
           return null;
       }
     } catch (error) {
-      console.error('❌ MUSIC MODULE DB ERROR', error);
+      console.error('❌ MUSIC MODULE DB ERROR', errorLabel(error));
       return {
         message: '⚠️ Errore interno modulo music',
       };

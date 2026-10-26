@@ -1,4 +1,5 @@
 import { runtimeState } from '../../runtime/runtime.state.js';
+import { errorLabel } from '../../shared/errors.js';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -19,7 +20,7 @@ export async function checkDatabaseConnection(
   } catch (err) {
     runtimeState.setDatabaseReachable(false);
     console.error('❌ Database NOT reachable');
-    console.error(err);
+    console.error(errorLabel(err));
     return { ok: false, latencyMs: null };
   }
 }

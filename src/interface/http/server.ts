@@ -2,6 +2,9 @@ import Fastify from 'fastify';
 
 import { runtimeState } from '../../runtime/runtime.state.js';
 
+import { createAuthHook } from './auth/auth.hook.js';
+import { AuthService } from './auth/auth.service.js';
+import { requireAuthContext } from './auth/guards.js';
 import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
@@ -24,15 +27,24 @@ export type ServerDeps = {
   normalizerService: NormalizerService;
 };
 
-export function buildServer(_config: AppConfig, logger: AppLogger, deps: ServerDeps) {
+export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDeps) {
   // Interface Layer: HTTP transport only.
   // No business logic here. No direct DB access. No AI calls.
   const app = Fastify({
     loggerInstance: logger,
   });
 
-  // Request context and logging correlation (requestId, tenantId, userId).
+  // Request context and logging correlation (requestId).
   app.addHook('onRequest', requestContextHook);
+
+  // Authentication is required for every route except liveness/readiness.
+  const authService = new AuthService({
+    secret: config.AUTH_SECRET,
+    issuer: config.AUTH_ISSUER,
+    audience: config.AUTH_AUDIENCE,
+    defaultTtlSeconds: config.AUTH_TTL_SECONDS,
+  });
+  app.addHook('onRequest', createAuthHook(authService));
 
   // Liveness: the process can answer HTTP.
   app.get('/healthz', () => ({
@@ -55,6 +67,15 @@ export function buildServer(_config: AppConfig, logger: AppLogger, deps: ServerD
         },
       },
     });
+  });
+
+  app.get('/auth/whoami', (req) => {
+    const auth = requireAuthContext(req);
+    return {
+      subject: auth.userId,
+      tenantId: auth.tenantId,
+      role: auth.role,
+    };
   });
 
   // Routes (HTTP only): business logic lives in Core / AI.

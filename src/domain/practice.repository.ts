@@ -11,10 +11,11 @@ const ALLOWED: Readonly<Record<ArtistPracticeStatus, ReadonlyArray<ArtistPractic
 export class InMemoryPracticeRepository {
   private practices: Practice[] = [];
 
-  create(artistName: string): Practice {
+  create(tenantId: string, artistName: string): Practice {
     const now = new Date();
     const practice: Practice = {
       id: randomUUID(),
+      tenantId,
       artistName,
       status: 'CREATED',
       createdAt: now,
@@ -24,21 +25,23 @@ export class InMemoryPracticeRepository {
     return practice;
   }
 
-  findAll(): Practice[] {
-    return [...this.practices];
+  findAll(tenantId: string): Practice[] {
+    return this.practices.filter((p) => p.tenantId === tenantId);
   }
 
-  findById(id: string): Practice | null {
-    return this.practices.find((p) => p.id === id) ?? null;
+  findById(tenantId: string, id: string): Practice | null {
+    return this.practices.find((p) => p.tenantId === tenantId && p.id === id) ?? null;
   }
 
-  findByArtistName(name: string): Practice[] {
+  findByArtistName(tenantId: string, name: string): Practice[] {
     const needle = name.trim().toLowerCase();
-    return this.practices.filter((p) => p.artistName.trim().toLowerCase() === needle);
+    return this.practices.filter(
+      (p) => p.tenantId === tenantId && p.artistName.trim().toLowerCase() === needle,
+    );
   }
 
-  updateStatus(id: string, newStatus: ArtistPracticeStatus): Practice {
-    const idx = this.practices.findIndex((p) => p.id === id);
+  updateStatus(tenantId: string, id: string, newStatus: ArtistPracticeStatus): Practice {
+    const idx = this.practices.findIndex((p) => p.tenantId === tenantId && p.id === id);
     if (idx === -1) {
       throw new Error(`Practice not found: ${id}`);
     }

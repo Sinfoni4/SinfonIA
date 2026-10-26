@@ -1,3 +1,5 @@
+import { AUTH_ROLES } from '../auth/auth.types.js';
+import { requireRole } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
@@ -12,30 +14,19 @@ export type PracticeRoutesDeps = {
   practiceWorkflow: PracticeWorkflow;
 };
 
-// NOTE: We keep Fastify generics intentionally loose here.
-// The interface layer should not couple its route typing to a specific logger type/config.
 export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, deps, done) => {
-  // Future-ready: auth/tenant extraction will become middleware.
-  // For now we read tenantId from header as a temporary bootstrap mechanism.
   app.post('/practices/:id/transition', async (req, reply) => {
     try {
-      const tenantIdHeader = req.headers['x-tenant-id'];
-      const tenantId = typeof tenantIdHeader === 'string' ? tenantIdHeader : '';
-      if (!tenantId) {
-        return reply.status(400).send(fail('MISSING_TENANT', 'Missing x-tenant-id header'));
-      }
-
-      const userIdHeader = req.headers['x-user-id'];
-      const userId = typeof userIdHeader === 'string' && userIdHeader ? userIdHeader : null;
+      const auth = requireRole(req, AUTH_ROLES.PRACTICE_TRANSITION);
 
       const params = PracticeTransitionParamsSchema.parse(req.params);
       const body = PracticeTransitionBodySchema.parse(req.body);
 
       const updated = await deps.practiceWorkflow.transitionPractice({
-        tenantId,
+        tenantId: auth.tenantId,
         practiceId: params.id,
         nextState: body.nextState,
-        userId,
+        userId: auth.userId,
       });
 
       return reply.status(200).send(ok(updated));

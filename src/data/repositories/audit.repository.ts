@@ -1,4 +1,4 @@
-import { DatabaseError } from '../errors/errors.js';
+import { DatabaseError, NotFoundError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
 import type { AuditLogDTO } from '../types/domain.js';
@@ -36,6 +36,16 @@ export class AuditRepository {
   }): Promise<AuditLogDTO> {
     requireTenantId(input.tenantId);
     try {
+      if (input.userId) {
+        const owner = await this.prisma.user.findFirst({
+          where: { tenantId: input.tenantId, id: input.userId },
+          select: { id: true },
+        });
+        if (!owner) {
+          throw new NotFoundError('User not found in tenant');
+        }
+      }
+
       const row = await this.prisma.auditLog.create({
         data: {
           tenantId: input.tenantId,
@@ -46,6 +56,7 @@ export class AuditRepository {
       });
       return toAuditDTO(row);
     } catch (err: unknown) {
+      if (err instanceof NotFoundError) throw err;
       throw new DatabaseError('Failed to append audit event', err);
     }
   }

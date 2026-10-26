@@ -19,3 +19,9 @@ export function describeError(error: unknown): ErrorDetails {
 export function errorMessage(error: unknown): string {
   return describeError(error).message;
 }
+
+/** Safe, non-payload error label for logs (name + optional error code). */
+export function errorLabel(error: unknown): string {
+  const details = describeError(error);
+  return [details.name, details.code].filter(Boolean).join(':') || 'Error';
+}

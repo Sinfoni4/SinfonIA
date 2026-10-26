@@ -85,7 +85,6 @@ export class NormalizerService {
         nextState: 'CREATED',
       };
 
-      console.log('[ai-flow]', { step: 'normalize', input, output });
       return output;
     }
 
@@ -123,7 +122,6 @@ export class NormalizerService {
       nextState: canonicalNextState,
     };
 
-    console.log('[ai-flow]', { step: 'normalize', input, output });
     return output;
   }
 }

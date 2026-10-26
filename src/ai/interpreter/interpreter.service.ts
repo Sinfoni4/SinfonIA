@@ -35,7 +35,7 @@ export class InterpreterService {
     const raw = await this.deps.llm.complete(prompt);
 
     if (this.deps.log) {
-      this.deps.log.debug({ raw }, 'LLM raw output');
+      this.deps.log.debug({ responseLength: raw.length }, 'LLM response received');
     }
 
     const parsed = parseJSONWithFallback(raw);
@@ -52,9 +52,7 @@ export class InterpreterService {
       throw new InvalidAIOutputError('AI output does not match interpreter contract');
     }
 
-    const output = validated.data;
-    console.log('[ai-flow]', { step: 'interpret', input: inputText, output });
-    return output;
+    return validated.data;
   }
 
   isRealLLM(): boolean {

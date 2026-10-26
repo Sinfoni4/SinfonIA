@@ -22,6 +22,10 @@ const ConfigSchema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
   OPENAI_MODEL: z.string().optional().default('gpt-4o-mini'),
+  AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
+  AUTH_ISSUER: z.string().min(1).default('sinfonia'),
+  AUTH_AUDIENCE: z.string().min(1).default('sinfonia-api'),
+  AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(3600),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

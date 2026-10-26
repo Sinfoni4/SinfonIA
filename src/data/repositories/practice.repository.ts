@@ -36,6 +36,14 @@ export class PracticeRepository {
   ): Promise<PracticeDTO> {
     requireTenantId(tenantId);
     try {
+      const owner = await this.prisma.user.findFirst({
+        where: { tenantId, id: data.userId },
+        select: { id: true },
+      });
+      if (!owner) {
+        throw new NotFoundError('User not found in tenant');
+      }
+
       const row = await this.prisma.practice.create({
         data: {
           tenantId,
@@ -46,6 +54,7 @@ export class PracticeRepository {
       });
       return toPracticeDTO(row);
     } catch (err: unknown) {
+      if (err instanceof NotFoundError) throw err;
       throw new DatabaseError('Failed to create practice', err);
     }
   }

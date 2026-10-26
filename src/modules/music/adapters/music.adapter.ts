@@ -8,7 +8,7 @@ export interface MusicAdapter {
   listPractices(input: {
     tenantId: string;
     userId: string;
-  }): Promise<Array<{ name: string; createdAt: Date }>>;
+  }): Promise<Array<{ name: string; status: string; createdAt: Date }>>;
 
   deletePractice(input: {
     name: string;

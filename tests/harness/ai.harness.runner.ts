@@ -27,6 +27,7 @@ import { UserRepository } from '../../src/data/repositories/user.repository.js';
 import { InMemoryPracticeRepository } from '../../src/domain/practice.repository.js';
 import { buildServer } from '../../src/interface/http/server.js';
 import { createLogger } from '../../src/shared/logger.js';
+import { authHeaders, TEST_AUTH_SECRET } from '../helpers/auth.js';
 
 import type {
   AIScenario,
@@ -355,6 +356,10 @@ export async function runHarness(args: {
       OPENAI_API_KEY: env.OPENAI_API_KEY,
       ENABLE_LLM: env.ENABLE_LLM === 'true' || env.ENABLE_LLM === '1',
       OPENAI_MODEL: env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      AUTH_SECRET: TEST_AUTH_SECRET,
+      AUTH_ISSUER: 'sinfonia',
+      AUTH_AUDIENCE: 'sinfonia-api',
+      AUTH_TTL_SECONDS: 3600,
     },
     logger,
     {
@@ -431,29 +436,29 @@ export async function runHarness(args: {
         }
         if (scenario.id === 'artist-02') {
           // Ensure a CREATED practice exists for validation.
-          if (artistPracticeRepo.findByArtistName('Mario Rossi').length === 0) {
-            artistPracticeRepo.create('Mario Rossi');
+          if (artistPracticeRepo.findByArtistName(tenant.id, 'Mario Rossi').length === 0) {
+            artistPracticeRepo.create(tenant.id, 'Mario Rossi');
           }
         }
         if (scenario.id === 'artist-03') {
           // Ensure a VALIDATED practice exists for completion.
           const existing =
-            artistPracticeRepo.findByArtistName('Mario Rossi')[0] ??
-            artistPracticeRepo.create('Mario Rossi');
+            artistPracticeRepo.findByArtistName(tenant.id, 'Mario Rossi')[0] ??
+            artistPracticeRepo.create(tenant.id, 'Mario Rossi');
           if (existing.status === 'CREATED') {
-            artistPracticeRepo.updateStatus(existing.id, 'VALIDATED');
+            artistPracticeRepo.updateStatus(tenant.id, existing.id, 'VALIDATED');
           }
         }
         if (scenario.id === 'artist-invalid-01') {
           // Invalid: try to complete without validating first.
           artistPracticeRepo.clear();
-          artistPracticeRepo.create('Mario Rossi'); // CREATED
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi'); // CREATED
         }
         if (scenario.id === 'artist-amb-01') {
           // Ambiguous: two candidates with same name.
           artistPracticeRepo.clear();
-          artistPracticeRepo.create('Mario Rossi');
-          artistPracticeRepo.create('Mario Rossi');
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
+          artistPracticeRepo.create(tenant.id, 'Mario Rossi');
         }
       }
 
@@ -533,7 +538,7 @@ export async function runHarness(args: {
       const http = await app.inject({
         method: 'POST',
         url: '/ai/execute',
-        headers: { 'x-tenant-id': tenant.id, 'x-user-id': user.id },
+        headers: authHeaders(tenant.id, user.id, 'ADMIN'),
         payload: { input },
       });
       row.httpResponse = { statusCode: http.statusCode, body: http.json() };

@@ -2,6 +2,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 
+import { errorLabel } from '../../../shared/errors.js';
+
 import type { MusicAdapter } from './music.adapter.js';
 
 let prisma: PrismaClient | null = null;
@@ -86,17 +88,19 @@ export const internalMusicAdapter: MusicAdapter = {
       select: {
         id: true,
         payload: true,
+        status: true,
         createdAt: true,
       },
     });
 
-    const rows: Array<{ name: string; createdAt: Date }> = [];
+    const rows: Array<{ name: string; status: string; createdAt: Date }> = [];
 
     for (const record of practices) {
       const name = payloadName(record.payload);
       if (!name) continue;
       rows.push({
         name,
+        status: record.status,
         createdAt: record.createdAt,
       });
     }
@@ -196,7 +200,7 @@ export const internalMusicAdapter: MusicAdapter = {
       return data;
     } catch (error) {
       console.error(`❌ CONTEXT ERROR — module=music latency=${Date.now() - start}ms`);
-      console.error('❌ MUSIC MODULE CONTEXT ERROR', error);
+      console.error('❌ MUSIC MODULE CONTEXT ERROR', errorLabel(error));
       return {
         recentPractices: [],
         totalPractices: 0,

@@ -35,7 +35,9 @@
     "test:db:migrate": "dotenv -e .env.test -- prisma migrate deploy",
     "test:db:reset": "docker compose -f docker-compose.test.yml down -v && npm run test:db:up && npm run test:db:migrate",
     "test:integration": "npm run test:db:up && npm run test:db:migrate && npm test",
-    "env:check": "tsx scripts/env.check.ts"
+    "env:check": "tsx scripts/env.check.ts",
+    "auth:token": "tsx scripts/auth.token.ts",
+    "tenant:provision": "tsx scripts/tenant.provision.ts"
   },
   "keywords": [],
   "author": "",
@@ -44,10 +46,8 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
-    "@types/node-telegram-bot-api": "^0.64.14",
     "dotenv": "^17.3.1",
     "fastify": "^5.8.2",
-    "node-telegram-bot-api": "^0.67.0",
     "pg": "^8.20.0",
     "pino": "^10.3.1",
     "zod": "^4.3.6"

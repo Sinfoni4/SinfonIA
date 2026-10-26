@@ -1,10 +1,8 @@
-import { uuidFromSeed } from '../../core/tenant/tenant.uuid.js';
+import { enforceIdPriority } from '../../ai/validation/pre-execution.validator.js';
 
-import { setPending } from './telegram.conversation.js';
 import { getLastPractice, setLastPractice } from './telegram.memory.js';
-import { checkPermission } from './telegram.permissions.js';
-import { getUserRole } from './telegram.roles.js';
 
+import type { TelegramIdentity } from './telegram.bot.js';
 import type { PracticeContext } from '../../ai/context/context.service.js';
 import type { ContextService } from '../../ai/context/context.service.js';
 import type { DecisionEngine } from '../../ai/decision/decision.engine.js';
@@ -44,14 +42,11 @@ export class TelegramAdapter {
     },
   ) {}
 
-  async handleMessage(input: string, userId: string): Promise<string> {
-    // Telegram MVP: single-tenant demo.
-    const tenantId = uuidFromSeed('demo-tenant');
-    // Keep `userId` as the Telegram-specific memory key, but derive a UUID for DB/executor validation.
-    const execUserId = uuidFromSeed(userId);
+  async handleMessage(input: string, identity: TelegramIdentity): Promise<string> {
+    const { tenantId, userId: execUserId, role } = identity;
     const ctx: InterpreterContext = { tenantId, userId: execUserId, practices: [] };
 
-    const lastId = getLastPractice(userId);
+    const lastId = getLastPractice(execUserId);
     if (lastId && /quella|precedente|prima/i.test(input)) {
       input = `${input} ${lastId}`;
     }
@@ -63,25 +58,15 @@ export class TelegramAdapter {
     ctx.practices = context.practices;
 
     const interpreted: InterpreterOutput = await this.deps.interpreter.interpret(input, ctx);
-    const normalized = this.deps.normalizer.normalize(interpreted);
+    const normalized = enforceIdPriority(this.deps.normalizer.normalize(interpreted));
 
-    const role = getUserRole(userId);
-    if (!checkPermission(role, normalized.action)) {
-      // Optional UX: more specific message for associate when they try to advance state.
-      if (role === 'ASSOCIATO' && normalized.action === 'transition_practice') {
-        setPending(userId, {
-          type: 'REQUEST_OPERATOR',
-          payload: {
-            action: normalized.action,
-            practiceId: normalized.filters.practiceId,
-          },
-        });
-        if (normalized.nextState === 'VALIDATED') {
-          throw new Error('PERMISSION_DENIED:VALIDATED');
-        }
-        if (normalized.nextState === 'COMPLETED') {
-          throw new Error('PERMISSION_DENIED:COMPLETED');
-        }
+    const canAdvance = role === 'ADMIN' || role === 'OPERATOR';
+    if (normalized.action === 'transition_practice' && !canAdvance) {
+      if (normalized.nextState === 'VALIDATED') {
+        throw new Error('PERMISSION_DENIED:VALIDATED');
+      }
+      if (normalized.nextState === 'COMPLETED') {
+        throw new Error('PERMISSION_DENIED:COMPLETED');
       }
       throw new Error('PERMISSION_DENIED');
     }
@@ -93,7 +78,7 @@ export class TelegramAdapter {
       this.deps.validateBeforeDecision(normalized, context.practices);
       command = this.deps.decisionEngine.resolveCommand(normalized, {
         tenantId,
-        userId,
+        userId: execUserId,
         practices: context.practices,
       });
       this.deps.validateResolvedCommand(command, context.practices);
@@ -118,7 +103,7 @@ export class TelegramAdapter {
         ? (maybeId as { id: string }).id
         : null;
     if (id) {
-      setLastPractice(userId, id);
+      setLastPractice(execUserId, id);
     }
 
     return this.deps.formatResponse({ input, command, result });

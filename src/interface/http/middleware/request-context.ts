@@ -1,25 +1,27 @@
 import { randomUUID } from 'node:crypto';
 
+import type { AuthContext, AuthRole } from '../auth/auth.types.js';
 import type { FastifyRequest } from 'fastify';
 
 export type RequestContext = {
   requestId: string;
   tenantId: string | null;
   userId: string | null;
+  role: AuthRole | null;
 };
 
 const CONTEXT_KEY = 'requestContext' as const;
 
 export function createRequestContext(req: FastifyRequest): RequestContext {
-  const requestId = (req.headers['x-request-id'] as string) ?? randomUUID();
-  const tenantIdHeader = req.headers['x-tenant-id'];
-  const tenantId =
-    typeof tenantIdHeader === 'string' && tenantIdHeader.trim() ? tenantIdHeader.trim() : null;
-  const userIdHeader = req.headers['x-user-id'];
-  const userId =
-    typeof userIdHeader === 'string' && userIdHeader.trim() ? userIdHeader.trim() : null;
+  const rawRequestId = req.headers['x-request-id'];
+  const requestId =
+    typeof rawRequestId === 'string' && rawRequestId.trim().length > 0
+      ? rawRequestId.trim().slice(0, 128)
+      : randomUUID();
 
-  return { requestId, tenantId, userId };
+  // Tenant and user identity are NEVER read from client headers.
+  // They are populated only by the authenticated bearer-token hook.
+  return { requestId, tenantId: null, userId: null, role: null };
 }
 
 export function attachRequestContext(req: FastifyRequest, ctx: RequestContext): void {
@@ -30,6 +32,16 @@ export function getRequestContext(req: FastifyRequest): RequestContext | null {
   return (req as FastifyRequest & { [CONTEXT_KEY]?: RequestContext })[CONTEXT_KEY] ?? null;
 }
 
+export function attachAuthenticatedContext(req: FastifyRequest, auth: AuthContext): void {
+  const ctx = getRequestContext(req);
+  if (!ctx) {
+    throw new Error('Request context must be created before authentication');
+  }
+  ctx.tenantId = auth.tenantId;
+  ctx.userId = auth.userId;
+  ctx.role = auth.role;
+}
+
 export function requestContextHook(
   req: FastifyRequest,
   _reply: unknown,
@@ -37,12 +49,6 @@ export function requestContextHook(
 ): void {
   const ctx = createRequestContext(req);
   attachRequestContext(req, ctx);
-  // Correlation: bind requestId, tenantId, userId so they appear in all request-scoped logs.
-  const bindings = {
-    requestId: ctx.requestId,
-    tenantId: ctx.tenantId ?? undefined,
-    userId: ctx.userId ?? undefined,
-  };
-  (req as { log: FastifyRequest['log'] }).log = req.log.child(bindings);
+  req.log = req.log.child({ requestId: ctx.requestId });
   done();
 }

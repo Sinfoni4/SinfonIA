@@ -11,7 +11,11 @@ import { canTransition } from './state-machine.js';
 import type { TransactionHost } from '../../data/transactions/transaction.js';
 import type { PracticeDTO } from '../../data/types/domain.js';
 import type { PrismaTx } from '../../data/types/prisma.js';
-import type { PracticeState, TransitionInput } from '../types/workflow.types.js';
+import type {
+  CreatePracticeInput,
+  PracticeState,
+  TransitionInput,
+} from '../types/workflow.types.js';
 
 export function validateTransition(currentState: PracticeState, nextState: PracticeState): void {
   if (!canTransition(currentState, nextState)) {
@@ -22,6 +26,38 @@ export function validateTransition(currentState: PracticeState, nextState: Pract
 // Deterministic workflow service: state machine + transactional persistence + audit.
 export class PracticeWorkflow {
   constructor(private readonly txHost: TransactionHost) {}
+
+  async createPractice(input: CreatePracticeInput): Promise<PracticeDTO> {
+    requireDatabase();
+    const artistName = input.artistName.trim();
+    if (artistName.length === 0) {
+      throw new NotFoundError('artistName is required');
+    }
+
+    return withTransaction(this.txHost, async (tx: PrismaTx) => {
+      const repo = new PracticeRepository(tx);
+      const audit = new AuditService(tx);
+
+      const created = await repo.createPractice(input.tenantId, {
+        userId: input.userId,
+        payload: {
+          type: 'artist_practice',
+          name: artistName,
+        },
+      });
+
+      await audit.logEvent({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        eventType: 'PRACTICE_CREATED',
+        payload: {
+          practiceId: created.id,
+        },
+      });
+
+      return created;
+    });
+  }
 
   async transitionPractice(input: TransitionInput): Promise<PracticeDTO> {
     requireDatabase();

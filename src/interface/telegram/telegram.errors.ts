@@ -24,7 +24,7 @@ export function mapTelegramErrorToMessage(err: unknown): string {
   }
 
   if (msg.includes('PERMISSION_DENIED')) {
-    return 'ℹ️ Questa operazione viene gestita da un operatore.\nVuoi che lo segnali?';
+    return 'ℹ️ Questa operazione richiede un operatore o un amministratore della tua cooperativa.';
   }
 
   if (msg.includes('VALIDATION')) {

@@ -13,15 +13,20 @@ datasource db {
 // This schema is designed to avoid destructive refactors later.
 
 model Tenant {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @map("updated_at")
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String
+  module             String   @default("music")
+  integrationType    String   @default("none") @map("integration_type")
+  schedulerEnabled   Boolean  @default(false) @map("scheduler_enabled")
+  schedulerFrequency String?  @map("scheduler_frequency")
+  schedulerTasks     Json?    @map("scheduler_tasks")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @map("updated_at")
 
-  users      User[]
-  practices  Practice[]
-  auditLogs  AuditLog[]
-  invites    InviteCode[]
+  users       User[]
+  practices   Practice[]
+  auditLogs   AuditLog[]
+  invites     InviteCode[]
   userTenants UserTenant[]
 
   @@map("tenant")
@@ -29,7 +34,7 @@ model Tenant {
 
 model InviteCode {
   code      String   @id
-  tenantId  String   @db.Uuid @map("tenant_id")
+  tenantId  String   @map("tenant_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -41,14 +46,14 @@ model InviteCode {
 model UserTenant {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @map("user_id")
-  tenantId  String   @db.Uuid @map("tenant_id")
+  tenantId  String   @map("tenant_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, tenantId])
   @@index([userId])
   @@index([tenantId])
-  @@unique([userId, tenantId])
   @@map("user_tenant")
 }
 
@@ -59,17 +64,19 @@ enum UserRole {
 }
 
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @db.Uuid @map("tenant_id")
-  email     String
-  role      UserRole @default(MEMBER)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  email      String
+  role       UserRole @default(MEMBER)
+  telegramId String?  @map("telegram_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   practices Practice[]
   auditLogs AuditLog[]
 
+  @@unique([tenantId, telegramId])
   @@index([tenantId])
   @@index([tenantId, id])
   @@map("user")
@@ -85,8 +92,8 @@ enum PracticeStatus {
 
 model Practice {
   id        String         @id @default(uuid()) @db.Uuid
-  tenantId  String         @db.Uuid @map("tenant_id")
-  userId    String         @db.Uuid @map("user_id")
+  tenantId  String         @map("tenant_id") @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
   status    PracticeStatus @default(CREATED)
   version   Int            @default(1)
   payload   Json
@@ -105,8 +112,8 @@ model Practice {
 
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @db.Uuid @map("tenant_id")
-  userId    String?  @db.Uuid @map("user_id")
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
   eventType String   @map("event_type")
   payload   Json
   createdAt DateTime @default(now()) @map("created_at")

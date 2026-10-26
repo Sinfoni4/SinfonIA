@@ -6,7 +6,7 @@ Enterprise middleware mission-critical tra utenti, cooperative e sistemi pubblic
 
 Struttura logica a livelli (monorepo modulare, non microservizi distribuiti):
 
-- `src/interface`: input/output (REST, placeholder chatbot)
+- `src/interface`: input/output (REST, Telegram)
 - `src/ai`: orchestrazione AI (parsing NL → intent strutturato) **senza logica di business**
 - `src/core`: logica deterministica (workflow, validazioni, regole)
 - `src/automation`: esecuzione task esterni (RPA/integration runner)
@@ -40,10 +40,56 @@ npm ci
 
 ```bash
 npm run db:generate
-npm run db:migrate
+npm run db:migrate:deploy
 # opzionale: bootstrap PostgreSQL locale in sviluppo
 npm run db:setup
 ```
+
+## Autenticazione e tenant isolation
+
+Tutte le rotte applicative richiedono un bearer token HS256 firmato con
+`AUTH_SECRET` (minimo 32 caratteri; puoi generarlo con
+`openssl rand -base64 32`). I claim obbligatori sono `sub` (userId),
+`tid` (tenantId), `role` (`ADMIN|OPERATOR|MEMBER`), `iat`, `exp`, `iss`, `aud`.
+Il tenant nel token è autoritativo: gli header `x-tenant-id` e `x-user-id` non
+sono più letti né considerati.
+
+Genera un token locale per un utente già presente nel database:
+
+```bash
+npm run auth:token -- --tenant <tenant-uuid> --user <user-uuid> --role ADMIN
+```
+
+Esempio di chiamata:
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:3000/auth/whoami
+```
+
+- `GET /healthz` e `GET /readyz` sono pubblici.
+- `GET /auth/whoami` restituisce subject, tenant e ruolo del token.
+- `POST /practices/:id/transition` richiede `ADMIN` o `OPERATOR`.
+- `POST /ai/execute` richiede un qualsiasi ruolo autenticato.
+
+## Provisioning di un tenant
+
+Il provisioning crea tenant, codice invito e utente amministratore in una sola
+operazione. Non vengono creati tenant demo o fallback impliciti.
+
+```bash
+npm run tenant:provision -- --name "Cooperativa Demo" --admin-email admin@example.com --admin-telegram-id 123456789
+```
+
+Il bot Telegram collega un account con `/start <codice-invito>`. Il ruolo
+Telegram viene letto dal database: non esiste più un comando `/role` per
+auto-assegnarsi i permessi. Per abilitare subito un amministratore su Telegram,
+passa il suo id numerico con `--admin-telegram-id` durante il provisioning.
+
+La configurazione del tenant (modulo, integrazione, scheduler) è persistita in
+`tenant`; lo scheduler usa solo tenant reali e richiede un utente `ADMIN` per
+l'esecuzione. I trigger PostgreSQL verificano che `practice.user_id` e
+`audit_log.user_id` appartengano allo stesso tenant.
 
 ## LLM (OpenAI)
 
@@ -84,12 +130,21 @@ condivisa da workflow, validatore e normalizzatore AI.
 - `npm run secret:scan`: scansione di token/chiavi nei file del repository
 - `npm run build` / `npm start`: build + avvio da `dist/`
 - `npm run audit:prod`: audit delle dipendenze di produzione
+- `npm run auth:token`: genera un bearer token locale firmato
+- `npm run tenant:provision`: crea tenant, invito e admin
 
 I test Vitest caricano `.env.test` in modo deterministico. In CI il database è
 fornito dal servizio PostgreSQL e `DATABASE_URL` ha precedenza sul file locale.
 
+## Logging e PII
+
+I log applicativi non includono input utente, nomi artisti, email o token. Il
+logger Pino applica redaction difensiva a header di autorizzazione, token,
+chiavi, email e campi testuali sensibili. Non usare `console.log` con payload
+grezzi nelle nuove integrazioni.
+
 ## Segreti
 
-`.env` e `.env.*` sono ignorati da Git; solo `.env.example` è versionato con
-placeholder. Non inserire token o chiavi nel codice. Se un token è stato
+`.env` e `.env.*` sono ignorati da Git; solo `.env.example` e
+`.env.test.example` sono versionati con placeholder. Non inserire token o chiavi nel codice. Se un token è stato
 esposto, revocalo e generane uno nuovo prima di riavviare il bot.

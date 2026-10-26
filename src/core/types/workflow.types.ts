@@ -6,3 +6,9 @@ export type TransitionInput = {
   nextState: PracticeState;
   userId: string | null;
 };
+
+export type CreatePracticeInput = {
+  tenantId: string;
+  userId: string;
+  artistName: string;
+};

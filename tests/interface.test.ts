@@ -14,6 +14,8 @@ import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
+import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 
 const stubLLM: LLMClient = { complete: () => Promise.reject(new Error('stub')) };
@@ -34,6 +36,7 @@ describe('interface http', () => {
       PORT: '3001',
       DATABASE_URL: DATABASE_URL!,
       SERVICE_NAME: 'sinfonia-test',
+      ...TEST_AUTH_ENV,
     });
 
     const prisma = createPrismaClient(config.DATABASE_URL);
@@ -73,10 +76,7 @@ describe('interface http', () => {
       const res = await app.inject({
         method: 'POST',
         url: `/practices/${practice.id}/transition`,
-        headers: {
-          'x-tenant-id': tenant.id,
-          'x-user-id': user.id,
-        },
+        headers: authHeaders(tenant.id, user.id, 'OPERATOR'),
         payload: { nextState: 'VALIDATED' },
       });
 
@@ -97,6 +97,7 @@ describe('interface http', () => {
       PORT: '3001',
       DATABASE_URL: DATABASE_URL!,
       SERVICE_NAME: 'sinfonia-test',
+      ...TEST_AUTH_ENV,
     });
 
     const prisma = createPrismaClient(config.DATABASE_URL);
@@ -136,7 +137,7 @@ describe('interface http', () => {
       const res = await app.inject({
         method: 'POST',
         url: `/practices/${practice.id}/transition`,
-        headers: { 'x-tenant-id': tenant.id, 'x-user-id': user.id },
+        headers: authHeaders(tenant.id, user.id, 'OPERATOR'),
         payload: { nextState: 'COMPLETED' }, // illegal from CREATED
       });
 
@@ -157,6 +158,7 @@ describe('interface http', () => {
       PORT: '3001',
       DATABASE_URL: DATABASE_URL!,
       SERVICE_NAME: 'sinfonia-test',
+      ...TEST_AUTH_ENV,
     });
 
     const prisma = createPrismaClient(config.DATABASE_URL);
@@ -196,13 +198,13 @@ describe('interface http', () => {
       const req1 = app.inject({
         method: 'POST',
         url: `/practices/${practice.id}/transition`,
-        headers: { 'x-tenant-id': tenant.id, 'x-user-id': user.id },
+        headers: authHeaders(tenant.id, user.id, 'OPERATOR'),
         payload: { nextState: 'VALIDATED' },
       });
       const req2 = app.inject({
         method: 'POST',
         url: `/practices/${practice.id}/transition`,
-        headers: { 'x-tenant-id': tenant.id, 'x-user-id': user.id },
+        headers: authHeaders(tenant.id, user.id, 'OPERATOR'),
         payload: { nextState: 'VALIDATED' },
       });
 

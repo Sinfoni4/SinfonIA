@@ -12,6 +12,8 @@ import { buildServer } from '../src/interface/http/server.js';
 import { runtimeState } from '../src/runtime/runtime.state.js';
 import { createLogger } from '../src/shared/logger.js';
 
+import { TEST_AUTH_ENV } from './helpers/auth.js';
+
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 
 const stubLLM: LLMClient = { complete: () => Promise.reject(new Error('stub')) };
@@ -23,10 +25,22 @@ describe('system bootstrap', () => {
       PORT: '3001',
       DATABASE_URL: 'postgresql://example.invalid/db',
       SERVICE_NAME: 'sinfonia-test',
+      ...TEST_AUTH_ENV,
     });
 
     expect(config.NODE_ENV).toBe('test');
     expect(config.SERVICE_NAME).toBe('sinfonia-test');
+  });
+
+  it('fails fast when AUTH_SECRET is missing or too short', () => {
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'test',
+        PORT: '3001',
+        DATABASE_URL: 'postgresql://example.invalid/db',
+        SERVICE_NAME: 'sinfonia-test',
+      }),
+    ).toThrow(/AUTH_SECRET/);
   });
 
   it('can start and stop the HTTP server', async () => {
@@ -35,6 +49,7 @@ describe('system bootstrap', () => {
       PORT: '3001',
       DATABASE_URL: 'postgresql://example.invalid/db',
       SERVICE_NAME: 'sinfonia-test',
+      ...TEST_AUTH_ENV,
     });
 
     const logger = createLogger(config);

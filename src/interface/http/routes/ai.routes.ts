@@ -3,9 +3,10 @@ import {
   validateBeforeDecision,
   validateResolvedCommand,
 } from '../../../ai/validation/pre-execution.validator.js';
+import { AUTH_ROLES } from '../auth/auth.types.js';
+import { requireRole } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail } from '../errors/http.errors.js';
-import { getRequestContext } from '../middleware/request-context.js';
 import { validateAiInput } from '../validation/ai-input.validation.js';
 
 import type { ContextService } from '../../../ai/context/context.service.js';
@@ -26,13 +27,7 @@ export type AiRoutesDeps = {
 export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) => {
   app.post<{ Body: { input?: unknown } }>('/ai/execute', async (req, reply) => {
     try {
-      const ctx = getRequestContext(req);
-      if (!ctx) {
-        return reply.status(500).send(fail('INTERNAL_ERROR', 'Request context not available'));
-      }
-      if (!ctx.tenantId) {
-        return reply.status(400).send(fail('MISSING_TENANT', 'Missing x-tenant-id header'));
-      }
+      const auth = requireRole(req, AUTH_ROLES.AI_EXECUTE);
 
       const body = req.body ?? {};
       const inputRaw =
@@ -43,53 +38,53 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
       }
 
       const practiceContext = await deps.contextService.getPracticeContext(
-        ctx.tenantId,
-        ctx.userId ?? null,
+        auth.tenantId,
+        auth.userId,
       );
-      console.log('[ai-flow]', {
-        step: 'context',
-        input: validation.value,
-        output: practiceContext,
-      });
+      req.log.debug({ practiceCount: practiceContext.practices.length }, 'AI context loaded');
       const interpreted = await deps.interpreterService.interpret(validation.value, {
-        tenantId: ctx.tenantId,
-        userId: ctx.userId ?? null,
+        tenantId: auth.tenantId,
+        userId: auth.userId ?? null,
         practices: practiceContext.practices,
       });
-      console.log('[ai-flow]', { step: 'interpret', input: validation.value, output: interpreted });
       const normalized = enforceIdPriority(deps.normalizerService.normalize(interpreted));
-      console.log('[ai-flow]', { step: 'normalize', input: interpreted, output: normalized });
+      req.log.debug(
+        { action: normalized.action, nextState: normalized.nextState },
+        'AI command resolved',
+      );
 
       if (normalized.action === 'create_practice') {
-        const executorCtx = { tenantId: ctx.tenantId, userId: ctx.userId ?? null };
+        const executorCtx = { tenantId: auth.tenantId, userId: auth.userId };
         const createCmd = {
           action: 'create_practice',
           data: { artistName: normalized.artistName },
         };
-        console.log('[ai-flow]', { step: 'decision', input: normalized, output: createCmd });
         const created = await deps.executorService.execute(createCmd, executorCtx);
-        console.log('[ai-flow]', { step: 'execute', input: createCmd, output: created });
         if (created.success) {
           return reply.status(200).send({ success: true, result: created.result });
         }
         return reply.status(200).send({ success: false, error: created.error });
       }
 
+      // AI execution is open to every authenticated role, but state-changing
+      // practice transitions remain restricted to ADMIN/OPERATOR.
+      if (normalized.action === 'transition_practice') {
+        requireRole(req, AUTH_ROLES.PRACTICE_TRANSITION);
+      }
+
       validateBeforeDecision(normalized, practiceContext.practices);
       const resolved = deps.decisionEngine.resolveCommand(normalized, {
-        tenantId: ctx.tenantId,
-        userId: ctx.userId ?? null,
+        tenantId: auth.tenantId,
+        userId: auth.userId,
         practices: practiceContext.practices,
       });
-      console.log('[ai-flow]', { step: 'decision', input: normalized, output: resolved });
 
       validateResolvedCommand(resolved, practiceContext.practices);
       const executorCtx = {
-        tenantId: ctx.tenantId,
-        userId: ctx.userId ?? null,
+        tenantId: auth.tenantId,
+        userId: auth.userId,
       };
       const result = await deps.executorService.execute(resolved, executorCtx);
-      console.log('[ai-flow]', { step: 'execute', input: resolved, output: result });
 
       if (result.success) {
         return reply.status(200).send({ success: true, result: result.result });

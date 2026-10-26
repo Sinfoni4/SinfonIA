@@ -8,6 +8,7 @@ export interface DomainCommand {
 export interface DomainExecutionContext {
   tenantId: string;
   userId: string;
+  integrationType?: 'none' | 'external';
 }
 
 /** Module-owned snapshot; core never interprets shape beyond passing it through. */

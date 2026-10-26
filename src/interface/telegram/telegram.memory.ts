@@ -1,6 +1,3 @@
-import { resetConversationMemory } from './telegram.conversation.js';
-import { resetRoleMemory } from './telegram.roles.js';
-
 type Memory = {
   lastPracticeId?: string;
 };
@@ -35,6 +32,4 @@ export function getTelegramMemoryState() {
 export function resetTelegramMemory() {
   memoryStore.clear();
   seenUsers.clear();
-  resetConversationMemory();
-  resetRoleMemory();
 }

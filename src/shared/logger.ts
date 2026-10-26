@@ -12,5 +12,22 @@ export function createLogger(config: Pick<AppConfig, 'NODE_ENV' | 'SERVICE_NAME'
       environment: config.NODE_ENV,
     },
     timestamp: pino.stdTimeFunctions.isoTime,
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'headers.authorization',
+        '*.authorization',
+        '*.token',
+        '*.apiKey',
+        '*.secret',
+        '*.password',
+        '*.email',
+        '*.telegramId',
+        '*.artistName',
+        '*.input',
+        '*.text',
+      ],
+      censor: '[REDACTED]',
+    },
   });
 }

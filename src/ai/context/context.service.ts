@@ -83,7 +83,7 @@ export class ContextService {
       },
     });
 
-    const artistPractices = this.artistPracticeRepo?.findAll() ?? [];
+    const artistPractices = this.artistPracticeRepo?.findAll(tenantId) ?? [];
 
     return {
       practices: [

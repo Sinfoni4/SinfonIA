@@ -15,6 +15,7 @@ export default defineConfig({
     url:
       process.env.DATABASE_URL ??
       'postgresql://sinfonia_user:sinfonia_pass@localhost:5432/sinfonia_db?schema=public',
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });
 

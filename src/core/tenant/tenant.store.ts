@@ -1,33 +1,34 @@
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
+import { z } from 'zod';
 
-import { getTenantIdByUser } from './tenant.invite.store.js';
-import { uuidFromSeed } from './tenant.uuid.js';
+import { requireTenantId } from '../../data/guard/tenant.js';
 
-type IntegrationType = 'none' | 'external';
+import { TenantNotFoundError, TenantNotLinkedError } from './tenant.errors.js';
+
+import type { TenantDTO } from '../../data/types/domain.js';
+import type { PrismaLike } from '../../data/types/prisma.js';
+
+export type IntegrationType = 'none' | 'external';
+export type SchedulerFrequency = 'daily' | 'weekly' | 'monthly';
 
 export type SchedulerTask = {
   type: 'EXPORT_PRACTICES';
   payload?: Record<string, unknown>;
 };
 
-type Tenant = {
+export type Tenant = {
   id: string;
+  name: string;
   module: string;
-  integration?: {
+  integration: {
     type: IntegrationType;
   };
-  scheduler?: {
+  scheduler: {
     enabled: boolean;
-    frequency?: 'daily' | 'weekly' | 'monthly';
+    frequency: SchedulerFrequency;
   };
   tasks?: SchedulerTask[];
-  // Internal marker to surface silent fallback cases.
-  _isFallback?: boolean;
 };
 
-/** Default when `tenant.tasks` is absent (safe MVP). */
 export const defaultSchedulerTasks: SchedulerTask[] = [
   {
     type: 'EXPORT_PRACTICES',
@@ -38,122 +39,81 @@ export const defaultSchedulerTasks: SchedulerTask[] = [
   },
 ];
 
-const tenants: Record<string, Tenant> = {
-  default: {
-    // Real UUID aligned with TelegramAdapter demo tenant (`uuidFromSeed('demo-tenant')`).
-    id: uuidFromSeed('demo-tenant'),
-    module: 'music',
-    integration: { type: 'none' },
-    scheduler: { enabled: true, frequency: 'monthly' },
-  },
-  tenant1: {
-    id: uuidFromSeed('tenant-1'),
-    module: 'music',
-    integration: { type: 'none' },
-    scheduler: { enabled: true, frequency: 'monthly' },
-    tasks: [
-      {
-        type: 'EXPORT_PRACTICES',
-        payload: {
-          filter: { type: 'month' },
-          send: true,
-        },
-      },
-    ],
-  },
-  tenant2: {
-    id: uuidFromSeed('tenant-2'),
-    module: 'music',
-    integration: { type: 'none' },
-    scheduler: { enabled: false },
-  },
-  tenant3: {
-    id: uuidFromSeed('tenant-3'),
-    module: 'music',
-    integration: { type: 'none' },
-    scheduler: { enabled: true, frequency: 'weekly' },
-    tasks: [
-      {
-        type: 'EXPORT_PRACTICES',
-        payload: {
-          filter: { type: 'month' },
-          send: true,
-        },
-      },
-      {
-        type: 'EXPORT_PRACTICES',
-        payload: {
-          filter: { type: 'year', value: new Date().getFullYear() },
-          send: true,
-        },
-      },
-    ],
-  },
-  tenant4: {
-    id: uuidFromSeed('tenant-4'),
-    module: 'music',
-    integration: { type: 'none' },
-    scheduler: { enabled: true, frequency: 'daily' },
-  },
-};
+const SchedulerTaskSchema = z.object({
+  type: z.literal('EXPORT_PRACTICES'),
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
 
-const defaultTenant = tenants.default;
+const SchedulerTasksSchema = z.array(SchedulerTaskSchema);
 
-let prisma: PrismaClient | null = null;
-
-function getPrisma(): PrismaClient {
-  if (!prisma) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-  }
-  return prisma;
+function parseIntegrationType(value: string): IntegrationType {
+  return value === 'external' ? 'external' : 'none';
 }
 
-/** Read-only snapshot of configured tenants (in-memory MVP). */
-export function getAllTenants(): readonly Tenant[] {
-  return Object.values(tenants);
+function parseFrequency(value: string | null): SchedulerFrequency {
+  return value === 'daily' || value === 'weekly' || value === 'monthly' ? value : 'monthly';
 }
 
-export function getTenantByUser(userId: string): Tenant {
-  const tenantId = getTenantIdByUser(userId);
-  if (tenantId) {
-    return getTenantById(tenantId);
-  }
-  return defaultTenant;
-}
-
-export async function getTenantByUserAsync(userId: string): Promise<Tenant> {
-  try {
-    const record = await getPrisma().userTenant.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (record) {
-      console.log(`🏢 TENANT RESOLUTION — user=${userId} source=db`);
-      return getTenantById(record.tenantId);
+export function toTenantConfig(dto: TenantDTO): Tenant {
+  let tasks: SchedulerTask[] | undefined;
+  if (dto.schedulerTasks !== null && dto.schedulerTasks !== undefined) {
+    const parsed = SchedulerTasksSchema.safeParse(dto.schedulerTasks);
+    if (parsed.success) {
+      tasks = parsed.data;
+    } else {
+      console.warn(`⚠️ Invalid scheduler tasks for tenant=${dto.id}; using defaults`);
     }
-
-    console.warn(`⚠️ TENANT DEFAULT USED — user=${userId}`);
-    return defaultTenant;
-  } catch (err) {
-    console.error('❌ TENANT RESOLUTION ERROR', err);
-    console.warn(`⚠️ TENANT DEFAULT USED — user=${userId}`);
-    return defaultTenant;
   }
-}
-
-export function getTenantById(tenantId: string): Tenant {
-  const tenant = Object.values(tenants).find((t) => t.id === tenantId);
-
-  if (tenant) {
-    return tenant;
-  }
-
-  console.warn(`⚠️ TENANT NOT FOUND — id=${tenantId} → using default`);
 
   return {
-    ...defaultTenant,
-    _isFallback: true,
+    id: dto.id,
+    name: dto.name,
+    module: dto.module,
+    integration: { type: parseIntegrationType(dto.integrationType) },
+    scheduler: {
+      enabled: dto.schedulerEnabled,
+      frequency: parseFrequency(dto.schedulerFrequency),
+    },
+    ...(tasks ? { tasks } : {}),
   };
+}
+
+export async function getTenantById(prisma: PrismaLike, tenantId: string): Promise<Tenant> {
+  const row = await prisma.tenant.findUnique({ where: { id: requireTenantId(tenantId) } });
+  if (!row) {
+    throw new TenantNotFoundError();
+  }
+  return toTenantConfig(row);
+}
+
+export async function getTenantByUserAsync(prisma: PrismaLike, userId: string): Promise<Tenant> {
+  const user = await prisma.user.findFirst({
+    where: { id: userId },
+    select: { tenantId: true },
+  });
+  if (!user) {
+    throw new TenantNotLinkedError();
+  }
+  return getTenantById(prisma, user.tenantId);
+}
+
+export async function getAllTenants(prisma: PrismaLike): Promise<Tenant[]> {
+  const rows = await prisma.tenant.findMany({ orderBy: { createdAt: 'asc' } });
+  return rows.map(toTenantConfig);
+}
+
+export async function getTenantByTelegramUserAsync(
+  prisma: PrismaLike,
+  telegramId: string,
+): Promise<{ tenant: Tenant; userId: string; role: 'ADMIN' | 'OPERATOR' | 'MEMBER' }> {
+  const user = await prisma.user.findFirst({
+    where: { telegramId: telegramId.trim() },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, tenantId: true, role: true },
+  });
+  if (!user) {
+    throw new TenantNotLinkedError();
+  }
+  const tenant = await getTenantById(prisma, user.tenantId);
+  return { tenant, userId: user.id, role: user.role };
 }

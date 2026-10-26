@@ -15,7 +15,6 @@ import { loadConfig } from './config/config.js';
 import { PracticeWorkflow } from './core/workflow/practice.workflow.js';
 import { createPrismaClient } from './data/db/prisma.js';
 import { printRuntimeTestGuide } from './dev/dev.tests.js';
-import { InMemoryPracticeRepository } from './domain/practice.repository.js';
 import { buildServer } from './interface/http/server.js';
 import { TelegramAdapter } from './interface/telegram/telegram.adapter.js';
 import { TelegramBotService } from './interface/telegram/telegram.bot.js';
@@ -28,6 +27,7 @@ import { installLifecycleHooks } from './runtime/runtime.lifecycle.js';
 import { listenWithRetry } from './runtime/runtime.port.js';
 import { acquireProcessLock } from './runtime/runtime.processLock.js';
 import { runtimeState } from './runtime/runtime.state.js';
+import { errorLabel } from './shared/errors.js';
 import { createLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
 
@@ -149,9 +149,8 @@ TEST 5 — /devstate health metrics
     log: config.NODE_ENV === 'development' ? logger : undefined,
   });
   const practiceWorkflow = new PracticeWorkflow(prisma);
-  const artistPracticeRepo = new InMemoryPracticeRepository();
-  const executorService = new ExecutorService({ practiceWorkflow, artistPracticeRepo });
-  const contextService = new ContextService(prisma, artistPracticeRepo);
+  const executorService = new ExecutorService({ practiceWorkflow });
+  const contextService = new ContextService(prisma);
   const decisionEngine = new DecisionEngine();
   const normalizerService = new NormalizerService();
 
@@ -180,7 +179,8 @@ TEST 5 — /devstate health metrics
     });
 
     const bot = new TelegramBotService({
-      handleMessage: (input, userId) => adapter.handleMessage(input, userId),
+      prisma,
+      handleMessage: (input, identity) => adapter.handleMessage(input, identity),
       log: logger,
     });
     bot.start(tgToken);
@@ -198,7 +198,7 @@ TEST 5 — /devstate health metrics
     console.log('BOOTSTEP 5 — HTTP bind success');
     logger.info('HTTP server listening');
   })().catch((err) => {
-    logger.error({ err }, 'HTTP bind failed (async)');
+    logger.error({ error: errorLabel(err) }, 'HTTP bind failed (async)');
   });
 
   // Self-healing: periodically re-check DB and recover runtime mode.
@@ -210,6 +210,6 @@ TEST 5 — /devstate health metrics
 
 main().catch((err: unknown) => {
   // Fail fast. In enterprise environments, a partial boot is worse than a crash.
-  console.error(err);
+  console.error(errorLabel(err));
   process.exitCode = 1;
 });

@@ -1,79 +1,71 @@
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
+import { randomBytes } from 'node:crypto';
 
-import { registerInviteCode } from './tenant.invite.store.js';
-import { uuidFromSeed } from './tenant.uuid.js';
+import { TenantRepository } from '../../data/repositories/tenant.repository.js';
+import { UserRepository } from '../../data/repositories/user.repository.js';
+
+import { bindUserToTenant, registerInviteCode } from './tenant.invite.store.js';
+
+import type { SchedulerFrequency, SchedulerTask } from './tenant.store.js';
+import type { PrismaClient } from '@prisma/client';
 
 export interface CreateTenantInput {
   name: string;
-  module: string;
+  module?: string;
   integration?: {
     type: 'none' | 'external';
   };
+  scheduler?: {
+    enabled: boolean;
+    frequency?: SchedulerFrequency;
+    tasks?: SchedulerTask[];
+  };
+  adminEmail?: string;
+  adminTelegramId?: string;
 }
 
 export interface TenantProvisionResult {
   tenantId: string;
   inviteCode: string;
-}
-
-let prisma: PrismaClient | null = null;
-
-function getPrisma(): PrismaClient {
-  if (!prisma) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-  }
-  return prisma;
-}
-
-function generateTenantId(name: string): string {
-  return uuidFromSeed(`tenant:${name}:${Date.now()}`);
+  adminUserId: string;
 }
 
 function generateInviteCode(name: string): string {
-  return (
-    name.toLowerCase().replace(/\s+/g, '-').slice(0, 12) + '-' + Math.floor(Math.random() * 1000)
-  );
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 12);
+  return `${slug || 'tenant'}-${randomBytes(8).toString('hex')}`;
 }
 
-export function provisionTenant(input: CreateTenantInput): TenantProvisionResult {
-  const tenantId = generateTenantId(input.name);
-  const inviteCode = generateInviteCode(input.name);
-  registerInviteCode(inviteCode, tenantId);
+export async function provisionTenant(
+  prisma: PrismaClient,
+  input: CreateTenantInput,
+): Promise<TenantProvisionResult> {
+  return prisma.$transaction(async (tx) => {
+    const tenantRepo = new TenantRepository(tx);
+    const userRepo = new UserRepository(tx);
 
-  void getPrisma()
-    .tenant.upsert({
-      where: { id: tenantId },
-      update: {
-        name: input.name,
-      },
-      create: {
-        id: tenantId,
-        name: input.name,
-      },
-    })
-    .then(() =>
-      getPrisma().inviteCode.upsert({
-        where: { code: inviteCode },
-        update: { tenantId },
-        create: {
-          code: inviteCode,
-          tenantId,
-        },
-      }),
-    )
-    .catch((err) => {
-      console.error('❌ TENANT PROVISIONING DB ERROR', err);
+    const tenant = await tenantRepo.createTenant({
+      name: input.name,
+      module: input.module ?? 'music',
+      integrationType: input.integration?.type ?? 'none',
+      schedulerEnabled: input.scheduler?.enabled ?? false,
+      schedulerFrequency: input.scheduler?.frequency ?? null,
+      schedulerTasks: input.scheduler?.tasks ?? null,
     });
+    const tenantId = tenant.id;
 
-  console.log(`🏢 TENANT PROVISIONED — name=${input.name} id=${tenantId}`);
+    const inviteCode = generateInviteCode(input.name);
+    await registerInviteCode(tx, inviteCode, tenantId);
 
-  console.log(`🔑 INVITE CODE GENERATED — ${inviteCode}`);
+    const admin = await userRepo.createUser(tenantId, {
+      email: input.adminEmail ?? `admin-${tenantId}@local.invalid`,
+      role: 'ADMIN',
+      telegramId: input.adminTelegramId ?? null,
+    });
+    await bindUserToTenant(tx, admin.id, tenantId);
 
-  return {
-    tenantId,
-    inviteCode,
-  };
+    return { tenantId, inviteCode, adminUserId: admin.id };
+  });
 }

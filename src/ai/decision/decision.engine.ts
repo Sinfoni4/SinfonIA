@@ -38,7 +38,6 @@ export class DecisionEngine {
       },
     };
 
-    console.log('[ai-flow]', { step: 'decision', input, output });
     return output;
   }
 }

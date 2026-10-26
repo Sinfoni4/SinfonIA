@@ -1,3 +1,5 @@
+import { errorLabel } from '../shared/errors.js';
+
 export function formatDomainContext(moduleName: string, context?: Record<string, unknown>): string {
   if (!context) {
     return 'Contesto: non disponibile';
@@ -12,7 +14,7 @@ export function formatDomainContext(moduleName: string, context?: Record<string,
         return formatGenericContext(context);
     }
   } catch (err) {
-    console.error('❌ CONTEXT FORMATTER ERROR', err);
+    console.error('❌ CONTEXT FORMATTER ERROR', errorLabel(err));
     return 'Contesto: non disponibile';
   }
 }

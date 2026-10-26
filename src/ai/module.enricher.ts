@@ -1,3 +1,5 @@
+import { errorLabel } from '../shared/errors.js';
+
 import { formatDomainContext } from './context.formatter.js';
 
 import type { DomainContext } from '../modules/domain.module.js';
@@ -24,7 +26,7 @@ export function enrichWithAI(input: EnricherInput): Promise<string> {
 🧠 (AI insight)
 ${contextString}`);
   } catch (err) {
-    console.error('❌ AI ENRICHMENT FAILED', err);
+    console.error('❌ AI ENRICHMENT FAILED', errorLabel(err));
     return Promise.resolve(input.baseMessage);
   }
 }
