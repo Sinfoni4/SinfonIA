@@ -162,7 +162,8 @@ possono contenere logica di dominio o scrivere direttamente su `practice`.
 - `npm run auth:token`: genera un bearer token locale firmato
 - `npm run tenant:provision`: crea tenant, invito e admin
 
-Per il report completo e dettagliato sull'implementazione di tutte le Fasi 1 e 2 (inclusi i 4 Gate di resilienza e concorrenza), consulta [docs/FASI_1_E_2_REPORT.md](docs/FASI_1_E_2_REPORT.md).
+Per il report completo e dettagliato sull'implementazione di tutte le Fasi 1 e 2 (inclusi i 4 Gate di resilienza e concorrenza), consulta [docs/FASI_1_E_2_REPORT.md](docs/FASI_1_E_2_REPORT.md).  
+Per la pianificazione delle fasi successive, l'integrazione dei 3 pilastri abilitanti (Document AI/OCR, Notifiche Push e WhatsApp) e il connettore Odoo Multi-Company per reti d'imprese, consulta [docs/CRONOPROGRAMMA_EVOLUTIVO.md](docs/CRONOPROGRAMMA_EVOLUTIVO.md).
 
 I test Vitest caricano `.env.test` in modo deterministico. In CI il database è
 fornito dal servizio PostgreSQL e `DATABASE_URL` ha precedenza sul file locale.

@@ -98,21 +98,40 @@ export class PracticeRepository {
     requireTenantId(tenantId);
     try {
       const search = filter?.search?.trim();
-      const rows = await this.prisma.practice.findMany({
-        where: {
-          tenantId,
-          ...(filter?.userId ? { userId: filter.userId } : {}),
-          ...(filter?.status ? { status: filter.status } : {}),
-          ...(search
+      const isUuid =
+        Boolean(search) &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search!);
+
+      const where: Prisma.PracticeWhereInput = {
+        tenantId,
+        ...(filter?.userId ? { userId: filter.userId } : {}),
+        ...(filter?.status ? { status: filter.status } : {}),
+        ...(search
+          ? isUuid
             ? {
+                OR: [
+                  { id: search },
+                  {
+                    payload: {
+                      path: ['name'],
+                      string_contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                ],
+              }
+            : {
                 payload: {
                   path: ['name'],
                   string_contains: search,
                   mode: 'insensitive',
                 },
               }
-            : {}),
-        },
+          : {}),
+      };
+
+      const rows = await this.prisma.practice.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
       });
       return rows.map(toPracticeDTO);
@@ -130,22 +149,38 @@ export class PracticeRepository {
       const page = Math.max(1, filter?.page ?? 1);
       const limit = Math.min(100, Math.max(1, filter?.limit ?? 20));
       const skip = (page - 1) * limit;
-      const sortBy = filter?.sortBy ?? 'createdAt';
+      const sortField = filter?.sortBy ?? 'createdAt';
       const sortOrder = filter?.sortOrder ?? 'desc';
       const search = filter?.search?.trim();
+      const isUuid =
+        Boolean(search) &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search!);
 
       const where: Prisma.PracticeWhereInput = {
         tenantId,
         ...(filter?.userId ? { userId: filter.userId } : {}),
         ...(filter?.status ? { status: filter.status } : {}),
         ...(search
-          ? {
-              payload: {
-                path: ['name'],
-                string_contains: search,
-                mode: 'insensitive',
-              },
-            }
+          ? isUuid
+            ? {
+                OR: [
+                  { id: search },
+                  {
+                    payload: {
+                      path: ['name'],
+                      string_contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                ],
+              }
+            : {
+                payload: {
+                  path: ['name'],
+                  string_contains: search,
+                  mode: 'insensitive',
+                },
+              }
           : {}),
       };
 
@@ -154,7 +189,7 @@ export class PracticeRepository {
           where,
           skip,
           take: limit,
-          orderBy: { [sortBy]: sortOrder },
+          orderBy: { [sortField]: sortOrder },
         }),
         this.prisma.practice.count({ where }),
       ]);

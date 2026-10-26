@@ -5,8 +5,8 @@ import { DecisionEngine } from './ai/decision/decision.engine.js';
 import { ExecutorService } from './ai/execution/executor.service.js';
 import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
+import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
 import { createOpenAIProvider } from './ai/providers/openai.provider.js';
-import { createDeterministicStubLLM } from './ai/providers/stub.provider.js';
 import {
   validateBeforeDecision,
   validateResolvedCommand,
@@ -74,7 +74,7 @@ function createLLMClient(config: {
       model: config.OPENAI_MODEL,
     });
   }
-  return createDeterministicStubLLM();
+  return createDisabledLLMClient('LLM is disabled via ENABLE_LLM=false or missing OPENAI_API_KEY');
 }
 
 function getRuntimeSnapshot() {

@@ -14,6 +14,7 @@ import type { DecisionEngine } from '../../ai/decision/decision.engine.js';
 import type { ExecutorService } from '../../ai/execution/executor.service.js';
 import type { InterpreterService } from '../../ai/interpreter/interpreter.service.js';
 import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
+import type { AITracer } from '../../ai/tracing/ai.tracer.js';
 import type { AppConfig } from '../../config/config.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
@@ -25,6 +26,7 @@ export type ServerDeps = {
   contextService: ContextService;
   decisionEngine: DecisionEngine;
   normalizerService: NormalizerService;
+  tracer?: AITracer;
 };
 
 export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDeps) {

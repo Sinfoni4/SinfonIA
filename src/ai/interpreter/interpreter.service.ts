@@ -1,3 +1,5 @@
+import { LLMDisabledError } from '../providers/disabled.provider.js';
+
 import { buildInterpreterPrompt } from './interpreter.prompt.js';
 import {
   type InterpreterContext,
@@ -8,9 +10,37 @@ import {
 
 import type { InterpreterOutput } from './interpreter.types.js';
 
+export type LLMCompletionResult = {
+  text: string;
+  model?: string;
+  provider?: string;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+};
+
 export type LLMClient = {
   complete(prompt: string): Promise<string>;
-  mode?: 'real' | 'stub';
+  completeDetailed?(prompt: string): Promise<LLMCompletionResult>;
+  mode?: 'real' | 'stub' | 'disabled';
+  model?: string;
+  providerName?: string;
+  statusMessage?: string;
+};
+
+export type InterpreterDetailsResult = {
+  output: InterpreterOutput;
+  traceMeta: {
+    model: string;
+    provider: string;
+    tokens?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+    };
+  };
 };
 
 export type InterpreterServiceDeps = {
@@ -26,13 +56,53 @@ export class InterpreterService {
     this.deps = 'complete' in deps ? { llm: deps } : deps;
   }
 
-  async interpret(inputText: string, context?: InterpreterContext): Promise<InterpreterOutput> {
+  isLLMEnabled(): boolean {
+    return this.deps.llm.mode !== 'disabled';
+  }
+
+  isRealLLM(): boolean {
+    return this.deps.llm.mode === 'real';
+  }
+
+  getModelName(): string {
+    return this.deps.llm.model ?? (this.isRealLLM() ? 'openai' : (this.deps.llm.mode ?? 'unknown'));
+  }
+
+  getProviderName(): string {
+    return (
+      this.deps.llm.providerName ??
+      (this.isRealLLM() ? 'openai' : (this.deps.llm.mode ?? 'unknown'))
+    );
+  }
+
+  async interpretWithDetails(
+    inputText: string,
+    context?: InterpreterContext,
+  ): Promise<InterpreterDetailsResult> {
+    if (!this.isLLMEnabled()) {
+      throw new LLMDisabledError(this.deps.llm.statusMessage);
+    }
+
     if (inputText.trim().length === 0) {
       throw new InterpreterError('Input text is empty');
     }
 
     const prompt = buildInterpreterPrompt(inputText, context);
-    const raw = await this.deps.llm.complete(prompt);
+
+    let raw: string;
+    let model = this.getModelName();
+    let provider = this.getProviderName();
+    let tokens: LLMCompletionResult['usage'] | undefined;
+
+    if (typeof this.deps.llm.completeDetailed === 'function') {
+      const detailed = await this.deps.llm.completeDetailed(prompt);
+      raw = detailed.text;
+      if (detailed.model) model = detailed.model;
+      if (detailed.provider) provider = detailed.provider;
+      tokens = detailed.usage;
+    } else {
+      raw = await this.deps.llm.complete(prompt);
+    }
 
     if (this.deps.log) {
       this.deps.log.debug({ responseLength: raw.length }, 'LLM response received');
@@ -52,11 +122,19 @@ export class InterpreterService {
       throw new InvalidAIOutputError('AI output does not match interpreter contract');
     }
 
-    return validated.data;
+    return {
+      output: validated.data,
+      traceMeta: {
+        model,
+        provider,
+        tokens,
+      },
+    };
   }
 
-  isRealLLM(): boolean {
-    return this.deps.llm.mode === 'real';
+  async interpret(inputText: string, context?: InterpreterContext): Promise<InterpreterOutput> {
+    const res = await this.interpretWithDetails(inputText, context);
+    return res.output;
   }
 }
 

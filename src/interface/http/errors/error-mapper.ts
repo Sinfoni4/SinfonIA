@@ -11,6 +11,7 @@ import {
   InvalidAIOutputError,
 } from '../../../ai/interpreter/interpreter.types.js';
 import { NormalizationValidationError } from '../../../ai/normalization/normalizer.service.js';
+import { LLMDisabledError } from '../../../ai/providers/disabled.provider.js';
 import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import { ConcurrencyError, InvalidStateTransitionError } from '../../../core/index.js';
@@ -22,6 +23,9 @@ export type NormalizedError = { statusCode: number; code: string; message: strin
 export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof AuthError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
+  }
+  if (err instanceof LLMDisabledError) {
+    return { statusCode: 503, code: 'LLM_DISABLED', message: err.message };
   }
   if (err instanceof UnauthorizedTenantAccessError) {
     return { statusCode: 404, code: 'NOT_FOUND', message: 'Resource not found' };

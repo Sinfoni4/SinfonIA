@@ -3,7 +3,7 @@
  * Uses fetch + env config. Isolated from executor/workflow/data.
  */
 
-import type { LLMClient } from '../interpreter/interpreter.service.js';
+import type { LLMClient, LLMCompletionResult } from '../interpreter/interpreter.service.js';
 
 export type OpenAIProviderConfig = {
   apiKey: string;
@@ -35,6 +35,7 @@ export class OpenAIProviderError extends Error {
  * Builds an LLMClient that calls OpenAI (or compatible) chat completions API.
  * - Timeout to avoid hanging
  * - Retry on 429/5xx with exponential backoff
+ * - Detailed usage token and model tracing
  * - Clear errors for logging/triage
  */
 export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
@@ -45,7 +46,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
     maxRetries = DEFAULT_MAX_RETRIES,
   } = config;
 
-  async function complete(prompt: string): Promise<string> {
+  async function completeDetailed(prompt: string): Promise<LLMCompletionResult> {
     const url = 'https://api.openai.com/v1/chat/completions';
     const body = {
       model,
@@ -80,6 +81,12 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
         const data = (await res.json()) as {
           error?: { message?: string };
           choices?: Array<{ message?: { content?: string } }>;
+          model?: string;
+          usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+          };
         };
 
         if (!res.ok) {
@@ -101,7 +108,19 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
         if (text == null || text === '') {
           throw new OpenAIProviderError('OpenAI returned empty content');
         }
-        return text;
+
+        return {
+          text,
+          model: data.model ?? model,
+          provider: 'openai',
+          usage: data.usage
+            ? {
+                promptTokens: data.usage.prompt_tokens,
+                completionTokens: data.usage.completion_tokens,
+                totalTokens: data.usage.total_tokens,
+              }
+            : undefined,
+        };
       } catch (err: unknown) {
         clearTimeout(timeoutId);
         if (err instanceof OpenAIProviderError) {
@@ -130,5 +149,16 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
     throw lastError ?? new OpenAIProviderError('Max retries exceeded', undefined, true);
   }
 
-  return { complete, mode: 'real' };
+  async function complete(prompt: string): Promise<string> {
+    const res = await completeDetailed(prompt);
+    return res.text;
+  }
+
+  return {
+    complete,
+    completeDetailed,
+    mode: 'real',
+    model,
+    providerName: 'openai',
+  };
 }
