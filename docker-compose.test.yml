@@ -1,0 +1,20 @@
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: sinfonia-postgres-test
+    environment:
+      POSTGRES_DB: sinfonia_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - '5433:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U test -d sinfonia_test']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - sinfonia_test_pgdata:/var/lib/postgresql/data
+
+volumes:
+  sinfonia_test_pgdata:

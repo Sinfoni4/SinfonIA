@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sinfonia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      NODE_ENV: test
+      SERVICE_NAME: sinfonia-ci
+      PORT: '3000'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sinfonia?schema=public
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Secret scan
+        run: npm run secret:scan
+
+      - name: Migrate database
+        run: npm run db:migrate:deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Known transitive findings from node-telegram-bot-api are tracked for Phase 1.
+      # Keep the report visible without making the pipeline fail on an accepted risk.
+      - name: Audit production dependencies (report)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

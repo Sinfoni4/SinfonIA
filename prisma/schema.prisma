@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enterprise data model:
+// - strict multi-tenancy (tenant_id on every entity)
+// - auditability (append-only audit_log)
+// - stable naming: snake_case columns mapped from camelCase fields
+// This schema is designed to avoid destructive refactors later.
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  users      User[]
+  practices  Practice[]
+  auditLogs  AuditLog[]
+  invites    InviteCode[]
+  userTenants UserTenant[]
+
+  @@map("tenant")
+}
+
+model InviteCode {
+  code      String   @id
+  tenantId  String   @db.Uuid @map("tenant_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("invite_code")
+}
+
+model UserTenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id")
+  tenantId  String   @db.Uuid @map("tenant_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@unique([userId, tenantId])
+  @@map("user_tenant")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  MEMBER
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid @map("tenant_id")
+  email     String
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  practices Practice[]
+  auditLogs AuditLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, id])
+  @@map("user")
+}
+
+enum PracticeStatus {
+  CREATED
+  VALIDATED
+  SUBMITTED
+  FAILED
+  COMPLETED
+}
+
+model Practice {
+  id        String         @id @default(uuid()) @db.Uuid
+  tenantId  String         @db.Uuid @map("tenant_id")
+  userId    String         @db.Uuid @map("user_id")
+  status    PracticeStatus @default(CREATED)
+  version   Int            @default(1)
+  payload   Json
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([tenantId, userId])
+  @@index([tenantId, status])
+  @@index([tenantId, id, version])
+  @@map("practice")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid @map("tenant_id")
+  userId    String?  @db.Uuid @map("user_id")
+  eventType String   @map("event_type")
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([createdAt])
+  @@index([tenantId, eventType])
+  @@map("audit_log")
+}
+
+// Music module persistence (simple CRUD) — separate from enterprise `Practice` to avoid schema collision.
+model MusicPractice {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("music_practice")
+}

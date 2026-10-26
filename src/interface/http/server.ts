@@ -1,0 +1,66 @@
+import Fastify from 'fastify';
+
+import { runtimeState } from '../../runtime/runtime.state.js';
+
+import { requestContextHook } from './middleware/request-context.js';
+import { aiRoutes } from './routes/ai.routes.js';
+import { practiceRoutes } from './routes/practice.routes.js';
+
+import type { ContextService } from '../../ai/context/context.service.js';
+import type { DecisionEngine } from '../../ai/decision/decision.engine.js';
+import type { ExecutorService } from '../../ai/execution/executor.service.js';
+import type { InterpreterService } from '../../ai/interpreter/interpreter.service.js';
+import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
+import type { AppConfig } from '../../config/config.js';
+import type { PracticeWorkflow } from '../../core/workflow/practice.workflow.js';
+import type { AppLogger } from '../../shared/logger.js';
+
+export type ServerDeps = {
+  practiceWorkflow: PracticeWorkflow;
+  interpreterService: InterpreterService;
+  executorService: ExecutorService;
+  contextService: ContextService;
+  decisionEngine: DecisionEngine;
+  normalizerService: NormalizerService;
+};
+
+export function buildServer(_config: AppConfig, logger: AppLogger, deps: ServerDeps) {
+  // Interface Layer: HTTP transport only.
+  // No business logic here. No direct DB access. No AI calls.
+  const app = Fastify({
+    loggerInstance: logger,
+  });
+
+  // Request context and logging correlation (requestId, tenantId, userId).
+  app.addHook('onRequest', requestContextHook);
+
+  // Liveness: the process can answer HTTP.
+  app.get('/healthz', () => ({
+    status: 'ok',
+    uptimeSeconds: Math.round(process.uptime()),
+    mode: runtimeState.getMode(),
+  }));
+
+  // Readiness: traffic can be served only while the database is reachable.
+  app.get('/readyz', (_req, reply) => {
+    const snapshot = runtimeState.snapshot();
+    const ready = snapshot.dbReachable && snapshot.mode !== 'CIRCUIT_OPEN';
+
+    return reply.status(ready ? 200 : 503).send({
+      status: ready ? 'ready' : 'not_ready',
+      checks: {
+        database: {
+          reachable: snapshot.dbReachable,
+          lastCheck: snapshot.lastDbCheck,
+        },
+      },
+    });
+  });
+
+  // Routes (HTTP only): business logic lives in Core / AI.
+  void app.register(practiceRoutes, deps);
+  void app.register(aiRoutes, deps);
+
+  // Future-ready: auth middleware, rate limiting (structure only).
+  return app;
+}
