@@ -7,3 +7,4 @@ export * from './providers/openai.provider.js';
 export * from './providers/stub.provider.js';
 export * from './tracing/ai.tracer.js';
 export * from './ocr/index.js';
+export * from './security/index.js';

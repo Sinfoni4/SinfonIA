@@ -1,5 +1,11 @@
 export type AITraceOutcome =
-  'SUCCESS' | 'AMBIGUOUS' | 'REJECTED' | 'ERROR' | 'LLM_DISABLED' | 'DETERMINISTIC_FALLBACK';
+  | 'SUCCESS'
+  | 'AMBIGUOUS'
+  | 'REJECTED'
+  | 'SECURITY_REJECTED'
+  | 'ERROR'
+  | 'LLM_DISABLED'
+  | 'DETERMINISTIC_FALLBACK';
 
 export type AITraceTokens = {
   promptTokens?: number;

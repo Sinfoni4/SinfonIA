@@ -207,6 +207,10 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
 
       const latencyMs = Math.round(performance.now() - startTime);
       const isClarification = (finalResult as { type?: string })?.type === 'clarification_required';
+      const isSecurityBlocked =
+        typeof (finalResult as { reason?: string })?.reason === 'string' &&
+        (finalResult as { reason?: string }).reason?.startsWith('SECURITY_INJECTION_BLOCKED');
+
       const trace: AITraceRecord = {
         requestId,
         tenantId: auth.tenantId,
@@ -215,7 +219,13 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
         provider: interpretation.traceMeta.provider,
         tokens: interpretation.traceMeta.tokens,
         latencyMs,
-        outcome: isClarification ? 'AMBIGUOUS' : isSuccess ? 'SUCCESS' : 'ERROR',
+        outcome: isSecurityBlocked
+          ? 'SECURITY_REJECTED'
+          : isClarification
+            ? 'AMBIGUOUS'
+            : isSuccess
+              ? 'SUCCESS'
+              : 'ERROR',
         action: isClarification ? 'clarification_required' : normalized.action,
         error: isSuccess ? undefined : String(failureError),
         timestamp: new Date().toISOString(),

@@ -1,4 +1,6 @@
 import { LLMDisabledError } from '../providers/disabled.provider.js';
+import { maskPII, unmaskObjectPII } from '../security/pii-minimizer.js';
+import { checkPromptInjection } from '../security/prompt-guard.js';
 
 import { buildInterpreterPrompt, buildRepairPrompt } from './interpreter.prompt.js';
 import {
@@ -96,7 +98,39 @@ export class InterpreterService {
       throw new InterpreterError('Input text is empty');
     }
 
-    const prompt = buildInterpreterPrompt(inputText, context);
+    const injectionCheck = checkPromptInjection(inputText);
+    if (injectionCheck.isInjection) {
+      if (this.deps.log) {
+        this.deps.log.debug(
+          { attackType: injectionCheck.attackType, reason: injectionCheck.reason },
+          'Prompt injection blocked pre-execution',
+        );
+      }
+      return {
+        output: {
+          schemaVersion: CURRENT_INTERPRETER_SCHEMA_VERSION,
+          action: 'clarification_required',
+          confidence: 0.1,
+          filters: { practiceId: null, status: null, name: null },
+          artistName: null,
+          nextState: null,
+          clarification: {
+            question:
+              "La richiesta contiene istruzioni di sistema o comandi non consentiti. Puoi indicare un'operazione valida su una pratica (es. 'crea pratica Mario Rossi' o 'valida pratica Mario Rossi')?",
+            reason: `SECURITY_INJECTION_BLOCKED:${injectionCheck.attackType ?? 'UNKNOWN'}`,
+            candidatePracticeIds: [],
+            options: ['Crea nuova pratica', 'Valida pratica', 'Controlla stato pratiche'],
+          },
+        },
+        traceMeta: {
+          model: this.getModelName(),
+          provider: this.getProviderName(),
+        },
+      };
+    }
+
+    const { maskedText, piiMap } = maskPII(inputText);
+    const prompt = buildInterpreterPrompt(maskedText, context);
 
     let raw: string;
     let model = this.getModelName();
@@ -136,7 +170,7 @@ export class InterpreterService {
         );
       }
 
-      const repairPrompt = buildRepairPrompt(inputText, raw, errorMessage);
+      const repairPrompt = buildRepairPrompt(maskedText, raw, errorMessage);
       raw = await this.deps.llm.complete(repairPrompt);
       parsed = parseAndRepairJSON(raw);
       if (parsed) {
@@ -160,6 +194,9 @@ export class InterpreterService {
     }
 
     let output = validation.data;
+    if (piiMap.size > 0) {
+      output = unmaskObjectPII(output, piiMap);
+    }
 
     // Confidence threshold evaluation: if confidence is below threshold, generate CLARIFICATION_REQUIRED
     if (
