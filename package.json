@@ -18,6 +18,8 @@
     "test:all": "dotenv -e .env.test -- tsx scripts/test-db.ts --mode=strict && dotenv -e .env.test -- tsx tests/test.all.ts --mode=strict",
     "ai:test": "dotenv -e .env.test -- tsx scripts/test-db.ts && dotenv -e .env.test -- tsx tests/ai.behavior.harness.ts",
     "ai:test:real": "dotenv -e .env.test -- tsx scripts/test-db.ts --mode=strict && dotenv -e .env.test -- tsx tests/ai.behavior.harness.ts --mode=strict",
+    "ai:eval": "tsx scripts/run-eval.ts",
+    "ai:eval:nightly": "tsx scripts/run-eval.ts --nightly",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

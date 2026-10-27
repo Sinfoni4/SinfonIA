@@ -69,7 +69,7 @@ const JAILBREAK_PATTERNS: Array<{ regex: RegExp; type: AttackType; label: string
     label: 'System token / Chat template impersonation injection',
   },
   {
-    regex: /^(?:system|assistant)\s*:\s*(?:you\s+are|override|new\s+instructions)/im,
+    regex: /(?:role\s*:\s*(?:system|assistant|admin)|^(?:system|assistant)\s*:)/im,
     type: 'IMPERSONATION',
     label: 'Role-tag impersonation',
   },
