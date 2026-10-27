@@ -73,6 +73,15 @@ export class ExecutorService {
 
           return { success: true, result };
         }
+        case 'clarification_required': {
+          return {
+            success: true,
+            result: {
+              type: 'clarification_required',
+              ...parsedInput.data,
+            },
+          };
+        }
         default:
           throw new UnsupportedActionError(parsedInput.action);
       }

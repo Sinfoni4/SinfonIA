@@ -31,6 +31,7 @@ model Tenant {
   schedulerJobs  SchedulerJob[]
   schedulerRuns  SchedulerRun[]
   outboxMessages OutboxMessage[]
+  attachments    PracticeAttachment[]
 
   @@map("tenant")
 }
@@ -105,6 +106,7 @@ model Practice {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  attachments PracticeAttachment[]
 
   @@index([tenantId])
   @@index([tenantId, userId])
@@ -201,4 +203,33 @@ model OutboxMessage {
   @@index([tenantId])
   @@index([status, createdAt])
   @@map("outbox_message")
+}
+
+enum OcrStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model PracticeAttachment {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  practiceId  String    @map("practice_id") @db.Uuid
+  fileName    String    @map("file_name")
+  mimeType    String    @map("mime_type")
+  fileSize    Int       @map("file_size")
+  storagePath String    @map("storage_path")
+  ocrStatus   OcrStatus @default(PENDING) @map("ocr_status")
+  ocrResult   Json?     @map("ocr_result")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([practiceId])
+  @@index([tenantId, ocrStatus])
+  @@map("practice_attachment")
 }

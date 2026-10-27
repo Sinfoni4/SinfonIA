@@ -269,4 +269,29 @@ export class PracticeRepository {
       throw new DatabaseError('Failed to delete practice', err);
     }
   }
+
+  async updatePracticePayload(
+    tenantId: string,
+    id: string,
+    payload: unknown,
+  ): Promise<PracticeDTO> {
+    requireTenantId(tenantId);
+    try {
+      const res = await this.prisma.practice.updateMany({
+        where: { tenantId, id },
+        data: { payload: payload as never },
+      });
+      if (res.count !== 1) {
+        throw new NotFoundError('Practice not found');
+      }
+      const row = await this.prisma.practice.findFirst({
+        where: { tenantId, id },
+      });
+      if (!row) throw new NotFoundError('Practice not found');
+      return toPracticeDTO(row);
+    } catch (err: unknown) {
+      if (err instanceof NotFoundError) throw err;
+      throw new DatabaseError('Failed to update practice payload', err);
+    }
+  }
 }

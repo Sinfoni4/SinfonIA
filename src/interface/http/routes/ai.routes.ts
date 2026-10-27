@@ -206,6 +206,7 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
       }
 
       const latencyMs = Math.round(performance.now() - startTime);
+      const isClarification = (finalResult as { type?: string })?.type === 'clarification_required';
       const trace: AITraceRecord = {
         requestId,
         tenantId: auth.tenantId,
@@ -214,8 +215,8 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
         provider: interpretation.traceMeta.provider,
         tokens: interpretation.traceMeta.tokens,
         latencyMs,
-        outcome: isSuccess ? 'SUCCESS' : 'ERROR',
-        action: normalized.action,
+        outcome: isClarification ? 'AMBIGUOUS' : isSuccess ? 'SUCCESS' : 'ERROR',
+        action: isClarification ? 'clarification_required' : normalized.action,
         error: isSuccess ? undefined : String(failureError),
         timestamp: new Date().toISOString(),
       };

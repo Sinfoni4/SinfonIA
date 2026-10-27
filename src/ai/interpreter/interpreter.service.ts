@@ -1,12 +1,15 @@
 import { LLMDisabledError } from '../providers/disabled.provider.js';
 
-import { buildInterpreterPrompt } from './interpreter.prompt.js';
+import { buildInterpreterPrompt, buildRepairPrompt } from './interpreter.prompt.js';
 import {
+  CURRENT_INTERPRETER_SCHEMA_VERSION,
+  DEFAULT_CONFIDENCE_THRESHOLD,
   type InterpreterContext,
   InterpreterError,
   InterpreterOutputSchema,
   InvalidAIOutputError,
 } from './interpreter.types.js';
+import { parseAndRepairJSON } from './json-repair.js';
 
 import type { InterpreterOutput } from './interpreter.types.js';
 
@@ -47,13 +50,19 @@ export type InterpreterServiceDeps = {
   llm: LLMClient;
   /** Optional logger for debug (e.g. log raw LLM output when level is debug). */
   log?: { debug: (obj: unknown, msg?: string) => void };
+  confidenceThreshold?: number;
+  maxRepairRetries?: number;
 };
 
 export class InterpreterService {
   private readonly deps: InterpreterServiceDeps;
+  public readonly confidenceThreshold: number;
+  public readonly maxRepairRetries: number;
 
   constructor(deps: InterpreterServiceDeps | LLMClient) {
     this.deps = 'complete' in deps ? { llm: deps } : deps;
+    this.confidenceThreshold = this.deps.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+    this.maxRepairRetries = this.deps.maxRepairRetries ?? 2;
   }
 
   isLLMEnabled(): boolean {
@@ -105,25 +114,76 @@ export class InterpreterService {
     }
 
     if (this.deps.log) {
-      this.deps.log.debug({ responseLength: raw.length }, 'LLM response received');
+      this.deps.log.debug({ responseLength: raw.length }, 'LLM initial response received');
     }
 
-    const parsed = parseJSONWithFallback(raw);
-    if (parsed === null) {
-      throw new InvalidAIOutputError('AI output is not valid JSON');
+    let parsed = parseAndRepairJSON(raw);
+    let validation = parsed ? InterpreterOutputSchema.safeParse(parsed) : null;
+
+    // Retry loop with automatic JSON repair and targeted error feedback
+    let repairAttempts = 0;
+    while ((!parsed || !validation?.success) && repairAttempts < this.maxRepairRetries) {
+      repairAttempts++;
+      const errorMessage = !parsed
+        ? 'Invalid JSON syntax'
+        : (validation?.error?.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ') ??
+          'Schema validation failure');
+
+      if (this.deps.log) {
+        this.deps.log.debug(
+          { attempt: repairAttempts, error: errorMessage },
+          'Attempting LLM automatic repair',
+        );
+      }
+
+      const repairPrompt = buildRepairPrompt(inputText, raw, errorMessage);
+      raw = await this.deps.llm.complete(repairPrompt);
+      parsed = parseAndRepairJSON(raw);
+      if (parsed) {
+        validation = InterpreterOutputSchema.safeParse(parsed);
+      }
     }
 
-    if (isAmbiguousMarker(parsed)) {
+    // If still not parseable after repairs, check for explicit ambiguous marker
+    if (parsed && isAmbiguousMarker(parsed)) {
       throw new InterpreterError('Ambiguous input: cannot derive deterministic action');
     }
 
-    const validated = InterpreterOutputSchema.safeParse(parsed);
-    if (!validated.success) {
-      throw new InvalidAIOutputError('AI output does not match interpreter contract');
+    if (!parsed) {
+      throw new InvalidAIOutputError('AI output is not valid JSON even after repair attempts');
+    }
+
+    if (!validation?.success) {
+      throw new InvalidAIOutputError(
+        `AI output does not match interpreter contract (v${CURRENT_INTERPRETER_SCHEMA_VERSION})`,
+      );
+    }
+
+    let output = validation.data;
+
+    // Confidence threshold evaluation: if confidence is below threshold, generate CLARIFICATION_REQUIRED
+    if (
+      output.action !== 'clarification_required' &&
+      output.confidence < this.confidenceThreshold
+    ) {
+      output = {
+        schemaVersion: CURRENT_INTERPRETER_SCHEMA_VERSION,
+        action: 'clarification_required',
+        confidence: output.confidence,
+        filters: output.filters,
+        artistName: output.artistName,
+        nextState: null,
+        clarification: {
+          question: `La tua richiesta non è del tutto chiara (confidenza: ${Math.round(output.confidence * 100)}%). Desideri ${output.action === 'create_practice' ? 'creare una pratica' : 'modificare lo stato di una pratica'}?`,
+          reason: 'LOW_CONFIDENCE',
+          candidatePracticeIds: output.filters.practiceId ? [output.filters.practiceId] : [],
+          options: ['Conferma operazione', 'Annulla operazione', 'Mostra elenco pratiche'],
+        },
+      };
     }
 
     return {
-      output: validated.data,
+      output,
       traceMeta: {
         model,
         provider,
@@ -135,22 +195,6 @@ export class InterpreterService {
   async interpret(inputText: string, context?: InterpreterContext): Promise<InterpreterOutput> {
     const res = await this.interpretWithDetails(inputText, context);
     return res.output;
-  }
-}
-
-/**
- * Parse JSON with fallback: strip markdown code fences if present.
- */
-function parseJSONWithFallback(raw: string): unknown {
-  let text = raw.trim();
-  const codeBlockMatch = /^```(?:json)?\s*([\s\S]*?)```\s*$/m.exec(text);
-  if (codeBlockMatch) {
-    text = codeBlockMatch[1].trim();
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
   }
 }
 

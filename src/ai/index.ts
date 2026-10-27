@@ -6,3 +6,4 @@ export * from './providers/disabled.provider.js';
 export * from './providers/openai.provider.js';
 export * from './providers/stub.provider.js';
 export * from './tracing/ai.tracer.js';
+export * from './ocr/index.js';

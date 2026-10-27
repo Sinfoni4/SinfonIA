@@ -1,6 +1,9 @@
+import { defaultDocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
 import { NotFoundError } from '../../data/errors/errors.js';
+import { AttachmentRepository } from '../../data/repositories/attachment.repository.js';
 import { PracticeRepository } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
+import { defaultStorageService, type StorageService } from '../../data/storage/storage.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
@@ -11,6 +14,9 @@ import { readPracticePayload } from './practice.payload.js';
 import type { PracticeCommand } from './practice.commands.js';
 import type { PracticeExportFilter } from './practice.export.js';
 import type { PracticeKind, PracticePayloadKind } from './practice.payload.js';
+import type { DocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
+import type { DocumentOcrResult } from '../../ai/ocr/ocr.types.js';
+import type { PracticeAttachmentDTO } from '../../data/repositories/attachment.repository.js';
 import type { PaginatedResult } from '../../data/repositories/practice.repository.js';
 import type { PracticeDTO } from '../../data/types/domain.js';
 import type { PracticeState } from '../types/workflow.types.js';
@@ -94,10 +100,23 @@ function toView(dto: PracticeDTO): PracticeView {
 export class PracticeApplicationService {
   private readonly workflow: PracticeWorkflow;
   private readonly repository: PracticeRepository;
+  private readonly attachmentRepository: AttachmentRepository;
+  private readonly storageService: StorageService;
+  private readonly ocrService: DocumentOcrService;
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    options?: {
+      storageService?: StorageService;
+      ocrService?: DocumentOcrService;
+      attachmentRepository?: AttachmentRepository;
+    },
+  ) {
     this.workflow = new PracticeWorkflow(prisma);
     this.repository = new PracticeRepository(prisma);
+    this.attachmentRepository = options?.attachmentRepository ?? new AttachmentRepository(prisma);
+    this.storageService = options?.storageService ?? defaultStorageService;
+    this.ocrService = options?.ocrService ?? defaultDocumentOcrService;
   }
 
   async createPractice(input: {
@@ -218,6 +237,115 @@ export class PracticeApplicationService {
 
       return toView(dto);
     });
+  }
+
+  async addAttachment(input: {
+    tenantId: string;
+    userId: string;
+    practiceId: string;
+    fileName: string;
+    mimeType: string;
+    content: Buffer | Uint8Array;
+    hint?: string;
+  }): Promise<{
+    attachment: PracticeAttachmentDTO;
+    practice: PracticeView;
+    ocrResult?: DocumentOcrResult;
+  }> {
+    requireDatabase();
+
+    const practice = await this.getPractice({
+      tenantId: input.tenantId,
+      practiceId: input.practiceId,
+      userId: input.userId,
+    });
+
+    const storageResult = await this.storageService.save(
+      input.tenantId,
+      input.fileName,
+      input.content,
+      input.mimeType,
+    );
+
+    let ocrStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED';
+    let ocrResult: DocumentOcrResult | undefined;
+    try {
+      ocrResult = await this.ocrService.processDocument(
+        input.content,
+        input.mimeType,
+        input.fileName,
+        input.hint,
+      );
+    } catch {
+      ocrStatus = 'FAILED';
+    }
+
+    const attachment = await this.attachmentRepository.createAttachment(input.tenantId, {
+      practiceId: input.practiceId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      fileSize: storageResult.fileSize,
+      storagePath: storageResult.storagePath,
+      ocrStatus,
+      ocrResult,
+    });
+
+    let updatedPractice = practice;
+    if (ocrResult) {
+      const currentPayload =
+        practice.payload && typeof practice.payload === 'object'
+          ? (practice.payload as Record<string, unknown>)
+          : {};
+
+      const existingAttachments = Array.isArray(currentPayload.attachments)
+        ? (currentPayload.attachments as unknown[])
+        : [];
+
+      const enrichedPayload = {
+        ...currentPayload,
+        attachments: [
+          ...existingAttachments,
+          {
+            id: attachment.id,
+            fileName: attachment.fileName,
+            mimeType: attachment.mimeType,
+            uploadedAt: attachment.createdAt.toISOString(),
+            ocrStatus,
+            documentType: ocrResult.documentType,
+          },
+        ],
+        lastOcrResult: ocrResult,
+      };
+
+      const updatedDto = await this.repository.updatePracticePayload(
+        input.tenantId,
+        input.practiceId,
+        enrichedPayload,
+      );
+      updatedPractice = toView(updatedDto);
+    }
+
+    return {
+      attachment,
+      practice: updatedPractice,
+      ocrResult,
+    };
+  }
+
+  async listAttachments(input: {
+    tenantId: string;
+    practiceId: string;
+    userId?: string;
+  }): Promise<PracticeAttachmentDTO[]> {
+    requireDatabase();
+
+    await this.getPractice({
+      tenantId: input.tenantId,
+      practiceId: input.practiceId,
+      userId: input.userId,
+    });
+
+    return this.attachmentRepository.listAttachmentsByPractice(input.tenantId, input.practiceId);
   }
 
   async exportPractices(input: {

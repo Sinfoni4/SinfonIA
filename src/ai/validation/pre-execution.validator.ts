@@ -68,6 +68,9 @@ export function validateBeforeDecision(
   normalized: InterpreterOutput,
   practices: PracticeContext['practices'],
 ): void {
+  if (normalized.action === 'clarification_required') {
+    return;
+  }
   validateContextConsistency(practices);
 
   if (normalized.action !== 'transition_practice') {
@@ -92,6 +95,9 @@ export function validateResolvedCommand(
   command: ExecutorInput,
   practices: PracticeContext['practices'],
 ): void {
+  if (command.action === 'clarification_required') {
+    return;
+  }
   validateContextConsistency(practices);
 
   if (command.action !== 'transition_practice') {

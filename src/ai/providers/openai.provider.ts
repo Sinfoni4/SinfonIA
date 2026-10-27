@@ -59,6 +59,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
       ],
       max_tokens: 512,
       temperature: 0,
+      response_format: { type: 'json_object' as const },
     };
 
     let lastError: Error | null = null;

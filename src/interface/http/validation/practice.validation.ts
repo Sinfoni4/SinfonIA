@@ -47,8 +47,19 @@ export const PracticeExportBodySchema = z.object({
     .default({ type: 'all' }),
 });
 
+export const PracticeAttachmentParamsSchema = PracticeIdParamsSchema;
+
+export const PracticeAttachmentBodySchema = z.object({
+  fileName: z.string().trim().min(1, 'File name is required'),
+  mimeType: z.string().trim().min(1).default('application/octet-stream'),
+  contentBase64: z.string().min(1, 'File content (base64) is required'),
+  hint: z.string().optional(),
+});
+
 export type PracticeTransitionParams = z.infer<typeof PracticeTransitionParamsSchema>;
 export type PracticeTransitionBody = z.infer<typeof PracticeTransitionBodySchema>;
 export type PracticeCreateBody = z.infer<typeof PracticeCreateBodySchema>;
 export type PracticeListQuery = z.infer<typeof PracticeListQuerySchema>;
 export type PracticeExportBody = z.infer<typeof PracticeExportBodySchema>;
+export type PracticeAttachmentParams = z.infer<typeof PracticeAttachmentParamsSchema>;
+export type PracticeAttachmentBody = z.infer<typeof PracticeAttachmentBodySchema>;

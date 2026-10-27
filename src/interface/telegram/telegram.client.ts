@@ -2,10 +2,29 @@ import { errorLabel } from '../../shared/errors.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
+export type TelegramPhotoSize = {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+};
+
+export type TelegramDocument = {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+};
+
 export type TelegramMessage = {
   message_id: number;
   date: number;
   text?: string;
+  caption?: string;
+  photo?: TelegramPhotoSize[];
+  document?: TelegramDocument;
   chat: {
     id: number;
     type: string;
@@ -98,6 +117,30 @@ export class TelegramClient {
     }
 
     return payload.result;
+  }
+
+  async getFile(
+    fileId: string,
+  ): Promise<{ file_id: string; file_path?: string; file_size?: number }> {
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/getFile?file_id=${fileId}`);
+    const payload = (await response.json()) as TelegramResponse<{
+      file_id: string;
+      file_path?: string;
+      file_size?: number;
+    }>;
+    if (!response.ok || !payload.ok || !payload.result) {
+      throw new Error(`Telegram getFile failed: ${payload.description ?? 'unknown error'}`);
+    }
+    return payload.result;
+  }
+
+  async downloadFile(filePath: string): Promise<Buffer> {
+    const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${this.token}/${filePath}`);
+    if (!response.ok) {
+      throw new Error(`Telegram downloadFile failed: ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   startPolling(): Promise<void> {

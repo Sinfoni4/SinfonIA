@@ -3,6 +3,8 @@ import { requireRole } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  PracticeAttachmentBodySchema,
+  PracticeAttachmentParamsSchema,
   PracticeCreateBodySchema,
   PracticeExportBodySchema,
   PracticeIdParamsSchema,
@@ -127,6 +129,54 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       });
 
       return reply.status(200).send(ok(updated));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  // POST /practices/:id/attachments — Upload an attachment and process OCR
+  app.post('/practices/:id/attachments', async (req, reply) => {
+    try {
+      const auth = requireRole(req, AUTH_ROLES.PRACTICE_CREATE);
+      const params = PracticeAttachmentParamsSchema.parse(req.params);
+      const body = PracticeAttachmentBodySchema.parse(req.body);
+
+      const buffer = Buffer.from(body.contentBase64, 'base64');
+
+      const result = await deps.practiceService.addAttachment({
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        practiceId: params.id,
+        fileName: body.fileName,
+        mimeType: body.mimeType,
+        content: buffer,
+        hint: body.hint,
+      });
+
+      return reply.status(201).send(ok(result));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  // GET /practices/:id/attachments — List attachments for a practice
+  app.get('/practices/:id/attachments', async (req, reply) => {
+    try {
+      const auth = requireRole(req, AUTH_ROLES.PRACTICE_READ);
+      const params = PracticeAttachmentParamsSchema.parse(req.params);
+
+      // Members are strictly restricted to their own practices.
+      const targetUserId = auth.role === 'MEMBER' ? auth.userId : undefined;
+
+      const attachments = await deps.practiceService.listAttachments({
+        tenantId: auth.tenantId,
+        practiceId: params.id,
+        userId: targetUserId,
+      });
+
+      return reply.status(200).send(ok(attachments));
     } catch (err: unknown) {
       const mapped = mapErrorToHttp(err);
       return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

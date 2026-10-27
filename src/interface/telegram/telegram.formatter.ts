@@ -16,6 +16,28 @@ export function formatTelegramResponse(data: {
     ]);
   }
 
+  if (
+    command.action === 'clarification_required' ||
+    (typeof result.result === 'object' &&
+      result.result !== null &&
+      'type' in result.result &&
+      (result.result as { type: string }).type === 'clarification_required')
+  ) {
+    const clar = result.result as {
+      question?: string;
+      options?: string[];
+    };
+    const question = clar.question ?? 'Potresti chiarire la tua richiesta?';
+    const lines = [question];
+    if (Array.isArray(clar.options) && clar.options.length > 0) {
+      lines.push('\nOpzioni:');
+      for (const opt of clar.options) {
+        lines.push(`• ${opt}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
   if (command.action === 'create_practice') {
     const artistName =
       typeof command.data.artistName === 'string' ? command.data.artistName : 'artista';

@@ -10,66 +10,38 @@ const STRICT_JSON_RULE =
 
 const SCHEMA = `You MUST output JSON with EXACTLY this structure (no extra keys):
 {
-  "action": "transition_practice" | "create_practice",
+  "schemaVersion": 1,
+  "action": "transition_practice" | "create_practice" | "clarification_required",
+  "confidence": number between 0.0 and 1.0,
   "filters": {
     "practiceId": string | null,
     "status": string | null,
     "name": string | null
   },
   "artistName": string | null,
-  "nextState": string
+  "nextState": string | null,
+  "clarification": {
+    "question": string,
+    "reason": string,
+    "options": string[]
+  } | null
 }
 
 HARD RULES:
-- ALWAYS include action, filters, artistName, nextState
-- NEVER omit fields (even if unknown)
-- If a field is unknown: set it to null
-- nextState is NEVER null (must be a string)
-- NEVER return an empty object
+- ALWAYS include schemaVersion: 1, action, confidence, filters, artistName, nextState, clarification
+- NEVER omit fields (even if unknown: set to null)
+- confidence MUST be a float between 0.0 (uncertain) and 1.0 (certain)
+- If confidence < 0.75 or input is ambiguous, set action to "clarification_required" and provide targeted question in clarification.question
+- For create_practice: action = "create_practice", artistName = person name, nextState = "CREATED", clarification = null, confidence = 1.0
+- For transition_practice: action = "transition_practice", nextState = target status, clarification = null
 
-CREATE PRACTICE RULES:
-- If the user asks to create a practice ("crea pratica per ...", "crea una pratica per ..."):
-  - action = "create_practice"
-  - artistName = extracted person name (string)
-  - nextState = "CREATED"
-  - filters.practiceId/status/name = null
+STATUS INFERENCE:
+- "valida" -> nextState = "VALIDATED", filters.status = "CREATED"
+- "completa" -> nextState = "COMPLETED", filters.status = "VALIDATED"
+- "invia" / "submit" -> nextState = "SUBMITTED"
 
-STATUS INFERENCE (User intent -> filters.status):
-- "valida" -> "CREATED"
-- "completa" -> "VALIDATED"
-- "invia" -> "COMPLETED"
-- "validate" -> "CREATED"
-- "complete" -> "VALIDATED"
-- "submit" -> "CREATED"
-
-NEXT STATE INFERENCE (User intent -> nextState):
-- "valida" -> "VALIDATED"
-- "completa" -> "COMPLETED"
-- "validate" -> "VALIDATED"
-- "complete" -> "COMPLETED"
-- "submit" -> "SUBMITTED"
-
-PRIORITY RULES (to avoid ambiguity):
-- If the user explicitly specifies a TARGET state (e.g. "to VALIDATED", "a COMPLETED", "to failed", "to submitted"),
-  then nextState MUST be that explicit target (normalized to uppercase).
-- If filters.practiceId is NOT null, then filters.status MUST be null
-  (unless the user explicitly mentions the CURRENT/source status like "from VALIDATED").
-
-NAME EXTRACTION:
-- Extract the person's name if explicitly present (e.g. "di Mario Rossi")
-- If absent: null
-- DO NOT invent names
-
-UUID EXTRACTION:
-- If the user explicitly provides a UUID, set filters.practiceId to that UUID string
-- Otherwise null
-
-Allowed status/nextState values (uppercase only):
-- "CREATED" | "VALIDATED" | "SUBMITTED" | "FAILED" | "COMPLETED"
-
-FORBIDDEN:
-- No ambiguous/error markers
-- No natural language output`;
+Allowed status/nextState values (uppercase):
+- "CREATED" | "VALIDATED" | "SUBMITTED" | "FAILED" | "COMPLETED"`;
 
 const FEW_SHOT = `
 Few-shot examples (CRITICAL). Output ONLY the JSON object:
@@ -77,52 +49,27 @@ Few-shot examples (CRITICAL). Output ONLY the JSON object:
 Input:
 "crea pratica per Mario Rossi"
 Output:
-{"action":"create_practice","filters":{"practiceId":null,"status":null,"name":null},"artistName":"Mario Rossi","nextState":"CREATED"}
+{"schemaVersion":1,"action":"create_practice","confidence":1.0,"filters":{"practiceId":null,"status":null,"name":null},"artistName":"Mario Rossi","nextState":"CREATED","clarification":null}
 
 Input:
 "valida la pratica"
 Output:
-{"action":"transition_practice","filters":{"practiceId":null,"status":"CREATED","name":null},"artistName":null,"nextState":"VALIDATED"}
+{"schemaVersion":1,"action":"transition_practice","confidence":0.95,"filters":{"practiceId":null,"status":"CREATED","name":null},"artistName":null,"nextState":"VALIDATED","clarification":null}
 
 Input:
 "valida la pratica di Mario Rossi"
 Output:
-{"action":"transition_practice","filters":{"practiceId":null,"status":"CREATED","name":"Mario Rossi"},"artistName":null,"nextState":"VALIDATED"}
+{"schemaVersion":1,"action":"transition_practice","confidence":1.0,"filters":{"practiceId":null,"status":"CREATED","name":"Mario Rossi"},"artistName":null,"nextState":"VALIDATED","clarification":null}
 
 Input:
 "Valida la pratica 550e8400-e29b-41d4-a716-446655440000"
 Output:
-{"action":"transition_practice","filters":{"practiceId":"550e8400-e29b-41d4-a716-446655440000","status":"CREATED","name":null},"artistName":null,"nextState":"VALIDATED"}
+{"schemaVersion":1,"action":"transition_practice","confidence":1.0,"filters":{"practiceId":"550e8400-e29b-41d4-a716-446655440000","status":"CREATED","name":null},"artistName":null,"nextState":"VALIDATED","clarification":null}
 
 Input:
-"Set practice 550e8400-e29b-41d4-a716-446655440000 to VALIDATED"
+"forse vorrei fare qualcosa con una pratica, non so bene"
 Output:
-{"action":"transition_practice","filters":{"practiceId":"550e8400-e29b-41d4-a716-446655440000","status":null,"name":null},"artistName":null,"nextState":"VALIDATED"}
-
-Input:
-"Set practice 550e8400-e29b-41d4-a716-446655440000 to COMPLETED"
-Output:
-{"action":"transition_practice","filters":{"practiceId":"550e8400-e29b-41d4-a716-446655440000","status":null,"name":null},"artistName":null,"nextState":"COMPLETED"}
-
-Input:
-"Porta la pratica a submitted"
-Output:
-{"action":"transition_practice","filters":{"practiceId":null,"status":null,"name":null},"artistName":null,"nextState":"SUBMITTED"}
-
-Input:
-"Manda avanti la pratica 6ba7b810-9dad-11d1-80b4-00c04fd430c8 a COMPLETED"
-Output:
-{"action":"transition_practice","filters":{"practiceId":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","status":null,"name":null},"artistName":null,"nextState":"COMPLETED"}
-
-Input:
-"Complete practice 6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-Output:
-{"action":"transition_practice","filters":{"practiceId":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","status":null,"name":null},"artistName":null,"nextState":"COMPLETED"}
-
-Input:
-"submit practice 6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-Output:
-{"action":"transition_practice","filters":{"practiceId":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","status":"CREATED","name":null},"artistName":null,"nextState":"SUBMITTED"}
+{"schemaVersion":1,"action":"clarification_required","confidence":0.3,"filters":{"practiceId":null,"status":null,"name":null},"artistName":null,"nextState":null,"clarification":{"question":"Cosa desideri fare con le tue pratiche? Puoi creare una nuova pratica, controllarne lo stato o validarla.","reason":"Intento non chiaro","options":["Crea nuova pratica","Controlla stato pratiche","Valida pratica"]}}
 `;
 
 function buildAvailablePracticesSection(context?: InterpreterContext): string {
@@ -141,7 +88,7 @@ function buildAvailablePracticesSection(context?: InterpreterContext): string {
 export function buildInterpreterPrompt(userInput: string, context?: InterpreterContext): string {
   return [
     'You are SinfonIA Input Interpreter.',
-    'Extract intent and filters only. Do not resolve final practice selection.',
+    'Extract intent, confidence, and filters only. Do not resolve final practice selection.',
     STRICT_JSON_RULE,
     '',
     buildAvailablePracticesSection(context),
@@ -160,4 +107,27 @@ export function buildInterpreterPrompt(userInput: string, context?: InterpreterC
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+export function buildRepairPrompt(
+  originalInput: string,
+  invalidOutput: string,
+  errorDescription: string,
+): string {
+  return [
+    'You are repairing a JSON response for SinfonIA Input Interpreter.',
+    'Your previous response failed validation with the following error:',
+    `ERROR: ${errorDescription}`,
+    '',
+    'PREVIOUS INVALID OUTPUT:',
+    invalidOutput,
+    '',
+    'ORIGINAL USER INPUT:',
+    originalInput,
+    '',
+    STRICT_JSON_RULE,
+    SCHEMA,
+    'Return ONLY the corrected JSON object matching schemaVersion: 1.',
+    'Output (JSON only):',
+  ].join('\n');
 }

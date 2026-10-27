@@ -10,10 +10,11 @@ import { formatPracticeCommandResult } from './practice.command.formatter.js';
 import { TelegramClient } from './telegram.client.js';
 import { mapTelegramErrorToMessage } from './telegram.errors.js';
 import {
+  getLastPractice,
+  getTelegramMemoryState,
   hasSeenUser,
   markUserSeen,
   resetTelegramMemory,
-  getTelegramMemoryState,
 } from './telegram.memory.js';
 import { runtimeAwareExecute } from './telegram.runtimeAware.js';
 import { safeReply } from './telegram.transport.js';
@@ -29,7 +30,10 @@ export type TelegramIdentity = {
 
 type BotDeps = {
   prisma: PrismaClient;
-  practiceService: Pick<PracticeApplicationService, 'executeCommand'>;
+  practiceService: Pick<PracticeApplicationService, 'executeCommand'> & {
+    addAttachment?: PracticeApplicationService['addAttachment'];
+    listPractices?: PracticeApplicationService['listPractices'];
+  };
   handleMessage: (input: string, identity: TelegramIdentity) => Promise<string>;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
 };
@@ -97,9 +101,10 @@ Prova a scrivere:
 function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
   bot.on('message', async (msg) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const text = msg.text;
+    const text = msg.text ?? msg.caption ?? '';
     const chatId = msg.chat.id;
-    if (!text || !msg.from || msg.from.is_bot) return;
+    if (!msg.from || msg.from.is_bot) return;
+    if (!text && !msg.photo && !msg.document) return;
 
     // Identity is the Telegram user, never the chat/group id. This prevents
     // every member of a group from sharing the same tenant identity.
@@ -150,6 +155,83 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
 
       const tenant = identity.tenant;
       const dbUser = { id: identity.userId, role: identity.role };
+
+      if (msg.photo || msg.document) {
+        let practiceId = getLastPractice(dbUser.id);
+        if (!practiceId && deps.practiceService.listPractices) {
+          const list = await deps.practiceService.listPractices({
+            tenantId: tenant.id,
+            userId: dbUser.id,
+            limit: 1,
+          });
+          if (list.length > 0 && list[0]) {
+            practiceId = list[0].id;
+          }
+        }
+
+        if (!practiceId) {
+          await bot.sendMessage(
+            chatId,
+            '📄 Ho ricevuto il tuo file, ma non ho trovato nessuna pratica attiva a cui associarlo.\nCrea prima una pratica (es. "crea pratica Mario Rossi") o selezionala.',
+          );
+          return;
+        }
+
+        let fileId: string;
+        let fileName: string;
+        let mimeType: string;
+
+        if (msg.document) {
+          fileId = msg.document.file_id;
+          fileName = msg.document.file_name ?? `document_${Date.now()}.pdf`;
+          mimeType = msg.document.mime_type ?? 'application/octet-stream';
+        } else if (msg.photo && msg.photo.length > 0) {
+          const largest = msg.photo[msg.photo.length - 1];
+          if (!largest) {
+            await bot.sendMessage(chatId, '⚠️ Immagine non valida.');
+            return;
+          }
+          fileId = largest.file_id;
+          fileName = `photo_${Date.now()}.jpg`;
+          mimeType = 'image/jpeg';
+        } else {
+          return;
+        }
+
+        if (deps.practiceService.addAttachment) {
+          try {
+            const fileInfo = await bot.getFile(fileId);
+            if (!fileInfo.file_path) {
+              await bot.sendMessage(chatId, '⚠️ Impossibile scaricare il file da Telegram.');
+              return;
+            }
+            const buffer = await bot.downloadFile(fileInfo.file_path);
+            const uploadResult = await deps.practiceService.addAttachment({
+              tenantId: tenant.id,
+              userId: dbUser.id,
+              practiceId,
+              fileName,
+              mimeType,
+              content: buffer,
+              hint: text,
+            });
+
+            const docType = uploadResult.ocrResult?.documentType ?? 'documento';
+            await bot.sendMessage(
+              chatId,
+              `✅ Documento caricato con successo sulla pratica!\nTipo riconosciuto: ${docType}\nStato OCR: ${uploadResult.attachment.ocrStatus}`,
+            );
+            return;
+          } catch (uploadErr) {
+            deps.log?.error({ error: errorLabel(uploadErr), requestId }, 'Attachment upload error');
+            await bot.sendMessage(
+              chatId,
+              "⚠️ Si è verificato un errore durante l'acquisizione del documento. Riprova più tardi.",
+            );
+            return;
+          }
+        }
+      }
 
       const command = parsePracticeCommand(trimmed);
       if (command) {

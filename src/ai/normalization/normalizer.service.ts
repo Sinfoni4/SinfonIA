@@ -40,7 +40,7 @@ function normalizeStatus(input: string | undefined | null): CanonicalStatus | un
   return STATUS_MAP[word];
 }
 
-function normalizeNextState(input: string): CanonicalStatus | undefined {
+function normalizeNextState(input: string | null | undefined): CanonicalStatus | undefined {
   const word = normalizeWord(input);
   if (!word) return undefined;
   return NEXT_STATE_MAP[word];
@@ -64,6 +64,10 @@ export class NormalizationValidationError extends Error {
 
 export class NormalizerService {
   normalize(input: InterpreterOutput): InterpreterOutput {
+    if (input.action === 'clarification_required') {
+      return input;
+    }
+
     const canonicalNextState = normalizeNextState(input.nextState);
     if (!canonicalNextState) {
       throw new NormalizationValidationError(`Invalid nextState: ${input.nextState}`);
@@ -75,7 +79,9 @@ export class NormalizerService {
         throw new NormalizationValidationError('Invalid artistName: must be a non-empty string');
       }
       const output: InterpreterOutput = {
+        schemaVersion: input.schemaVersion,
         action: 'create_practice',
+        confidence: input.confidence,
         filters: {
           practiceId: null,
           status: null,
@@ -83,6 +89,7 @@ export class NormalizerService {
         },
         artistName: artist.original,
         nextState: 'CREATED',
+        clarification: null,
       };
 
       return output;
@@ -112,7 +119,9 @@ export class NormalizerService {
     }
 
     const output: InterpreterOutput = {
+      schemaVersion: input.schemaVersion,
       action: input.action,
+      confidence: input.confidence,
       filters: {
         practiceId: input.filters.practiceId ?? null,
         status: shouldDropStatusFilter ? null : (canonicalStatus ?? null),
@@ -120,6 +129,7 @@ export class NormalizerService {
       },
       artistName: null,
       nextState: canonicalNextState,
+      clarification: input.clarification ?? null,
     };
 
     return output;
