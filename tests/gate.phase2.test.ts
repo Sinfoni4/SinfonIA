@@ -132,7 +132,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
               filter: { type: 'today' },
               title: 'Export Pratiche Dual Worker',
               csv: 'Nome,Data Creazione\nDualWorkerTest,2026-10-26T00:00:00Z\n',
-              practices: [] as never,
+              count: 0,
             };
           },
         };

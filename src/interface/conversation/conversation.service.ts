@@ -18,14 +18,9 @@ import {
   type AttachmentCandidate,
 } from '../telegram/telegram.attachment-target.js';
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
-import {
-  getTelegramMemoryState,
-  hasSeenUser,
-  markUserSeen,
-  resetTelegramMemory,
-  setLastPractice,
-} from '../telegram/telegram.memory.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
+
+import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
@@ -80,6 +75,8 @@ export type ConversationDeps = {
   };
   complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
   handleMessage: (input: string, identity: ConversationIdentity) => Promise<string>;
+  /** Defaults to process memory; production passes the database one. */
+  memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
 };
 
@@ -141,11 +138,14 @@ Prova a scrivere:
 export class ConversationService {
   // Files received while the user still has to choose the target practice.
   private readonly pendingAttachments = new PendingAttachmentStore<InboundFile>();
+  private readonly memory: ConversationMemory;
 
   constructor(
     private readonly deps: ConversationDeps,
     private readonly channel: ChannelOptions,
-  ) {}
+  ) {
+    this.memory = deps.memory ?? new InMemoryConversationMemory();
+  }
 
   async handle(message: InboundMessage, reply: Reply): Promise<void> {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -181,8 +181,6 @@ export class ConversationService {
     const text = message.text;
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
-    // Keeps users of different channels apart in the in-memory "seen" set.
-    const seenKey = `${this.channel.name}:${message.senderId}`;
 
     const inviteCode = LINK_COMMAND.exec(trimmed)?.[1];
     if (inviteCode) {
@@ -226,7 +224,7 @@ export class ConversationService {
           content,
           hint: file.hint,
         });
-        setLastPractice(dbUser.id, practice.id);
+        await this.memory.setLastPractice(tenant.id, dbUser.id, practice.id);
 
         await reply(
           `📁 Pratica: ${practice.name}\n` +
@@ -330,31 +328,20 @@ export class ConversationService {
       if (process.env.NODE_ENV !== 'development') return;
       await runtimeAwareExecute({ reply }, async () => {
         if (lower === '/devreset') {
-          resetTelegramMemory();
+          await this.memory.reset(dbUser.id);
           await reply('🧹 Dev state reset complete.');
           return;
         }
-        await handleDevState({
-          reply: async (runtimeReport) => {
-            const memory = getTelegramMemoryState();
-            await reply(`${runtimeReport}
-
-Memory:
-- seen users: ${memory.seenUsersCount}
-- memory entries: ${memory.memoryEntries}`);
-          },
-        });
+        await handleDevState({ reply: async (runtimeReport) => void (await reply(runtimeReport)) });
       });
       return;
     }
 
     if (lower.startsWith('/start') || isGreeting(text)) {
-      if (!hasSeenUser(seenKey)) {
-        markUserSeen(seenKey);
-        await reply(onboardingMessage(dbUser.role));
-      } else {
-        await reply('👋 Bentornato! Come posso aiutarti?');
-      }
+      const firstTime = await this.memory.markOnboarded(tenant.id, dbUser.id);
+      await reply(
+        firstTime ? onboardingMessage(dbUser.role) : '👋 Bentornato! Come posso aiutarti?',
+      );
       return;
     }
 

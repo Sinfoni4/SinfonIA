@@ -1,6 +1,8 @@
 import { enforceIdPriority } from '../../ai/validation/pre-execution.validator.js';
-
-import { getLastPractice, setLastPractice } from './telegram.memory.js';
+import {
+  InMemoryConversationMemory,
+  type ConversationMemory,
+} from '../conversation/conversation.memory.js';
 
 import type { TelegramIdentity } from './telegram.bot.js';
 import type { PracticeContext } from '../../ai/context/context.service.js';
@@ -39,14 +41,21 @@ export class TelegramAdapter {
         command: ExecutorInput;
         result: ExecutorResult<unknown>;
       }) => string;
+      /** Defaults to process memory; production passes the database one. */
+      memory?: ConversationMemory;
     },
-  ) {}
+  ) {
+    this.memory = deps.memory ?? new InMemoryConversationMemory();
+  }
+
+  private readonly memory: ConversationMemory;
 
   async handleMessage(input: string, identity: TelegramIdentity): Promise<string> {
     const { tenantId, userId: execUserId, role } = identity;
     const ctx: InterpreterContext = { tenantId, userId: execUserId, practices: [] };
 
-    const lastId = getLastPractice(execUserId);
+    const memory = this.memory;
+    const lastId = await memory.getLastPractice(execUserId);
     if (lastId && /quella|precedente|prima/i.test(input)) {
       input = `${input} ${lastId}`;
     }
@@ -103,7 +112,7 @@ export class TelegramAdapter {
         ? (maybeId as { id: string }).id
         : null;
     if (id) {
-      setLastPractice(execUserId, id);
+      await memory.setLastPractice(tenantId, execUserId, id);
     }
 
     return this.deps.formatResponse({ input, command, result });

@@ -230,6 +230,9 @@ logger Pino applica redaction difensiva a header di autorizzazione, token,
 chiavi, email e campi testuali sensibili. Non usare `console.log` con payload
 grezzi nelle nuove integrazioni.
 
+
+- Il codice di produzione scrive solo log JSON strutturati (pino, `src/shared/log.ts` o il logger iniettato); `console.*` è vietato da ESLint in `src/` tranne negli strumenti di `src/devtools/`.
+- Più istanze di SinfonIA possono girare insieme (scheduler e outbox si coordinano su PostgreSQL); il polling del bot Telegram invece va attivato in una sola istanza.
 ## Segreti
 
 `.env` e `.env.*` sono ignorati da Git; solo `.env.example` e

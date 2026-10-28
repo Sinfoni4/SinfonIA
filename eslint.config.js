@@ -58,6 +58,15 @@ export default [
     },
   },
   {
+    // Production code logs through pino (src/shared/log.ts or the injected logger): structured,
+    // levelled and redacted. Command-line tools in src/devtools may print to the console.
+    files: ['src/**/*.ts'],
+    ignores: ['src/devtools/**'],
+    rules: {
+      'no-console': 'error',
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**'],
   },
 ];

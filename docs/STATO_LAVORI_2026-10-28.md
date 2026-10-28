@@ -395,6 +395,16 @@ Da fare: un server di staging vero (oggi la prova dipende da un PC acceso).
 - Memoria conversazionale di Telegram (e WhatsApp) su database.
 - Rimozione dei log diagnostici di avvio; logger strutturato ovunque; pulizia di `dist/` prima della build; process lock adatto alla produzione.
 - **Accettazione**: export di 10.000 pratiche entro una soglia di memoria definita; nessun `console.log` nel codice di produzione.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Export a blocchi | ✅ | Lettura dal database a blocchi di 1.000 con filtro per data nella query e senza i payload (solo id, nome, data). **10.000 pratiche** con payload da 5 KB: export in pochi secondi e meno di 30 MB di memoria in più; con la vecchia implementazione, che caricava tutto, lo stesso test arrivava a circa 117 MB. **Cambiamento dell'API**: `POST /practices/export` restituisce `count` al posto dell'elenco completo `practices` (il CSV contiene già tutto) |
+| Memoria delle conversazioni su database | ✅ | Tabella `conversation_state` (migrazione `20261029160000_step8_conversation_state`): ultima pratica usata e benvenuto già mostrato, per Telegram e WhatsApp. Sopravvive ai riavvii ed è condivisa tra istanze; il benvenuto è registrato in modo atomico (una sola volta anche con messaggi simultanei) |
+| Log strutturati | ✅ | Tutti i `console.*` del codice di produzione sostituiti con pino (JSON, livelli, campi sensibili oscurati); rimossi i log diagnostici di avvio (BOOTSTEP, WATCHER TICK, PORT CHECK, heartbeat, tentativi di invio). Regola ESLint `no-console` su `src/` (esclusi gli strumenti da riga di comando di `src/devtools/`). Prova di avvio in produzione: tutte le righe sono JSON |
+| Build pulita | ✅ | `prebuild` cancella `dist/` prima della compilazione: niente file orfani di versioni precedenti |
+| Process lock | ✅ | In produzione nessun file PID (le istanze si coordinano tramite PostgreSQL); in sviluppo resta la protezione dalle doppie istanze e il lock viene rilasciato solo dal processo che lo possiede. **Il polling Telegram deve girare in una sola istanza** |
+| Test | ✅ | `tests/export.scale.test.ts` (10.000 pratiche, memoria e filtro per data nel database), `tests/conversation.memory.test.ts` (riavvio, istanze diverse, benvenuto concorrente). Suite 316/316 |
 
 #### Gate finale Fase 3 (1 g)
 - Esecuzione completa: CI, eval notturno reale, test di carico leggero, aggiornamento di report e cronoprogramma.

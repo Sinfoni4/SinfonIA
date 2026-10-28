@@ -221,7 +221,7 @@ describe('durable scheduler with PostgreSQL (Phase 2C)', () => {
               filter: { type: 'today' },
               title: 'Export Pratiche Oggi',
               csv: 'Nome,Data Creazione\nTest,2026-10-26T00:00:00Z\n',
-              practices: [] as never,
+              count: 0,
             };
           },
         };

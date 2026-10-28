@@ -1,9 +1,11 @@
+import { Prisma } from '@prisma/client';
+
 import { DatabaseError, NotFoundError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
 import type { PracticeDTO } from '../types/domain.js';
 import type { PrismaLike } from '../types/prisma.js';
-import type { PracticeStatus, Prisma } from '@prisma/client';
+import type { PracticeStatus } from '@prisma/client';
 
 export type PracticeListFilter = {
   userId?: string;
@@ -138,6 +140,44 @@ export class PracticeRepository {
       return rows.map(toPracticeDTO);
     } catch (err: unknown) {
       throw new DatabaseError('Failed to list practices', err);
+    }
+  }
+
+  /**
+   * One batch of practices for an export, most recent first, after the given cursor. Only id,
+   * name and creation date are read: payloads (which can hold OCR results) stay in the database.
+   */
+  async findExportBatch(
+    tenantId: string,
+    options: {
+      userId?: string;
+      from?: Date;
+      to?: Date;
+      after?: { createdAt: Date; id: string };
+      take: number;
+    },
+  ): Promise<Array<{ id: string; name: string | null; createdAt: Date }>> {
+    requireTenantId(tenantId);
+    const conditions: Prisma.Sql[] = [Prisma.sql`"tenant_id" = ${tenantId}::uuid`];
+    if (options.userId) conditions.push(Prisma.sql`"user_id" = ${options.userId}::uuid`);
+    if (options.from) conditions.push(Prisma.sql`"created_at" >= ${options.from}`);
+    if (options.to) conditions.push(Prisma.sql`"created_at" < ${options.to}`);
+    if (options.after) {
+      conditions.push(
+        Prisma.sql`("created_at", "id") < (${options.after.createdAt}, ${options.after.id}::uuid)`,
+      );
+    }
+    try {
+      return await this.prisma.$queryRaw<
+        Array<{ id: string; name: string | null; createdAt: Date }>
+      >`
+        SELECT "id", "payload"->>'name' AS "name", "created_at" AS "createdAt"
+        FROM "practice"
+        WHERE ${Prisma.join(conditions, ' AND ')}
+        ORDER BY "created_at" DESC, "id" DESC
+        LIMIT ${options.take}`;
+    } catch (err: unknown) {
+      throw new DatabaseError('Failed to read practices for export', err);
     }
   }
 

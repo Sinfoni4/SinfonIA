@@ -38,6 +38,7 @@ model Tenant {
   complianceReminders ComplianceReminder[]
   whatsappIdentities  WhatsappIdentity[]
   aiTraces            AiTrace[]
+  conversationStates  ConversationState[]
 
   @@map("tenant")
 }
@@ -87,6 +88,7 @@ model User {
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
   whatsappIdentity    WhatsappIdentity?
+  conversationState   ConversationState?
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -348,4 +350,19 @@ model AiTrace {
   @@index([tenantId, outcome, createdAt])
   @@index([createdAt])
   @@map("ai_trace")
+}
+
+/// Conversation memory of a chat user (Telegram, WhatsApp).
+model ConversationState {
+  userId         String    @id @map("user_id") @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  lastPracticeId String?   @map("last_practice_id") @db.Uuid
+  onboardedAt    DateTime? @map("onboarded_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("conversation_state")
 }

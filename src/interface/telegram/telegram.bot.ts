@@ -2,6 +2,7 @@ import { bindUserToTenant, getTenantIdByInvite } from '../../core/tenant/tenant.
 import { getTenantByTelegramUserAsync } from '../../core/tenant/tenant.store.js';
 import { UserRepository } from '../../data/repositories/user.repository.js';
 import { errorLabel } from '../../shared/errors.js';
+import { log } from '../../shared/log.js';
 import {
   ConversationService,
   TELEGRAM_COMPRESSED_PHOTO_TIP,
@@ -37,7 +38,7 @@ async function shutdownTelegram() {
       pollingActive = false;
     }
   } catch (err) {
-    console.error('Shutdown polling error', errorLabel(err));
+    log.error({ error: errorLabel(err) }, 'Telegram polling shutdown failed');
   }
 }
 

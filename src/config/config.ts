@@ -3,7 +3,8 @@ import { z } from 'zod';
 
 // Centralized, validated configuration.
 // If configuration is invalid, the process must fail fast (enterprise safety).
-dotenv.config();
+// quiet: dotenv would otherwise print an unstructured banner line to stdout.
+dotenv.config({ quiet: true });
 
 const ConfigSchema = z
   .object({

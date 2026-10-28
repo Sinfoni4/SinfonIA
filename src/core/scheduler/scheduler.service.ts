@@ -1,5 +1,6 @@
 import { SchedulerRepository } from '../../data/repositories/scheduler.repository.js';
 import { errorLabel } from '../../shared/errors.js';
+import { log } from '../../shared/log.js';
 import { ComplianceService } from '../compliance/compliance.service.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
@@ -176,7 +177,7 @@ export class SchedulerService {
   ): Promise<boolean> {
     const handler = this.handlers.get(task.type);
     if (!handler) {
-      console.warn(`⚠️ SCHEDULER — no handler for task=${task.type} tenant=${tenant.id}`);
+      log.warn({ task: task.type, tenantId: tenant.id }, 'Scheduler: no handler for task');
       return false;
     }
     const idempotencyKey = computeIdempotencyKey(tenant.id, task.type, frequency, now);
@@ -211,7 +212,7 @@ export class SchedulerService {
       });
 
       if (!adminUser) {
-        console.warn(`⚠️ SCHEDULER — no ADMIN user found for tenant=${tenant.id}`);
+        log.warn({ tenantId: tenant.id }, 'Scheduler: tenant has no ADMIN user, task skipped');
         return false;
       }
 

@@ -1,3 +1,5 @@
+import { log } from '../shared/log.js';
+
 export type RuntimeMode = 'HEALTHY' | 'DEGRADED' | 'CIRCUIT_OPEN';
 
 export interface RuntimeHealthMetrics {
@@ -33,17 +35,11 @@ class RuntimeState {
     if (this.mode === nextMode) return;
     this.mode = nextMode;
 
-    console.log(`🧠 RUNTIME MODE → ${nextMode}`);
-
     if (nextMode === 'HEALTHY') {
-      console.log('💚 Runtime HEALTHY');
-      return;
+      log.info({ mode: nextMode }, 'Runtime mode changed');
+    } else {
+      log.warn({ mode: nextMode }, 'Runtime mode changed');
     }
-    if (nextMode === 'DEGRADED') {
-      console.log('⚠️ Runtime DEGRADED');
-      return;
-    }
-    console.log('🛑 Circuit breaker OPEN');
   }
 
   updateHealthScore(metrics: Partial<RuntimeHealthMetrics>) {

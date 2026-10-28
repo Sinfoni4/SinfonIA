@@ -1,3 +1,5 @@
+import { log } from '../../shared/log.js';
+
 type ReplyCtx = {
   reply: (text: string) => Promise<unknown>;
 };
@@ -34,23 +36,19 @@ export async function safeReply(ctx: ReplyCtx, text: string): Promise<void> {
       await delay(backoffBefore[attempt - 1] ?? 0);
     }
 
-    console.log(`📡 Telegram send attempt ${attempt}`);
-
     try {
       await withTimeout(ctx.reply(text), timeoutMs);
-      console.log('✅ Telegram message delivered');
       return;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const isTimeout = message === 'TELEGRAM_REPLY_TIMEOUT';
-      console.warn(`⚠️ Telegram send failed${isTimeout ? ' (timeout)' : ''}`);
+      log.warn({ attempt, timeout: isTimeout }, 'Telegram send failed');
 
       if (attempt < maxAttempts) {
-        console.log('🔁 retrying...');
         continue;
       }
 
-      console.error('🛑 Telegram delivery failed after retries');
+      log.error({ attempts: attempt }, 'Telegram delivery failed after retries');
       return;
     }
   }

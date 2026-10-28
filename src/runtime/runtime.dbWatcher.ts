@@ -1,5 +1,6 @@
 import { checkDatabaseConnection } from '../data/db/db.health.js';
 import { errorLabel } from '../shared/errors.js';
+import { log } from '../shared/log.js';
 
 import { attemptDatabaseRecovery } from './runtime.db.recovery.js';
 import { runtimeState } from './runtime.state.js';
@@ -21,15 +22,12 @@ export function startDbWatcher(prisma: PrismaClient): void {
 
   interval = setInterval(() => {
     void (async () => {
-      // TEMP DIAGNOSTIC: detect watcher overlap / reconnect races.
-      console.log(`🧠 WATCHER TICK ${new Date().toISOString()}`);
-
       const prevMode = runtimeState.getMode();
       const prevHealth = runtimeState.getHealth();
       const result = await checkDatabaseConnection(prisma);
 
       if (!result.ok) {
-        console.log('⚠️ WATCHER TRIGGER RECONNECT');
+        log.warn('Database check failed: reconnecting');
         await attemptDatabaseRecovery(prisma);
       }
 
@@ -53,10 +51,10 @@ export function startDbWatcher(prisma: PrismaClient): void {
       runtimeState.setMode(nextMode);
 
       if (prevMode !== nextMode && prevMode !== 'HEALTHY' && nextMode === 'HEALTHY') {
-        console.log('💚 Database reconnected — switching to HEALTHY mode');
+        log.info('Database reconnected: runtime healthy again');
       }
     })().catch((error: unknown) => {
-      console.error('❌ WATCHER ERROR', errorLabel(error));
+      log.error({ error: errorLabel(error) }, 'Database watcher failed');
     });
   }, 10000);
 }
