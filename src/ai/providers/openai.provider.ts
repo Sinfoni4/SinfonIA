@@ -10,6 +10,22 @@ export type OpenAIProviderConfig = {
   model?: string;
   timeoutMs?: number;
   maxRetries?: number;
+  /** Chat completions URL; OpenAI by default. */
+  endpointUrl?: string;
+  /** Authentication header; OpenAI uses a bearer token, Azure an "api-key" header. */
+  authHeaders?: Record<string, string>;
+  providerName?: string;
+};
+
+export type AzureOpenAIProviderConfig = {
+  apiKey: string;
+  /** Resource endpoint, e.g. https://<resource>.openai.azure.com (choose an EU region). */
+  endpoint: string;
+  /** Deployment name of the model in the Azure resource. */
+  deployment: string;
+  apiVersion?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
 };
 
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -44,10 +60,13 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
     model = DEFAULT_MODEL,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     maxRetries = DEFAULT_MAX_RETRIES,
+    endpointUrl = 'https://api.openai.com/v1/chat/completions',
+    authHeaders = { Authorization: `Bearer ${apiKey}` },
+    providerName = 'openai',
   } = config;
 
   async function completeDetailed(prompt: string): Promise<LLMCompletionResult> {
-    const url = 'https://api.openai.com/v1/chat/completions';
+    const url = endpointUrl;
     const body = {
       model,
       messages: [
@@ -72,7 +91,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
+            ...authHeaders,
           },
           body: JSON.stringify(body),
           signal: controller.signal,
@@ -113,7 +132,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
         return {
           text,
           model: data.model ?? model,
-          provider: 'openai',
+          provider: providerName,
           usage: data.usage
             ? {
                 promptTokens: data.usage.prompt_tokens,
@@ -162,4 +181,22 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
     model,
     providerName: 'openai',
   };
+}
+
+/**
+ * Azure OpenAI: same chat completions API, served from an Azure resource in a chosen region
+ * (e.g. Sweden Central, France Central) so prompts stay in the EU under the Azure DPA.
+ */
+export function createAzureOpenAIProvider(config: AzureOpenAIProviderConfig): LLMClient {
+  const endpoint = config.endpoint.replace(/\/+$/, '');
+  return createOpenAIProvider({
+    apiKey: config.apiKey,
+    // The deployment determines the model; the name is only reported in traces.
+    model: config.deployment,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+    endpointUrl: `${endpoint}/openai/deployments/${encodeURIComponent(config.deployment)}/chat/completions?api-version=${encodeURIComponent(config.apiVersion ?? '2024-10-21')}`,
+    authHeaders: { 'api-key': config.apiKey },
+    providerName: 'azure-openai',
+  });
 }

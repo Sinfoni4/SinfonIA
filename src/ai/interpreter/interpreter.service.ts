@@ -1,4 +1,5 @@
 import { LLMDisabledError } from '../providers/disabled.provider.js';
+import { pseudonymizeNames } from '../security/name-pseudonymizer.js';
 import { maskPII, unmaskObjectPII } from '../security/pii-minimizer.js';
 import { checkPromptInjection } from '../security/prompt-guard.js';
 
@@ -129,8 +130,13 @@ export class InterpreterService {
       };
     }
 
-    const { maskedText, piiMap } = maskPII(inputText);
-    const prompt = buildInterpreterPrompt(maskedText, context);
+    // Identifiers (tax codes, IBANs, contacts) and personal names never reach the provider in
+    // clear: they are replaced with placeholders and restored in the answer.
+    const { maskedText: piiMaskedText, piiMap: identifierMap } = maskPII(inputText);
+    const names = pseudonymizeNames(piiMaskedText, context);
+    const maskedText = names.text;
+    const piiMap = new Map([...identifierMap, ...names.map]);
+    const prompt = buildInterpreterPrompt(maskedText, names.context ?? context);
 
     let raw: string;
     let model = this.getModelName();

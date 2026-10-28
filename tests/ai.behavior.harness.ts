@@ -317,6 +317,11 @@ async function main(): Promise<void> {
         OUTBOX_DISPATCH_INTERVAL_MS: 5_000,
         OUTBOX_MAX_ATTEMPTS: 8,
         WHATSAPP_API_VERSION: 'v21.0',
+        RATE_LIMIT_PER_MINUTE: 120,
+        RATE_LIMIT_AI_PER_MINUTE: 20,
+        RATE_LIMIT_TENANT_PER_MINUTE: 600,
+        LLM_PROVIDER: 'openai',
+        AZURE_OPENAI_API_VERSION: '2024-10-21',
       },
       logger,
       {

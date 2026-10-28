@@ -6,7 +6,7 @@ import { ExecutorService } from './ai/execution/executor.service.js';
 import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
 import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
-import { createOpenAIProvider } from './ai/providers/openai.provider.js';
+import { createAzureOpenAIProvider, createOpenAIProvider } from './ai/providers/openai.provider.js';
 import {
   validateBeforeDecision,
   validateResolvedCommand,
@@ -45,6 +45,7 @@ import { createLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
 
 import type { LLMClient } from './ai/interpreter/interpreter.service.js';
+import type { AppConfig } from './config/config.js';
 import type { ConversationIdentity } from './interface/conversation/conversation.service.js';
 
 export let runtimeMode: 'HEALTHY' | 'DEGRADED' | 'CIRCUIT_OPEN' = 'HEALTHY';
@@ -77,11 +78,33 @@ function assertEnv() {
   }
 }
 
-function createLLMClient(config: {
-  OPENAI_API_KEY?: string;
-  ENABLE_LLM?: boolean;
-  OPENAI_MODEL?: string;
-}): LLMClient {
+function createLLMClient(
+  config: Pick<
+    AppConfig,
+    | 'OPENAI_API_KEY'
+    | 'ENABLE_LLM'
+    | 'OPENAI_MODEL'
+    | 'LLM_PROVIDER'
+    | 'AZURE_OPENAI_ENDPOINT'
+    | 'AZURE_OPENAI_API_KEY'
+    | 'AZURE_OPENAI_DEPLOYMENT'
+    | 'AZURE_OPENAI_API_VERSION'
+  >,
+): LLMClient {
+  if (
+    config.ENABLE_LLM &&
+    config.LLM_PROVIDER === 'azure' &&
+    config.AZURE_OPENAI_ENDPOINT &&
+    config.AZURE_OPENAI_API_KEY &&
+    config.AZURE_OPENAI_DEPLOYMENT
+  ) {
+    return createAzureOpenAIProvider({
+      endpoint: config.AZURE_OPENAI_ENDPOINT,
+      apiKey: config.AZURE_OPENAI_API_KEY,
+      deployment: config.AZURE_OPENAI_DEPLOYMENT,
+      apiVersion: config.AZURE_OPENAI_API_VERSION,
+    });
+  }
   if (config.ENABLE_LLM && config.OPENAI_API_KEY) {
     return createOpenAIProvider({
       apiKey: config.OPENAI_API_KEY,

@@ -23,6 +23,12 @@ const ConfigSchema = z
       .default('false')
       .transform((v) => v === 'true' || v === '1'),
     OPENAI_MODEL: z.string().optional().default('gpt-4o-mini'),
+    // LLM provider: OpenAI, or Azure OpenAI with a resource in an EU region (data residency).
+    LLM_PROVIDER: z.enum(['openai', 'azure']).default('openai'),
+    AZURE_OPENAI_ENDPOINT: z.url().optional(),
+    AZURE_OPENAI_API_KEY: z.string().min(1).optional(),
+    AZURE_OPENAI_DEPLOYMENT: z.string().min(1).optional(),
+    AZURE_OPENAI_API_VERSION: z.string().min(1).default('2024-10-21'),
     AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
     AUTH_ISSUER: z.string().min(1).default('sinfonia'),
     AUTH_AUDIENCE: z.string().min(1).default('sinfonia-api'),
@@ -61,7 +67,21 @@ const ConfigSchema = z
     WHATSAPP_APP_SECRET: z.string().min(1).optional(),
     WHATSAPP_VERIFY_TOKEN: z.string().min(16).optional(),
     WHATSAPP_API_VERSION: z.string().min(2).default('v21.0'),
+    // HTTP request limits per minute: per user, per user on /ai/execute, per tenant.
+    RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(120),
+    RATE_LIMIT_AI_PER_MINUTE: z.coerce.number().int().min(1).default(20),
+    RATE_LIMIT_TENANT_PER_MINUTE: z.coerce.number().int().min(1).default(600),
   })
+  .refine(
+    (c) =>
+      c.LLM_PROVIDER !== 'azure' ||
+      Boolean(c.AZURE_OPENAI_ENDPOINT && c.AZURE_OPENAI_API_KEY && c.AZURE_OPENAI_DEPLOYMENT),
+    {
+      message:
+        'LLM_PROVIDER=azure needs AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY and AZURE_OPENAI_DEPLOYMENT',
+      path: ['LLM_PROVIDER'],
+    },
+  )
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',
     path: ['S3_BUCKET'],

@@ -63,7 +63,7 @@ Non eseguito: `npm run ai:eval:nightly` (chiamate a pagamento al modello OpenAI 
 | Scheduler durevole (idempotenza, lock, export) | 🟢 Funzionante dopo le correzioni P0 |
 | Outbox | 🟢 Dispatcher con retry, dead letter e consegna su Telegram e webhook firmato (aggiornato 28/10/2026, Step 5; prima: 🟡 solo scrittura) |
 | Interprete LLM, fallback deterministico, richieste di chiarimento | 🟢 Funzionante, validato solo con stub |
-| Difesa prompt injection e minimizzazione PII | 🟡 Parziale: pattern limitati, nomi non pseudonimizzati |
+| Difesa prompt injection e minimizzazione PII | 🟢 Pattern anche in italiano e su testo offuscato, nomi pseudonimizzati, provider UE configurabile, limiti di richieste (Step 1, 29/10/2026; prima: 🟡 parziale) |
 | Allegati e OCR | 🟢 OCR reale in-process su foto e PDF, upload multipart, limiti di formato e dimensione (aggiornato 28/10/2026; prima: 🔴 nessun OCR reale) |
 | Evaluation harness | 🟡 Infrastruttura presente, in CI usa un LLM simulato |
 | Scadenzario e promemoria (DURC, sicurezza, bio, visite, patentini) | 🟢 API, comandi Telegram e promemoria a 30/15/7/1 giorni e alla scadenza (Step 6, 29/10/2026) |
@@ -218,6 +218,16 @@ gantt
 - `PromptGuard`: pattern in italiano e varianti comuni (parafrasi, spaziature, codifiche).
 - Provider LLM configurabile (OpenAI / Azure OpenAI in regione UE) tramite variabili d'ambiente.
 - **Accettazione**: nessun nome in chiaro nel prompt inviato al provider (test); 429 oltre la soglia; injection in italiano bloccate.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Limiti di richieste | ✅ | `@fastify/rate-limit` dopo l'autenticazione: per utente (`RATE_LIMIT_PER_MINUTE`, default 120/min), limite separato e più stretto su `/ai/execute` (`RATE_LIMIT_AI_PER_MINUTE`, 20/min), tetto per tenant (`RATE_LIMIT_TENANT_PER_MINUTE`, 600/min). Oltre la soglia: 429 con `retry-after`. Esclusi health check e webhook WhatsApp. Limiti in memoria: con più istanze serve uno store condiviso (Redis) |
+| Security headers | ✅ | `@fastify/helmet` (nosniff, frame options, HSTS, CSP…) |
+| Pseudonimizzazione dei nomi | ✅ | `src/ai/security/name-pseudonymizer.ts`: nomi nel messaggio (sequenze in maiuscolo, parole dopo «pratica (per/di)», anche in minuscolo) e nomi delle pratiche nel contesto diventano `[NOME_n]`, coerenti tra messaggio e contesto, e vengono ripristinati nella risposta. Si aggiunge al mascheramento di CF, IBAN, carte, email e telefoni |
+| Prompt injection in italiano | ✅ | Ignorare istruzioni, cambi di ruolo, modalità senza limiti, richiesta del prompt o di segreti, dati di altre cooperative, aggiramento dell'isolamento, cancellazioni massive, esecuzione di comandi. Controllo anche su testo normalizzato (lettere spaziate, leetspeak, accenti, caratteri invisibili) e su contenuti in base64. I comandi normali («elimina pratica Mario Rossi», «mostrami le pratiche di Giulia») non vengono bloccati |
+| Provider LLM configurabile | ✅ | `LLM_PROVIDER=openai\|azure`; con `azure` le richieste vanno al deployment `AZURE_OPENAI_DEPLOYMENT` della risorsa `AZURE_OPENAI_ENDPOINT` (scegliere una regione UE), con chiave nell'header `api-key` |
+| Test | ✅ | `tests/security.step1.test.ts` (40 test): 429 per utente, per AI e per tenant; header; nessun nome in chiaro nel prompt inviato al provider (il test fallisce senza la pseudonimizzazione); 25 casi di injection e offuscamento, 8 richieste legittime; Azure. Suite 302/302; eval AI 19/19 con 0% di fughe di PII |
 
 #### Step 2 — Valutazione AI con modello reale (3 g) · completa le attività aggiunte
 - Golden set ampliato da 19 ad almeno 60 scenari: parafrasi in italiano, input con errori, ambiguità reali, injection non banali, PII miste.
