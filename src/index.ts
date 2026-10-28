@@ -14,6 +14,7 @@ import {
 import { loadConfig } from './config/config.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
+import { createStorageService } from './data/storage/storage.factory.js';
 import { printRuntimeTestGuide } from './dev/dev.tests.js';
 import { buildServer } from './interface/http/server.js';
 import { TelegramAdapter } from './interface/telegram/telegram.adapter.js';
@@ -150,6 +151,7 @@ TEST 5 — /devstate health metrics
   });
   const practiceService = new PracticeApplicationService(prisma, {
     maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES,
+    storageService: createStorageService(config),
   });
   const executorService = new ExecutorService({ practiceService });
   const contextService = new ContextService(practiceService);

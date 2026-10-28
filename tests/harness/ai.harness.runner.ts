@@ -358,6 +358,9 @@ export async function runHarness(args: {
       AUTH_AUDIENCE: 'sinfonia-api',
       AUTH_TTL_SECONDS: 3600,
       ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
+      STORAGE_DRIVER: 'local',
+      S3_REGION: 'eu-south-1',
+      S3_FORCE_PATH_STYLE: false,
     },
     logger,
     {
