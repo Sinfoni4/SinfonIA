@@ -1,0 +1,8 @@
+{
+  "documentType": "receipt",
+  "fields": {
+    "merchantVat": "01122334459",
+    "documentDate": "2026-10-25",
+    "totalAmount": 45.8
+  }
+}

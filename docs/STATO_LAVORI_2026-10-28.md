@@ -15,7 +15,7 @@
 - Restano aperti gli interventi **P1** e **P2** (§4).
 - Rispetto al piano della Fase 3: 3A completa, 3B parziale (manca l'OCR reale), 3C e 3D non iniziate (§5).
 - Il cronoprogramma per step (§6) porta a chiudere la Fase 3 in 36 giornate lavorative: gate finale il 22/12/2026, metà gennaio 2027 con margine.
-- **Aggiornamento 28/10/2026 — Step 4 avviato in anticipo**: l'OCR reale è implementato e testato (§6.3, Step 4). Restano adapter S3/MinIO e conferma della pratica su Telegram.
+- **Aggiornamento 28/10/2026 — Step 4 completato nello sviluppo**: OCR reale, storage S3/MinIO e conferma della pratica su Telegram implementati e testati (§6.3, Step 4). Resta la prova su documenti reali.
 
 ---
 
@@ -251,9 +251,12 @@ gantt
 | Tipo `certificate` | ✅ | Categoria (BIO, DURC, ...) e data di scadenza, già pronti per lo scadenzario dello Step 6 |
 | Risposta Telegram | ✅ | Riepilogo dei dati letti e dei campi da verificare; file troppo grandi rifiutati prima del download |
 | Fixture e test | ✅ | 7 documenti fittizi in `tests/fixtures/ocr/` (foto inclinate con rumore, PDF digitale, PDF scansionato); 23 nuovi test; suite completa 125/125 |
-| Adapter S3/MinIO | ⏳ | Da fare |
-| Conferma della pratica su Telegram | ⏳ | Da fare |
-| Prova su documenti reali | ⏳ | Le fixture sono generate e pulite: va misurata l'accuratezza su foto reali anonimizzate prima del pilota |
+| Adapter S3/MinIO | ✅ | `STORAGE_DRIVER=s3`: chiavi per tenant (`<tenant>/attachments/...`), lettura e cancellazione solo nel prefisso del tenant, cifratura lato server opzionale, regione predefinita `eu-south-1` (Milano). Testato con client simulato; non ancora provato contro un MinIO reale |
+| Conferma della pratica su Telegram | ✅ | Con una sola pratica aperta il file viene associato direttamente; se la didascalia nomina una pratica, si usa quella; altrimenti il bot chiede di scegliere tra le ultime 5 (risposta con il numero o "annulla", validità 10 minuti) |
+| Path traversal dello storage locale | ✅ | Corretto il controllo con prefisso senza separatore segnalato nell'audit |
+| Prova su documenti reali | ⏳ | Le fixture sono generate e pulite: va misurata l'accuratezza su foto reali anonimizzate prima del pilota. Pronti il protocollo ([PROTOCOLLO_PROVA_OCR.md](PROTOCOLLO_PROVA_OCR.md)) e lo script `npm run ocr:accuracy`; servono i documenti della cooperativa |
+
+**CI su GitHub (28/10/2026)**: alla prima pubblicazione la pipeline falliva già all'installazione delle dipendenze, su tutti i branch: due binari solo Windows erano dipendenze dirette (da `643f298`) e il lockfile, generato con npm 11, non era accettato dall'npm 10 della CI. Corretti entrambi: CI verde su GitHub Actions.
 
 Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture); con lo Step 5 potrà passare in coda asincrona.
 

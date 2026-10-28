@@ -94,7 +94,7 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
     - `file_name`, `mime_type`, `file_size`, `storage_path`
     - `ocr_status` (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`), `ocr_result` (JSONB)
 - **Storage Isolato Locale**:
-  - Storage adapter filesystem organizzato per tenant (`.runtime/storage/<tenant_id>/`). L'adapter S3/MinIO non è ancora implementato.
+  - Storage configurabile con `STORAGE_DRIVER`: filesystem locale per tenant (`.runtime/storage/<tenant_id>/`, default) oppure S3/MinIO (`<tenant_id>/attachments/...`, regione predefinita `eu-south-1`, cifratura lato server opzionale). In entrambi i casi lettura e cancellazione sono confinate al tenant del chiamante.
 - **Estrazione Documentale** ([`src/ai/ocr/document-ocr.service.ts`](../src/ai/ocr/document-ocr.service.ts)):
   - **Pipeline (dal 28/10/2026)**: il formato reale è rilevato dai magic bytes (PDF, JPEG, PNG, WEBP, testo), mai dal MIME dichiarato. Le immagini passano dall'OCR Tesseract eseguito in-process con il modello italiano incluso nel pacchetto `@tesseract.js-data/ita` (nessun download a runtime, nessun dato verso terzi). I PDF digitali vengono letti dal livello di testo; i PDF scansionati vengono rasterizzati (fino a 5 pagine) e passati all'OCR ([`text-extraction.ts`](../src/ai/ocr/text-extraction.ts)).
   - **Nessun valore inventato**: i campi non leggibili restano `null` e sono elencati in `missingFields`; `warnings` segnala P.IVA con cifra di controllo errata, totali incoerenti e confidenza OCR sotto il 70%; `reviewRequired` chiede una verifica umana. In precedenza il parser sostituiva i campi mancanti con valori fittizi (P.IVA `IT00000000000`, totale `100`, data odierna, IVA 22%).
@@ -108,7 +108,7 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 - **Arricchimento Pratica & API REST**:
   - Aggiornamento automatico del campo `payload` JSONB della pratica con i metadati estratti dall'allegato.
   - `POST /practices/:id/attachments`: upload `multipart/form-data` (campo `file`, campo opzionale `hint` inviato prima del file) oppure JSON con contenuto base64 (`contentBase64`); elaborazione sincrona. Limite di dimensione configurabile con `ATTACHMENT_MAX_BYTES` (default 10 MB, risposta 413); formati non supportati rifiutati con 415. Il MIME salvato è quello rilevato dal contenuto.
-  - Telegram: foto e documenti seguono la stessa pipeline; il bot riassume i dati letti e indica quelli da verificare, e rifiuta i file troppo grandi prima di scaricarli.
+  - Telegram: foto e documenti seguono la stessa pipeline. Il file viene associato direttamente solo se l'utente ha una sola pratica aperta o se la didascalia nomina una pratica; altrimenti il bot chiede di scegliere (numero o "annulla"). Il bot riassume i dati letti, indica quelli da verificare e rifiuta i file troppo grandi prima di scaricarli.
   - `GET /practices/:id/attachments`: elenco e consultazione documenti per pratica con rispetto delle query scoped per tenant.
 
 ---

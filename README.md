@@ -157,6 +157,18 @@ campi non leggibili restano `null` e il risultato è marcato `reviewRequired`.
 Le fixture di test (documenti fittizi) si rigenerano con
 `npx tsx scripts/generate-ocr-fixtures.ts`.
 
+Storage degli allegati: `STORAGE_DRIVER=local` (default, `.runtime/storage`
+o `STORAGE_LOCAL_DIR`) oppure `STORAGE_DRIVER=s3` per AWS S3 o MinIO
+(`S3_BUCKET`, `S3_REGION`, e per MinIO `S3_ENDPOINT` con
+`S3_FORCE_PATH_STYLE=true`). Vedi `.env.example`.
+
+Su Telegram un file viene associato direttamente solo se l'utente ha una sola
+pratica aperta o se la didascalia nomina la pratica; altrimenti il bot chiede
+di scegliere rispondendo con il numero.
+
+Per misurare l'accuratezza dell'OCR su documenti reali vedi
+[docs/PROTOCOLLO_PROVA_OCR.md](docs/PROTOCOLLO_PROVA_OCR.md).
+
 ## Health check
 
 - `GET /healthz`: liveness del processo (HTTP 200 finché il processo risponde).

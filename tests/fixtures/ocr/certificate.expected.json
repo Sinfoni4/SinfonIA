@@ -1,0 +1,9 @@
+{
+  "documentType": "certificate",
+  "fields": {
+    "category": "BIO",
+    "certificateNumber": "BIO-2026-0042",
+    "issueDate": "2026-03-01",
+    "expiryDate": "2027-02-28"
+  }
+}

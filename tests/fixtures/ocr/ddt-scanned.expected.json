@@ -1,0 +1,10 @@
+{
+  "documentType": "delivery_note",
+  "fields": {
+    "supplierName": "Cantina Esempio S.r.l.",
+    "supplierVat": "09876543217",
+    "documentNumber": "2026-088",
+    "documentDate": "2026-10-20",
+    "recipientName": "Cooperativa Demo"
+  }
+}

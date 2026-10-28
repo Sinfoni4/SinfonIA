@@ -62,7 +62,7 @@ Per conformità alle normative europee sul trasferimento internazionale dei dati
   - **Azure OpenAI Service**: distribuzione configurabile su regioni europee (es. *West Europe - Netherlands*, *North Europe - Ireland*, *Switzerland North*). I dati rimangono all'interno dei confini dello Spazio Economico Europeo (SEE).
   - **OpenAI Enterprise / Zero Data Retention (ZDR)**: per impostazione predefinita con le API a pagamento, OpenAI non utilizza i dati inviati tramite API per addestrare i propri modelli (`data-sharing: false`) e supporta la cancellazione automatica della cronologia temporanea.
 - **Isolamento Documentale su Storage Locale**:
-  - Gli allegati caricati dai soci (foto di fatture, DDT, ricevute) risiedono in directory separate e isolate per-tenant sul filesystem locale (`src/data/storage/storage.service.ts`), protette da controlli anti *path traversal*. L'adapter MinIO/S3 non è ancora implementato.
+  - Gli allegati caricati dai soci (foto di fatture, DDT, ricevute) risiedono, a scelta, sul filesystem locale in directory separate per tenant oppure su storage S3/MinIO con prefissi per tenant (`src/data/storage/`); in entrambi i casi l'accesso è confinato al tenant e protetto da controlli anti *path traversal*. Con S3 la regione predefinita è `eu-south-1` (Milano) ed è disponibile la cifratura lato server; con MinIO self-hosted i dati restano sull'infrastruttura scelta dal titolare.
   - Nessun documento o file binario viene trasferito a server terzi: l'OCR (Tesseract) e la lettura dei PDF avvengono in-process, con il modello linguistico italiano incluso nelle dipendenze e senza download a runtime. Un eventuale futuro motore OCR cloud dovrà rispettare gli stessi vincoli di residenza nell'UE.
 
 ---
