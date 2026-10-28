@@ -196,6 +196,33 @@ describe('Telegram bot: choosing the practice for a received file', () => {
     });
   });
 
+  it('suggests sending a file when a compressed photo needs review', async () => {
+    const { send, sent, addAttachment, photo } = setup('user-107', twoPractices);
+    const weakRead = {
+      attachment: { ocrStatus: 'COMPLETED' },
+      ocrResult: {
+        documentType: 'receipt',
+        merchantName: null,
+        merchantVat: null,
+        documentDate: null,
+        totalAmount: null,
+        missingFields: ['merchantName', 'merchantVat', 'documentDate', 'totalAmount'],
+        warnings: [],
+        reviewRequired: true,
+      },
+    };
+    addAttachment.mockResolvedValue(weakRead);
+
+    await send({ photo, caption: 'scontrino Mario Rossi' });
+    expect(sent.at(-1)).toContain('invia il documento come File');
+
+    await send({
+      document: { file_id: 'doc-3', file_unique_id: 'u', file_name: 'scontrino.jpg' },
+      caption: 'scontrino Mario Rossi',
+    });
+    expect(sent.at(-1)).not.toContain('invia il documento come File');
+  });
+
   it('explains what to do when there is no practice yet', async () => {
     const { send, sent, addAttachment, photo } = setup('user-104', []);
 

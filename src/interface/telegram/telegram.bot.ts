@@ -54,6 +54,10 @@ export type BotDeps = {
 };
 
 let botInstance: TelegramClient | null = null;
+// Telegram compresses photos to 1280 px, which hurts OCR on small print (found in staging).
+const COMPRESSED_PHOTO_TIP =
+  '\n\n💡 Per una lettura migliore invia il documento come File (📎 → File) invece che come ' +
+  'Foto: Telegram comprime le foto.';
 // Bot API limit for downloading files (getFile).
 const TELEGRAM_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 // Most recent practices considered when choosing where a received file goes.
@@ -205,7 +209,10 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
           await bot.sendMessage(
             chatId,
             `📁 Pratica: ${practice.name}\n` +
-              formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult),
+              formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult) +
+              (file.compressedPhoto && uploadResult.ocrResult?.reviewRequired
+                ? COMPRESSED_PHOTO_TIP
+                : ''),
           );
         } catch (uploadErr) {
           if (uploadErr instanceof AttachmentRejectedError) {
@@ -242,6 +249,7 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
             fileName: `photo_${Date.now()}.jpg`,
             mimeType: 'image/jpeg',
             hint: text,
+            compressedPhoto: true,
           };
         }
 

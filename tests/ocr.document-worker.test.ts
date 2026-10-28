@@ -4,7 +4,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { WorkerPdfExtractor } from '../src/ai/ocr/pdf-worker.js';
+import { DocumentWorker } from '../src/ai/ocr/document-worker.js';
 import { DocumentTextExtractor, type OcrEngine } from '../src/ai/ocr/text-extraction.js';
 
 const fixture = (name: string) => readFileSync(path.join('tests/fixtures/ocr', name));
@@ -16,8 +16,8 @@ const fakeOcr: OcrEngine = {
   terminate: () => Promise.resolve(),
 };
 
-describe('PDF worker thread', () => {
-  const extractor = new WorkerPdfExtractor();
+describe('document worker thread', () => {
+  const extractor = new DocumentWorker();
 
   afterAll(async () => {
     await extractor.terminate();
@@ -38,7 +38,7 @@ describe('PDF worker thread', () => {
   it("does not block the server's event loop while rendering a scanned PDF", async () => {
     const textExtractor = new DocumentTextExtractor({
       ocrEngine: fakeOcr,
-      pdfExtractor: extractor,
+      documentWorker: extractor,
     });
     // Warm-up: worker start-up and module loading are not what is measured.
     await textExtractor.extract(fixture('ddt-scanned.pdf'), 'pdf');
@@ -70,13 +70,13 @@ describe('PDF worker thread', () => {
   });
 
   it('restarts the worker when a document takes too long', async () => {
-    const impatient = new WorkerPdfExtractor(1);
+    const impatient = new DocumentWorker(1);
     await expect(impatient.extract(fixture('ddt-scanned.pdf'), options)).rejects.toThrow(
       'timed out',
     );
     await impatient.terminate();
 
-    const patient = new WorkerPdfExtractor();
+    const patient = new DocumentWorker();
     try {
       const result = await patient.extract(fixture('invoice-digital.pdf'), options);
       expect(result.text).toContain('2026/118');
@@ -86,7 +86,7 @@ describe('PDF worker thread', () => {
   });
 
   it('fails pending requests on terminate', async () => {
-    const short = new WorkerPdfExtractor();
+    const short = new DocumentWorker();
     const pending = short.extract(fixture('ddt-scanned.pdf'), options);
     const assertion = expect(pending).rejects.toThrow('terminated');
     await short.terminate();

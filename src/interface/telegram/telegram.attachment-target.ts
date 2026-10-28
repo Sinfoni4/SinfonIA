@@ -13,6 +13,8 @@ export type TelegramFileRef = {
   mimeType: string;
   fileSize?: number;
   hint?: string;
+  /** Sent as a Telegram photo, which Telegram compresses (1280 px): OCR works better on files. */
+  compressedPhoto?: boolean;
 };
 
 export type AttachmentTarget =

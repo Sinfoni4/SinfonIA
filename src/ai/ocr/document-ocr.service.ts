@@ -40,6 +40,8 @@ const VAT_AMOUNT_REGEX = new RegExp(
   'i',
 );
 const VAT_NUMBER_REGEX = /(?:p\.?\s*iva|partita\s*iva|vat)\s*[:.]?\s*((?:IT)?\s?\d{11})\b/i;
+// A zero total is legitimate (non-fiscal slips, free items) but unusual enough to be checked.
+const ZERO_TOTAL_WARNING = 'Document total is zero: check whether it is a non-fiscal document';
 const LEGAL_FORM_REGEX =
   /\b(?:s\.?\s?r\.?\s?l\.?|s\.?\s?p\.?\s?a\.?|s\.?\s?n\.?\s?c\.?|s\.?\s?a\.?\s?s\.?|soc\.?\s*coop)(?![a-z])/i;
 
@@ -172,6 +174,9 @@ export class DocumentOcrService {
     ) {
       warnings.push('Totals do not add up: taxable amount + VAT differs from document total');
     }
+    if (totalAmount === 0) {
+      warnings.push(ZERO_TOTAL_WARNING);
+    }
 
     const fields = {
       supplierName,
@@ -225,12 +230,17 @@ export class DocumentOcrService {
       .find((l) => /[a-z]{3,}/i.test(l));
     // OCR often adds a stray lowercase character after an all-caps shop sign ("BAR ESEMPIO i").
     const merchantLine = firstLine?.replace(/^([^a-z]+?)\s+[a-z]$/, '$1');
+    // A line with a legal form ("Brico io S.p.A.") beats the first line, often a logo read as noise.
     const fields = {
-      merchantName: merchantLine ? this.cleanValue(merchantLine) : null,
+      merchantName:
+        this.findCompanyLine(text) ?? (merchantLine ? this.cleanValue(merchantLine) : null),
       merchantVat: this.findVatNumber(text, warnings),
       documentDate: this.findDate(text, /(?:data)\s*[:.]?\s*/i),
       totalAmount: this.findAmount(text, /totale\s*(?:complessivo|eur(?:o)?|€)?\s*[:.]?\s*€?\s*/i),
     };
+    if (fields.totalAmount === 0) {
+      warnings.push(ZERO_TOTAL_WARNING);
+    }
     return ReceiptOcrSchema.parse({
       documentType: 'receipt',
       ...fields,
@@ -299,11 +309,28 @@ export class DocumentOcrService {
 
   private findVatNumber(text: string, warnings: string[]): string | null {
     const raw = text.match(VAT_NUMBER_REGEX)?.[1];
-    if (!raw) return null;
+    if (!raw) return this.findUnlabeledVatNumber(text, warnings);
     const vat = raw.replace(/\s/g, '').toUpperCase();
     if (!isValidItalianVat(vat.replace(/^IT/, ''))) {
       warnings.push(`VAT number ${vat} fails the check digit`);
     }
+    return vat;
+  }
+
+  /**
+   * OCR often garbles the label ("Partira Iva"). Without a label, an 11-digit number is taken
+   * only if it passes the check digit and is the only such number in the text (an invoice with
+   * supplier and customer numbers stays ambiguous), and it is flagged for review.
+   */
+  private findUnlabeledVatNumber(text: string, warnings: string[]): string | null {
+    const candidates = new Set(
+      [...text.matchAll(/(?<![\d])(?:IT\s?)?(\d{11})(?![\d])/gi)]
+        .map((m) => m[1])
+        .filter((digits) => isValidItalianVat(digits)),
+    );
+    if (candidates.size !== 1) return null;
+    const [vat] = candidates;
+    warnings.push(`VAT number ${vat} found without its label`);
     return vat;
   }
 
@@ -375,10 +402,15 @@ export class DocumentOcrService {
 
   /** Trims OCR noise such as trailing separators and isolated punctuation. */
   private cleanValue(raw: string): string {
-    return raw
-      .replace(/\s+[^\p{L}\p{N}\s]{1,2}$/u, '')
-      .replace(/[\s,;:]+$/u, '')
-      .trim();
+    return (
+      raw
+        // OCR noise at the edges of a line: table borders, stray quotes ("| Brico io SpA"").
+        .replace(/^[|'"‘’“”`«»\s]+/u, '')
+        .replace(/[|'"‘’“”`«»]+$/u, '')
+        .replace(/\s+[^\p{L}\p{N}\s]{1,2}$/u, '')
+        .replace(/[\s,;:]+$/u, '')
+        .trim()
+    );
   }
 
   private normalizeDate(raw: string): string | null {

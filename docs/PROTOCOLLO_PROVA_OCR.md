@@ -19,6 +19,8 @@ Almeno **40 documenti**, il più possibile vari (fornitori, layout, qualità del
 
 Le foto vanno scattate **come le scatterebbe un socio**: con il telefono, senza scanner, in condizioni normali. Non serve che siano perfette: interessa proprio il caso reale.
 
+Se le foto passano da Telegram, inviarle come **File** (📎 → File) e non come Foto: Telegram comprime le foto a 1280 pixel e la lettura degli scontrini peggiora molto (prova del 28/10/2026). Per misurare l'effetto, si possono raccogliere alcuni documenti in entrambe le versioni.
+
 ## 2. Dati personali e conservazione
 
 - Usare documenti **aziendali** di soci che hanno dato il consenso, oppure documenti della cooperativa stessa.
