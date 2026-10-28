@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { BlockList, isIP } from 'node:net';
 
 import { DeliveryError } from '../../core/outbox/outbox.delivery.js';
 import { errorLabel } from '../../shared/errors.js';
@@ -16,6 +18,40 @@ export function signWebhookBody(secret: string, timestamp: string, body: string)
   return `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
 }
 
+// Loopback, private, link-local (cloud metadata), CGNAT and unspecified ranges.
+const PRIVATE_NETWORKS = new BlockList();
+for (const [address, prefix] of [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.168.0.0', 16],
+] as const) {
+  PRIVATE_NETWORKS.addSubnet(address, prefix, 'ipv4');
+}
+for (const [address, prefix] of [
+  ['::', 128],
+  ['::1', 128],
+  ['fc00::', 7],
+  ['fe80::', 10],
+] as const) {
+  PRIVATE_NETWORKS.addSubnet(address, prefix, 'ipv6');
+}
+
+export function isPrivateAddress(address: string): boolean {
+  const mapped = address.toLowerCase().startsWith('::ffff:') ? address.slice(7) : address;
+  const family = isIP(mapped);
+  if (family === 0) return true;
+  return PRIVATE_NETWORKS.check(mapped, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+async function defaultLookup(hostname: string): Promise<string[]> {
+  const records = await dnsLookup(hostname, { all: true });
+  return records.map((r) => r.address);
+}
+
 function parseRetryAfterMs(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
@@ -26,14 +62,18 @@ function parseRetryAfterMs(value: string | null): number | undefined {
 
 export function createWebhookNotifier(options: {
   secret: string;
-  // Plain http is accepted only outside production (local receivers during development).
+  // Plain http and private/loopback addresses are accepted only outside production
+  // (local receivers during development).
   allowInsecureHttp?: boolean;
+  allowPrivateNetwork?: boolean;
+  lookup?: (hostname: string) => Promise<string[]>;
   timeoutMs?: number;
   now?: () => Date;
   fetchImpl?: typeof fetch;
 }): WebhookNotifier {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? (() => new Date());
+  const lookup = options.lookup ?? defaultLookup;
 
   return {
     async post(url: string, event: WebhookEvent) {
@@ -48,6 +88,25 @@ export function createWebhookNotifier(options: {
         !(parsed.protocol === 'http:' && options.allowInsecureHttp)
       ) {
         throw new DeliveryError('Il webhook deve usare HTTPS', { permanent: true });
+      }
+      if (!options.allowPrivateNetwork) {
+        // Blocks requests to internal services (SSRF). The check runs on the resolved addresses;
+        // a DNS answer changing between this lookup and the connection is not covered.
+        // IPv6 literals come as "[::1]" in URL.hostname.
+        const host = parsed.hostname.replace(/^\[|\]$/g, '');
+        let addresses: string[];
+        try {
+          addresses = isIP(host) ? [host] : await lookup(host);
+        } catch (err: unknown) {
+          throw new DeliveryError(`Host del webhook non risolvibile: ${errorLabel(err)}`, {
+            permanent: false,
+          });
+        }
+        if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
+          throw new DeliveryError('Il webhook punta a un indirizzo di rete interna', {
+            permanent: true,
+          });
+        }
       }
 
       const body = JSON.stringify(event);
@@ -65,7 +124,8 @@ export function createWebhookNotifier(options: {
             [SIGNATURE_HEADER]: signWebhookBody(options.secret, timestamp, body),
           },
           body,
-          redirect: 'error',
+          // Redirects are not followed: a moved endpoint must be reconfigured, not chased.
+          redirect: 'manual',
           signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
         });
       } catch (err: unknown) {
@@ -76,6 +136,12 @@ export function createWebhookNotifier(options: {
 
       if (response.ok) return;
       const status = response.status;
+      if (status >= 300 && status < 400) {
+        throw new DeliveryError(
+          `Webhook reindirizzato (${status}) verso ${response.headers.get('location') ?? '?'}: aggiornare l'URL`,
+          { permanent: true },
+        );
+      }
       const retryable = status === 408 || status === 429 || status >= 500;
       const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
       throw new DeliveryError(`Webhook ha risposto ${status}`, {

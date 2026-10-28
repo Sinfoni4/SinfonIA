@@ -51,8 +51,11 @@ describe('outbox backoff', () => {
     expect(computeBackoffMs(1, { ...options, random: () => 1 })).toBe(1200);
   });
 
-  it('honours a longer retry-after from the receiver', () => {
-    expect(computeBackoffMs(1, { baseMs: 1000, maxMs: 10_000, retryAfterMs: 30_000 })).toBe(30_000);
+  it('honours a longer retry-after from the receiver, within the cap', () => {
+    expect(computeBackoffMs(1, { baseMs: 1000, maxMs: 60_000, retryAfterMs: 30_000 })).toBe(30_000);
+    expect(
+      computeBackoffMs(1, { baseMs: 1000, maxMs: 60_000, retryAfterMs: 999_999_999_000 }),
+    ).toBe(60_000);
   });
 });
 
@@ -94,11 +97,15 @@ describe('webhook notifier', () => {
     data: { practiceCount: 2 },
   };
 
+  // Test hosts resolve to a public documentation address; no real DNS query is made.
+  const lookup = () => Promise.resolve(['203.0.113.10']);
+
   it('signs the body with the timestamp and sends a stable delivery id', async () => {
     const fetchImpl = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
     const notifier = createWebhookNotifier({
       secret: SECRET,
       fetchImpl,
+      lookup,
       now: () => new Date('2026-10-28T10:00:00Z'),
     });
 
@@ -111,18 +118,23 @@ describe('webhook notifier', () => {
       signWebhookBody(SECRET, headers[TIMESTAMP_HEADER], init.body as string),
     );
     expect(headers['x-sinfonia-delivery']).toBe('msg-1');
-    expect(init.redirect).toBe('error');
+    expect(init.redirect).toBe('manual');
   });
 
   it('refuses plain http unless explicitly allowed', async () => {
     const fetchImpl = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
-    const strict = createWebhookNotifier({ secret: SECRET, fetchImpl });
+    const strict = createWebhookNotifier({ secret: SECRET, fetchImpl, lookup });
     await expect(strict.post('http://erp.example.test/hook', event)).rejects.toMatchObject({
       permanent: true,
     });
     expect(fetchImpl).not.toHaveBeenCalled();
 
-    const dev = createWebhookNotifier({ secret: SECRET, fetchImpl, allowInsecureHttp: true });
+    const dev = createWebhookNotifier({
+      secret: SECRET,
+      fetchImpl,
+      allowInsecureHttp: true,
+      allowPrivateNetwork: true,
+    });
     await dev.post('http://localhost:4000/hook', event);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -137,6 +149,7 @@ describe('webhook notifier', () => {
     const notifier = createWebhookNotifier({
       secret: SECRET,
       fetchImpl: () => Promise.resolve(new Response(null, { status })),
+      lookup,
     });
     await expect(notifier.post('https://erp.example.test/hook', event)).rejects.toMatchObject({
       permanent,
@@ -147,10 +160,43 @@ describe('webhook notifier', () => {
     const notifier = createWebhookNotifier({
       secret: SECRET,
       fetchImpl: () => Promise.reject(new TypeError('fetch failed')),
+      lookup,
     });
     await expect(notifier.post('https://erp.example.test/hook', event)).rejects.toMatchObject({
       permanent: false,
     });
+  });
+
+  it('treats a redirect as permanent and does not follow it', async () => {
+    const notifier = createWebhookNotifier({
+      secret: SECRET,
+      lookup,
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(null, { status: 301, headers: { location: 'https://new.example.test/' } }),
+        ),
+    });
+    await expect(notifier.post('https://erp.example.test/hook', event)).rejects.toMatchObject({
+      permanent: true,
+      message: expect.stringContaining('https://new.example.test/') as unknown,
+    });
+  });
+
+  it.each([
+    ['https://127.0.0.1/hook', undefined],
+    ['https://[::1]/hook', undefined],
+    ['https://metadata.example.test/hook', '169.254.169.254'],
+    ['https://intranet.example.test/hook', '10.1.2.3'],
+    ['https://mapped.example.test/hook', '::ffff:192.168.1.5'],
+  ])('refuses internal address %s', async (url, resolved) => {
+    const fetchImpl = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    const notifier = createWebhookNotifier({
+      secret: SECRET,
+      fetchImpl,
+      lookup: () => Promise.resolve(resolved ? [resolved] : []),
+    });
+    await expect(notifier.post(url, event)).rejects.toMatchObject({ permanent: true });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 
@@ -227,11 +273,17 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
   }
 
   async function enqueue(tenantId: string, eventType = PRACTICE_EXPORT_GENERATED) {
-    return new OutboxRepository(prisma).createMessage({
+    const message = await new OutboxRepository(prisma).createMessage({
       tenantId,
       eventType,
       payload: { title: 'Export ottobre', csv: 'id;nome\n1;Prova', practiceCount: 1 },
     });
+    // The message is due from the DB time of its insert: keep the test clock past it, even when
+    // a loaded machine makes the setup slower than expected.
+    if (clock.getTime() <= message.nextAttemptAt.getTime()) {
+      clock = new Date(message.nextAttemptAt.getTime() + 1000);
+    }
+    return message;
   }
 
   function dispatcher(channels: Partial<FakeChannels>, options: { maxAttempts?: number } = {}) {
@@ -420,9 +472,89 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     expect(row.status).toBe('PROCESSED');
     expect(row.attempts).toBe(2);
 
-    // The dead worker's late update is fenced off by the attempt number.
+    // The dead worker's late update is fenced off by the claim token.
     const stale = claimed.find((m) => m.id === message.id)!;
     expect(await repo.scheduleRetry(stale, clock, 'late')).toBe(false);
     expect((await reload(message.id)).status).toBe('PROCESSED');
+  });
+
+  it('retries instead of dead-lettering when the Telegram bot is not configured', async () => {
+    const tenantId = await setupTenant({ admins: ['7001'] });
+    const message = await enqueue(tenantId);
+
+    await dispatcher({}).dispatchOnce();
+    const row = await reload(message.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.error).toContain('Bot Telegram non configurato');
+  });
+
+  it('renews the lease of each message before delivering it', async () => {
+    const first = await enqueue(await setupTenant({ admins: ['7101'] }));
+    const second = await enqueue(await setupTenant({ admins: ['7102'] }));
+    let secondLockedUntil: Date | null = null;
+    let clockAtSecondSend = 0;
+    const telegram: TelegramNotifier = {
+      async sendDocument(chatId) {
+        if (chatId === '7101') advance(50_000); // a slow delivery early in the batch
+        if (chatId === '7102') {
+          clockAtSecondSend = clock.getTime();
+          secondLockedUntil = (await reload(second.id)).lockedUntil;
+        }
+      },
+    };
+
+    await new OutboxDispatcher(prisma, {
+      handlers: [new PracticeExportHandler(prisma, { telegram })],
+      batchSize: 500,
+      leaseMs: 60_000,
+      now,
+    }).dispatchOnce();
+
+    expect((await reload(first.id)).status).toBe('PROCESSED');
+    expect(secondLockedUntil!.getTime()).toBe(clockAtSecondSend + 60_000);
+  });
+
+  it('keeps processing the batch when one message hits a database error', async () => {
+    const tenantId = await setupTenant({ admins: ['7201'] });
+    const broken = await enqueue(tenantId, 'BROKEN_TARGET');
+    const healthy = await enqueue(tenantId);
+    const channels = fakeChannels();
+    // PostgreSQL rejects NUL bytes in text: recording this target fails with a DatabaseError.
+    const brokenHandler = {
+      eventType: 'BROKEN_TARGET',
+      resolveDeliveries: () =>
+        Promise.resolve([
+          { target: `bad${String.fromCharCode(0)}`, send: () => Promise.resolve() },
+        ]),
+    };
+
+    await new OutboxDispatcher(prisma, {
+      handlers: [brokenHandler, new PracticeExportHandler(prisma, channels)],
+      batchSize: 500,
+      now,
+    }).dispatchOnce();
+
+    expect((await reload(broken.id)).status).toBe('PROCESSING');
+    expect((await reload(healthy.id)).status).toBe('PROCESSED');
+  });
+
+  it('fences off a stale claim even after the message was requeued', async () => {
+    const tenantId = await setupTenant({ admins: ['7301'] });
+    const message = await enqueue(tenantId);
+    const repo = new OutboxRepository(prisma);
+
+    const firstClaim = (await repo.claimDue({ now: clock, leaseMs: 60_000, limit: 500 })).find(
+      (m) => m.id === message.id,
+    )!;
+    expect(await repo.moveToDeadLetter(firstClaim, 'test')).toBe(true);
+    expect(await repo.requeueDeadLetter(message.id, clock)).toBe(true);
+
+    const secondClaim = (await repo.claimDue({ now: clock, leaseMs: 60_000, limit: 500 })).find(
+      (m) => m.id === message.id,
+    )!;
+    // Same attempt number as the stale claim, different token.
+    expect(secondClaim.attempts).toBe(firstClaim.attempts);
+    expect(await repo.scheduleRetry(firstClaim, clock, 'stale')).toBe(false);
+    expect(await repo.completeClaim(secondClaim, clock)).toBe(true);
   });
 });

@@ -16,12 +16,13 @@ export type ClaimedOutboxMessage = {
   eventType: string;
   payload: unknown;
   attempts: number;
+  claimToken: string;
   deliveredTargets: string[];
   createdAt: Date;
 };
 
-// Updates after a claim only apply while the claim is still ours: same attempt, still PROCESSING.
-type ClaimRef = { id: string; attempts: number };
+// Updates after a claim only apply while the claim is still ours: same token, still PROCESSING.
+type ClaimRef = { id: string; claimToken: string };
 
 export class OutboxRepository {
   constructor(private readonly prisma: PrismaLike) {}
@@ -104,6 +105,7 @@ export class OutboxRepository {
         UPDATE "outbox_message" AS m
         SET "status" = 'PROCESSING',
             "attempts" = m."attempts" + 1,
+            "claim_token" = gen_random_uuid(),
             "locked_until" = ${leaseUntil},
             "updated_at" = ${options.now}
         WHERE m."id" IN (
@@ -115,10 +117,16 @@ export class OutboxRepository {
           FOR UPDATE SKIP LOCKED
         )
         RETURNING m."id", m."tenant_id" AS "tenantId", m."event_type" AS "eventType", m."payload",
-                  m."attempts", m."delivered_targets" AS "deliveredTargets", m."created_at" AS "createdAt"`;
+                  m."attempts", m."claim_token" AS "claimToken",
+                  m."delivered_targets" AS "deliveredTargets", m."created_at" AS "createdAt"`;
     } catch (err: unknown) {
       throw new DatabaseError('Failed to claim outbox messages', err);
     }
+  }
+
+  /** Renews the lease of a claim; false when the claim was lost. */
+  async extendLease(claim: ClaimRef, lockedUntil: Date): Promise<boolean> {
+    return this.updateClaimed(claim, { lockedUntil }, 'extend lease of');
   }
 
   async recordDeliveredTarget(claim: ClaimRef, target: string): Promise<boolean> {
@@ -128,7 +136,7 @@ export class OutboxRepository {
   async completeClaim(claim: ClaimRef, now: Date): Promise<boolean> {
     return this.updateClaimed(
       claim,
-      { status: 'PROCESSED', processedAt: now, lockedUntil: null, error: null },
+      { status: 'PROCESSED', processedAt: now, lockedUntil: null, claimToken: null, error: null },
       'complete',
     );
   }
@@ -136,7 +144,7 @@ export class OutboxRepository {
   async scheduleRetry(claim: ClaimRef, nextAttemptAt: Date, error: string): Promise<boolean> {
     return this.updateClaimed(
       claim,
-      { status: 'FAILED', nextAttemptAt, lockedUntil: null, error },
+      { status: 'FAILED', nextAttemptAt, lockedUntil: null, claimToken: null, error },
       'schedule retry for',
     );
   }
@@ -144,7 +152,7 @@ export class OutboxRepository {
   async moveToDeadLetter(claim: ClaimRef, error: string): Promise<boolean> {
     return this.updateClaimed(
       claim,
-      { status: 'DEAD_LETTER', lockedUntil: null, error },
+      { status: 'DEAD_LETTER', lockedUntil: null, claimToken: null, error },
       'dead-letter',
     );
   }
@@ -169,7 +177,7 @@ export class OutboxRepository {
   ): Promise<boolean> {
     try {
       const { count } = await this.prisma.outboxMessage.updateMany({
-        where: { id: claim.id, status: 'PROCESSING', attempts: claim.attempts },
+        where: { id: claim.id, status: 'PROCESSING', claimToken: claim.claimToken },
         data,
       });
       return count === 1;

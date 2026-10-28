@@ -198,11 +198,13 @@ model OutboxMessage {
   payload     Json
   status           OutboxStatus @default(PENDING)
   error            String?
-  // Delivery attempts so far; also the fencing token of the current claim.
+  // Delivery attempts so far (reset when a dead letter is requeued).
   attempts         Int          @default(0)
   nextAttemptAt    DateTime     @default(now()) @map("next_attempt_at")
   // Lease of a PROCESSING claim: once expired, another worker may reclaim the message.
   lockedUntil      DateTime?    @map("locked_until")
+  // Changes on every claim: updates from a worker whose claim was taken over are ignored.
+  claimToken       String?      @map("claim_token") @db.Uuid
   // Targets already delivered (e.g. "telegram:123", "webhook"), never resent on retry.
   deliveredTargets String[]     @default([]) @map("delivered_targets")
   processedAt      DateTime?    @map("processed_at")

@@ -1,6 +1,9 @@
 import { errorLabel } from '../../shared/errors.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
+// A Bot API call that never answers must not block its caller (e.g. the outbox dispatcher).
+const REQUEST_TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 export type TelegramPhotoSize = {
   file_id: string;
@@ -118,6 +121,7 @@ export class TelegramClient {
         text,
         ...options,
       }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     return this.parseResult<TelegramMessage>('sendMessage', response);
@@ -143,6 +147,7 @@ export class TelegramClient {
     const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/sendDocument`, {
       method: 'POST',
       body: form,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     return this.parseResult<TelegramMessage>('sendDocument', response);
   }
@@ -164,7 +169,10 @@ export class TelegramClient {
   async getFile(
     fileId: string,
   ): Promise<{ file_id: string; file_path?: string; file_size?: number }> {
-    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/getFile?file_id=${fileId}`);
+    const response = await fetch(
+      `${TELEGRAM_API_BASE}/bot${this.token}/getFile?file_id=${fileId}`,
+      { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    );
     const payload = (await response.json()) as TelegramResponse<{
       file_id: string;
       file_path?: string;
@@ -177,7 +185,9 @@ export class TelegramClient {
   }
 
   async downloadFile(filePath: string): Promise<Buffer> {
-    const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${this.token}/${filePath}`);
+    const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${this.token}/${filePath}`, {
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`Telegram downloadFile failed: ${response.statusText}`);
     }

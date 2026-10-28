@@ -16,7 +16,10 @@ export type OutboxDispatcherOptions = {
   maxBackoffMs?: number;
   now?: () => Date;
   random?: () => number;
-  log?: { warn: (obj: object, msg: string) => void };
+  log?: {
+    warn: (obj: object, msg: string) => void;
+    error: (obj: object, msg: string) => void;
+  };
 };
 
 export type DispatchStats = {
@@ -33,8 +36,8 @@ export const NO_HANDLER = 'NO_HANDLER';
 export const NO_RECIPIENTS = 'NO_RECIPIENTS';
 
 /**
- * Exponential backoff with ±20% jitter: base · 2^(attempt-1), capped. A receiver-provided
- * retry-after wins when it is longer.
+ * Exponential backoff with ±20% jitter: base · 2^(attempt-1). A receiver-provided retry-after
+ * wins when it is longer. Both are capped, so a receiver cannot park a message for years.
  */
 export function computeBackoffMs(
   attempt: number,
@@ -42,7 +45,10 @@ export function computeBackoffMs(
 ): number {
   const exponential = Math.min(options.maxMs, options.baseMs * 2 ** Math.max(0, attempt - 1));
   const jitter = 0.8 + 0.4 * (options.random ?? Math.random)();
-  return Math.max(Math.round(exponential * jitter), options.retryAfterMs ?? 0);
+  return Math.min(
+    options.maxMs,
+    Math.max(Math.round(exponential * jitter), options.retryAfterMs ?? 0),
+  );
 }
 
 /**
@@ -88,8 +94,21 @@ export class OutboxDispatcher {
     };
 
     for (const message of claimed) {
-      const outcome = await this.process(message);
-      if (outcome !== 'lost') stats[outcome]++;
+      try {
+        // The batch lease started at claim time: renew it so this message gets a full lease even
+        // late in a slow batch, and skip it if another dispatcher already took it over.
+        const leaseUntil = new Date(this.now().getTime() + this.leaseMs);
+        if (!(await this.repo.extendLease(message, leaseUntil))) continue;
+        const outcome = await this.process(message);
+        if (outcome !== 'lost') stats[outcome]++;
+      } catch (err: unknown) {
+        // One failing message (e.g. a database error) must not stall the rest of the batch;
+        // it stays claimed and is retried when its lease expires.
+        this.log?.error(
+          { outboxId: message.id, eventType: message.eventType, error: errorLabel(err) },
+          'Outbox message processing failed',
+        );
+      }
     }
     return stats;
   }

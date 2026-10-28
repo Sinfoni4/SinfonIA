@@ -234,6 +234,7 @@ TEST 5 — /devstate health metrics
               webhook: createWebhookNotifier({
                 secret: config.OUTBOX_WEBHOOK_SECRET,
                 allowInsecureHttp: config.NODE_ENV !== 'production',
+                allowPrivateNetwork: config.NODE_ENV !== 'production',
               }),
             }
           : {}),

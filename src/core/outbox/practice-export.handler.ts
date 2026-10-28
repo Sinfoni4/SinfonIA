@@ -40,12 +40,26 @@ export class PracticeExportHandler implements OutboxEventHandler {
     const deliveries: OutboxDelivery[] = [];
 
     const telegram = this.channels.telegram;
-    if (telegram) {
-      const admins = await this.prisma.user.findMany({
-        where: { tenantId: message.tenantId, role: 'ADMIN', telegramId: { not: null } },
-        orderBy: { createdAt: 'asc' },
-        select: { telegramId: true },
-      });
+    const admins = await this.prisma.user.findMany({
+      where: { tenantId: message.tenantId, role: 'ADMIN', telegramId: { not: null } },
+      orderBy: { createdAt: 'asc' },
+      select: { telegramId: true },
+    });
+    if (!telegram) {
+      // Bot not configured in this process (e.g. token missing during a deploy): keep the
+      // recipients and retry, instead of dead-lettering the export as having none.
+      for (const { telegramId } of admins) {
+        deliveries.push({
+          target: `telegram:${telegramId!}`,
+          send: () =>
+            Promise.reject(
+              new DeliveryError('Bot Telegram non configurato (TELEGRAM_BOT_TOKEN)', {
+                permanent: false,
+              }),
+            ),
+        });
+      }
+    } else {
       const document = {
         filename: exportFilename(payload, message.createdAt),
         content: Buffer.from(payload.csv ?? '', 'utf-8'),
