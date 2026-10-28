@@ -1,11 +1,9 @@
-import { SchedulerService } from '../core/scheduler/scheduler.service.js';
 import { checkDatabaseConnection } from '../data/db/db.health.js';
 import { errorLabel } from '../shared/errors.js';
 
 import { attemptDatabaseRecovery } from './runtime.db.recovery.js';
 import { runtimeState } from './runtime.state.js';
 
-import type { PracticeApplicationService } from '../core/practice/practice.application.service.js';
 import type { PrismaClient } from '@prisma/client';
 
 let interval: NodeJS.Timeout | null = null;
@@ -17,30 +15,14 @@ export function stopDbWatcher(): void {
   }
 }
 
-export function startDbWatcher(
-  prisma: PrismaClient,
-  practiceService: Pick<PracticeApplicationService, 'exportPractices'>,
-): void {
+// Health only: the scheduler and the outbox dispatcher run in runtime.workers.ts.
+export function startDbWatcher(prisma: PrismaClient): void {
   if (interval) return;
-
-  const schedulerService = new SchedulerService(prisma, practiceService);
 
   interval = setInterval(() => {
     void (async () => {
       // TEMP DIAGNOSTIC: detect watcher overlap / reconnect races.
       console.log(`🧠 WATCHER TICK ${new Date().toISOString()}`);
-
-      // Run durable scheduler only when runtime is operational
-      if (runtimeState.getMode() !== 'CIRCUIT_OPEN') {
-        try {
-          const stats = await schedulerService.tick();
-          if (stats.triggeredCount > 0) {
-            console.log(`⏰ SCHEDULER TICK — executed ${stats.triggeredCount} jobs`);
-          }
-        } catch (err) {
-          console.error('❌ SCHEDULER ERROR', errorLabel(err));
-        }
-      }
 
       const prevMode = runtimeState.getMode();
       const prevHealth = runtimeState.getHealth();

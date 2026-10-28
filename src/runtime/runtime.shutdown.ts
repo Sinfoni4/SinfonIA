@@ -2,6 +2,7 @@ import { defaultDocumentOcrService } from '../ai/ocr/document-ocr.service.js';
 import { stopTelegramPollingForRestart } from '../interface/telegram/telegram.bot.js';
 
 import { releaseProcessLock } from './runtime.processLock.js';
+import { stopBackgroundWorkers } from './runtime.workers.js';
 
 let shuttingDown = false;
 
@@ -10,6 +11,12 @@ export async function gracefulShutdown(reason: string) {
   shuttingDown = true;
 
   console.log(`🛑 Graceful shutdown started: ${reason}`);
+
+  try {
+    await stopBackgroundWorkers();
+  } catch {
+    // swallow
+  }
 
   try {
     await stopTelegramPollingForRestart();

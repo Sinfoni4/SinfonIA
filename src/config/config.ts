@@ -49,6 +49,12 @@ const ConfigSchema = z
     S3_ACCESS_KEY_ID: z.string().min(1).optional(),
     S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
     S3_SERVER_SIDE_ENCRYPTION: z.enum(['AES256', 'aws:kms']).optional(),
+    // Background workers: durable scheduler tick and outbox delivery.
+    SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
+    OUTBOX_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(500).default(5_000),
+    OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
+    // Shared secret for signing webhook deliveries; webhooks are not sent without it.
+    OUTBOX_WEBHOOK_SECRET: z.string().min(32).optional(),
   })
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',

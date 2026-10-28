@@ -103,7 +103,11 @@ Lo scheduler (`src/core/scheduler/scheduler.service.ts`) è completamente durevo
 - **Nessun burst all'avvio**: lo stato non è più volatile in-memory; al riavvio del processo lo scheduler verifica nel DB le esecuzioni già completate per il periodo corrente evitando riesecuzioni immediate.
 - **PostgreSQL Advisory Lock**: esecuzione protetta da un advisory lock di transazione (`pg_try_advisory_xact_lock`), rilasciato automaticamente al commit o rollback, garantendo che in presenza di repliche multiple solo un worker alla volta esegua il task per un tenant.
 - **Export tenant-wide**: l'export schedulato include le pratiche di tutti gli utenti del tenant.
-- **Outbox (solo scrittura)**: gli export generati dai job vengono persistiti nella tabella `outbox_message` in stato `PENDING`. Il dispatcher che li consegna non è ancora implementato.
+- **Outbox e consegna**: gli export generati dai job vengono scritti in `outbox_message` e consegnati dal dispatcher (`src/core/outbox/outbox.dispatcher.ts`):
+  - **Telegram**: file CSV a ogni utente `ADMIN` del tenant collegato a Telegram.
+  - **Webhook**: `POST` JSON all'URL del tenant (`tenant.webhook_url`), solo HTTPS in produzione. Header `x-sinfonia-event`, `x-sinfonia-delivery` (id stabile tra i tentativi, per deduplicare), `x-sinfonia-timestamp` e `x-sinfonia-signature: sha256=<HMAC-SHA256 di "<timestamp>.<corpo>" con OUTBOX_WEBHOOK_SECRET>`. Senza segreto i webhook non partono e il messaggio va in dead letter. In produzione sono rifiutati gli indirizzi di rete interna e i reindirizzamenti non vengono seguiti.
+  - **Affidabilità**: più processi possono consegnare in parallelo senza doppioni (`FOR UPDATE SKIP LOCKED` e lease di 5 minuti); ogni destinatario consegnato viene registrato e non riceve di nuovo il messaggio. Errori temporanei: nuovo tentativo con backoff esponenziale (30 s → 1 h). Errori permanenti o tentativi esauriti (`OUTBOX_MAX_ATTEMPTS`, default 8): stato `DEAD_LETTER` con il motivo in `error`.
+  - **Worker**: scheduler e dispatcher girano su intervalli propri (`SCHEDULER_INTERVAL_MS`, `OUTBOX_DISPATCH_INTERVAL_MS`), separati dal controllo di salute del database.
 
 ## LLM (OpenAI)
 
