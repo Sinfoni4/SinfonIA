@@ -2,7 +2,10 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { createWorker, OEM, type Worker } from 'tesseract.js';
-import { extractText, getDocumentProxy, renderPageAsImage } from 'unpdf';
+
+import { WorkerPdfExtractor } from './pdf-worker.js';
+
+import type { PdfExtractor } from './pdf-worker.js';
 
 /**
  * Text extraction layer of the Document AI pipeline.
@@ -110,13 +113,17 @@ export interface TextExtractorOptions {
   ocrEngine: OcrEngine;
   /** Maximum number of scanned PDF pages sent to OCR. */
   maxOcrPdfPages?: number;
+  /** PDF parsing and rendering, off the main thread by default. */
+  pdfExtractor?: PdfExtractor;
 }
 
 export class DocumentTextExtractor {
   private readonly maxOcrPdfPages: number;
+  private readonly pdfExtractor: PdfExtractor;
 
   constructor(private readonly options: TextExtractorOptions) {
     this.maxOcrPdfPages = options.maxOcrPdfPages ?? 5;
+    this.pdfExtractor = options.pdfExtractor ?? new WorkerPdfExtractor();
   }
 
   async extract(content: Buffer, kind: DetectedFileKind): Promise<TextExtractionResult> {
@@ -135,34 +142,30 @@ export class DocumentTextExtractor {
   }
 
   private async extractPdf(content: Buffer): Promise<TextExtractionResult> {
-    // Parsed once and reused for text and rendering; pdf.js may detach the buffer, so pass a copy.
-    const pdf = await getDocumentProxy(new Uint8Array(content));
-    try {
-      const { totalPages, text } = await extractText(pdf, { mergePages: true });
-      if (text.replace(/\s/g, '').length >= MIN_PDF_TEXT_CHARS) {
-        return { text, source: 'pdf_text', pages: totalPages };
-      }
-
-      const pageCount = Math.min(pdf.numPages, this.maxOcrPdfPages);
-      const texts: string[] = [];
-      const confidences: number[] = [];
-      for (let page = 1; page <= pageCount; page++) {
-        const png = await renderPageAsImage(pdf, page, {
-          canvasImport: () => import('@napi-rs/canvas'),
-          scale: 2,
-        });
-        const ocr = await this.options.ocrEngine.recognize(Buffer.from(png));
-        texts.push(ocr.text);
-        confidences.push(ocr.confidence);
-      }
-
-      const confidence = confidences.length
-        ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
-        : 0;
-      return { text: texts.join('\n'), source: 'ocr_pdf', pages: pdf.numPages, confidence };
-    } finally {
-      // Releases pdf.js resources: without it every processed PDF stays in memory.
-      await pdf.loadingTask.destroy();
+    const pdf = await this.pdfExtractor.extract(content, {
+      maxPages: this.maxOcrPdfPages,
+      minTextChars: MIN_PDF_TEXT_CHARS,
+    });
+    if (pdf.text !== null) {
+      return { text: pdf.text, source: 'pdf_text', pages: pdf.totalPages };
     }
+
+    const texts: string[] = [];
+    const confidences: number[] = [];
+    for (const image of pdf.images) {
+      const ocr = await this.options.ocrEngine.recognize(image);
+      texts.push(ocr.text);
+      confidences.push(ocr.confidence);
+    }
+
+    const confidence = confidences.length
+      ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
+      : 0;
+    return { text: texts.join('\n'), source: 'ocr_pdf', pages: pdf.totalPages, confidence };
+  }
+
+  /** Stops the PDF worker; the OCR engine is owned and terminated by the caller. */
+  async terminate(): Promise<void> {
+    await this.pdfExtractor.terminate();
   }
 }

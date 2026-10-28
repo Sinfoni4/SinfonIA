@@ -103,7 +103,7 @@ export class DocumentOcrService {
   }
 
   async terminate(): Promise<void> {
-    await this.ocrEngine.terminate();
+    await Promise.all([this.ocrEngine.terminate(), this.extractor.terminate()]);
   }
 
   parseDocumentText(text: string, fileName: string, hint?: string): DocumentOcrResult {
