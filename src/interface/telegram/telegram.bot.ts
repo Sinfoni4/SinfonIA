@@ -9,14 +9,22 @@ import { errorLabel } from '../../shared/errors.js';
 import { formatAttachmentRejection, formatAttachmentResult } from './attachment.formatter.js';
 import { handleDevState } from './commands/devstate.command.js';
 import { formatPracticeCommandResult } from './practice.command.formatter.js';
+import {
+  formatAttachmentQuestion,
+  parseAttachmentSelection,
+  PendingAttachmentStore,
+  resolveAttachmentTarget,
+  type AttachmentCandidate,
+  type TelegramFileRef,
+} from './telegram.attachment-target.js';
 import { TelegramClient } from './telegram.client.js';
 import { mapTelegramErrorToMessage } from './telegram.errors.js';
 import {
-  getLastPractice,
   getTelegramMemoryState,
   hasSeenUser,
   markUserSeen,
   resetTelegramMemory,
+  setLastPractice,
 } from './telegram.memory.js';
 import { runtimeAwareExecute } from './telegram.runtimeAware.js';
 import { safeReply } from './telegram.transport.js';
@@ -30,7 +38,7 @@ export type TelegramIdentity = {
   role: UserRole;
 };
 
-type BotDeps = {
+export type BotDeps = {
   prisma: PrismaClient;
   practiceService: Pick<PracticeApplicationService, 'executeCommand'> & {
     addAttachment?: PracticeApplicationService['addAttachment'];
@@ -42,6 +50,8 @@ type BotDeps = {
 };
 
 let botInstance: TelegramClient | null = null;
+// Files received while the user still has to choose the target practice.
+const pendingAttachments = new PendingAttachmentStore();
 let pollingActive = false;
 
 async function shutdownTelegram() {
@@ -101,7 +111,8 @@ Prova a scrivere:
 "crea pratica per Mario Rossi"`;
 }
 
-function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
+// Exported for tests, which drive it with a fake client.
+export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
   bot.on('message', async (msg) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const text = msg.text ?? msg.caption ?? '';
@@ -159,97 +170,116 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
       const tenant = identity.tenant;
       const dbUser = { id: identity.userId, role: identity.role };
 
-      if (msg.photo || msg.document) {
-        let practiceId = getLastPractice(dbUser.id);
-        if (!practiceId && deps.practiceService.listPractices) {
-          const list = await deps.practiceService.listPractices({
+      // Downloads a Telegram file and attaches it to the chosen practice (OCR included).
+      const uploadToPractice = async (file: TelegramFileRef, practice: AttachmentCandidate) => {
+        if (!deps.practiceService.addAttachment) return;
+        try {
+          const fileInfo = await bot.getFile(file.fileId);
+          if (!fileInfo.file_path) {
+            await bot.sendMessage(chatId, '⚠️ Impossibile scaricare il file da Telegram.');
+            return;
+          }
+          const buffer = await bot.downloadFile(fileInfo.file_path);
+          const uploadResult = await deps.practiceService.addAttachment({
             tenantId: tenant.id,
             userId: dbUser.id,
-            limit: 1,
+            practiceId: practice.id,
+            fileName: file.fileName,
+            mimeType: file.mimeType,
+            content: buffer,
+            hint: file.hint,
           });
-          if (list.length > 0 && list[0]) {
-            practiceId = list[0].id;
-          }
-        }
+          setLastPractice(dbUser.id, practice.id);
 
-        if (!practiceId) {
           await bot.sendMessage(
             chatId,
-            '📄 Ho ricevuto il tuo file, ma non ho trovato nessuna pratica attiva a cui associarlo.\nCrea prima una pratica (es. "crea pratica Mario Rossi") o selezionala.',
+            `📁 Pratica: ${practice.name}\n` +
+              formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult),
           );
-          return;
+        } catch (uploadErr) {
+          if (uploadErr instanceof AttachmentRejectedError) {
+            await bot.sendMessage(chatId, formatAttachmentRejection(uploadErr));
+            return;
+          }
+          deps.log?.error({ error: errorLabel(uploadErr), requestId }, 'Attachment upload error');
+          await bot.sendMessage(
+            chatId,
+            "⚠️ Si è verificato un errore durante l'acquisizione del documento. Riprova più tardi.",
+          );
         }
+      };
 
-        let fileId: string;
-        let fileName: string;
-        let mimeType: string;
-        let fileSize: number | undefined;
-
+      if (msg.photo || msg.document) {
+        let file: TelegramFileRef;
         if (msg.document) {
-          fileId = msg.document.file_id;
-          fileSize = msg.document.file_size;
-          fileName = msg.document.file_name ?? `document_${Date.now()}.pdf`;
-          mimeType = msg.document.mime_type ?? 'application/octet-stream';
-        } else if (msg.photo && msg.photo.length > 0) {
-          const largest = msg.photo[msg.photo.length - 1];
+          file = {
+            fileId: msg.document.file_id,
+            fileSize: msg.document.file_size,
+            fileName: msg.document.file_name ?? `document_${Date.now()}.pdf`,
+            mimeType: msg.document.mime_type ?? 'application/octet-stream',
+            hint: text,
+          };
+        } else {
+          const largest = msg.photo?.[msg.photo.length - 1];
           if (!largest) {
             await bot.sendMessage(chatId, '⚠️ Immagine non valida.');
             return;
           }
-          fileId = largest.file_id;
-          fileSize = largest.file_size;
-          fileName = `photo_${Date.now()}.jpg`;
-          mimeType = 'image/jpeg';
-        } else {
+          file = {
+            fileId: largest.file_id,
+            fileSize: largest.file_size,
+            fileName: `photo_${Date.now()}.jpg`,
+            mimeType: 'image/jpeg',
+            hint: text,
+          };
+        }
+
+        // Reject oversized files before asking anything or downloading them from Telegram.
+        const maxBytes = deps.practiceService.getMaxAttachmentBytes?.();
+        if (maxBytes !== undefined && file.fileSize !== undefined && file.fileSize > maxBytes) {
+          await bot.sendMessage(
+            chatId,
+            formatAttachmentRejection(
+              new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'File too large'),
+            ),
+          );
           return;
         }
 
-        if (deps.practiceService.addAttachment) {
-          // Reject oversized files before downloading them from Telegram.
-          const maxBytes = deps.practiceService.getMaxAttachmentBytes?.();
-          if (maxBytes !== undefined && fileSize !== undefined && fileSize > maxBytes) {
-            await bot.sendMessage(
-              chatId,
-              formatAttachmentRejection(
-                new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'File too large'),
-              ),
-            );
-            return;
-          }
-          try {
-            const fileInfo = await bot.getFile(fileId);
-            if (!fileInfo.file_path) {
-              await bot.sendMessage(chatId, '⚠️ Impossibile scaricare il file da Telegram.');
-              return;
-            }
-            const buffer = await bot.downloadFile(fileInfo.file_path);
-            const uploadResult = await deps.practiceService.addAttachment({
-              tenantId: tenant.id,
-              userId: dbUser.id,
-              practiceId,
-              fileName,
-              mimeType,
-              content: buffer,
-              hint: text,
-            });
+        const practices = deps.practiceService.listPractices
+          ? await deps.practiceService.listPractices({ tenantId: tenant.id, userId: dbUser.id })
+          : [];
+        const target = resolveAttachmentTarget(practices, text);
 
-            await bot.sendMessage(
-              chatId,
-              formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult),
-            );
-            return;
-          } catch (uploadErr) {
-            if (uploadErr instanceof AttachmentRejectedError) {
-              await bot.sendMessage(chatId, formatAttachmentRejection(uploadErr));
-              return;
-            }
-            deps.log?.error({ error: errorLabel(uploadErr), requestId }, 'Attachment upload error');
-            await bot.sendMessage(
-              chatId,
-              "⚠️ Si è verificato un errore durante l'acquisizione del documento. Riprova più tardi.",
-            );
-            return;
-          }
+        if (target.type === 'none') {
+          await bot.sendMessage(
+            chatId,
+            '📄 Ho ricevuto il tuo file, ma non ho trovato nessuna pratica a cui associarlo.\nCrea prima una pratica (es. "crea pratica Mario Rossi") e poi rimanda il file.',
+          );
+          return;
+        }
+        if (target.type === 'ask') {
+          pendingAttachments.set(dbUser.id, file, target.candidates);
+          await bot.sendMessage(chatId, formatAttachmentQuestion(target.candidates));
+          return;
+        }
+        await uploadToPractice(file, target.practice);
+        return;
+      }
+
+      const pending = pendingAttachments.get(dbUser.id);
+      if (pending) {
+        const selection = parseAttachmentSelection(trimmed, pending.candidates.length);
+        if (selection === 'cancel') {
+          pendingAttachments.delete(dbUser.id);
+          await bot.sendMessage(chatId, 'Ok, il file non è stato associato a nessuna pratica.');
+          return;
+        }
+        const chosen = typeof selection === 'number' ? pending.candidates[selection - 1] : null;
+        if (chosen) {
+          pendingAttachments.delete(dbUser.id);
+          await uploadToPractice(pending.file, chosen);
+          return;
         }
       }
 
