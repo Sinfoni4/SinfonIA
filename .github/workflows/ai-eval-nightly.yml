@@ -1,0 +1,65 @@
+name: AI evaluation (nightly)
+
+# Runs the golden set against the real model. It costs money (about $0.02 per run with
+# gpt-4o-mini), so it runs once a night and on demand, never on push.
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      max_cost_usd:
+        description: 'Cost budget in USD'
+        default: '0.10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-eval-nightly
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+    steps:
+      - name: Check the provider key
+        id: key
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::warning::OPENAI_API_KEY secret is not set: evaluation skipped."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.key.outputs.present == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: steps.key.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.key.outputs.present == 'true'
+        run: npm ci
+
+      - name: Evaluate against the real model
+        if: steps.key.outputs.present == 'true'
+        run: npm run ai:eval:nightly -- --max-cost-usd "${{ inputs.max_cost_usd || '0.10' }}"
+
+      - name: Upload the report
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-model
+          path: reports/ai-eval-model.json
+          if-no-files-found: warn
+          retention-days: 30

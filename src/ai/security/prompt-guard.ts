@@ -98,7 +98,7 @@ const ITALIAN_PATTERNS: Array<{ regex: RegExp; type: AttackType; label: string }
   },
   {
     regex:
-      /\b(?:mostra\w*|rivela\w*|stampa\w*|dimmi|ripeti|elenca\w*|scrivi|copia)\s+(?:\w+\s+){0,3}(?:prompt(?:\s+di\s+sistema)?|istruzioni\s+(?:di\s+sistema|iniziali|nascoste|segrete|interne)|regole\s+(?:di\s+sistema|nascoste|interne|segrete)|chiav\w*\s+(?:api|segret\w*)|password|token|credenziali)/,
+      /\b(?:mostra\w*|rivela\w*|stampa\w*|dimmi|ripeti|elenca\w*|scrivi|copia)\s+(?:\w+\s+){0,5}(?:prompt(?:\s+di\s+sistema)?|istruzioni\s+(?:di\s+sistema|iniziali|nascoste|segrete|interne)|regole\s+(?:di\s+sistema|nascoste|interne|segrete)|chiav\w*\s+(?:api|segret\w*)|password|token|credenziali)/,
     type: 'CROSS_TENANT_EXFILTRATION',
     label: 'System prompt / secret disclosure (Italian)',
   },

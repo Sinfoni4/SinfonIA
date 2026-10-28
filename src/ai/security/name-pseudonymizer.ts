@@ -78,14 +78,17 @@ const NOT_NAMES = new Set([
 ]);
 
 const WORD = String.raw`[\p{L}][\p{L}'’]*`;
-// Two or more capitalized words: "Mario Rossi", "Anna Maria De Luca".
+// Two or more capitalized words: "Mario Rossi", "Anna Maria De Luca". Trailing numbers stay part
+// of the name ("Spesa Collio 2026"), so a single placeholder covers it.
 const CAPITALIZED_SEQUENCE = new RegExp(
-  String.raw`\p{Lu}[\p{L}'’]+(?:\s+(?:(?:de|di|del|della|da|van|von|la|lo)\s+)?\p{Lu}[\p{L}'’]+)+`,
+  String.raw`\p{Lu}[\p{L}'’]+(?:\s+(?:(?:de|di|del|della|da|van|von|la|lo)\s+)?\p{Lu}[\p{L}'’]+)+(?:\s+\d[\d/.-]*)*`,
   'gu',
 );
-// Up to three words after "pratica (per|di|del|della|dell')", also lowercase as typed in chat.
+// Up to three words after "pratica per/di/del/della/dell'/a", also lowercase as typed in chat.
+// The preposition is required: in "pratica nuova intestata a ..." the words "intestata a" are not
+// a name (found by the real-model evaluation).
 const AFTER_PRACTICE = new RegExp(
-  String.raw`\bpratic[ah]\s+(?:(?:per|di|del|della|dell'|dello|a)\s+)?(${WORD}(?:\s+${WORD}){0,2})`,
+  String.raw`\bpratic[ah]\s+(?:per|di|del|della|dell'|dello|a)\s+(${WORD}(?:\s+${WORD}){0,2})`,
   'giu',
 );
 

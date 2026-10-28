@@ -204,6 +204,26 @@ export class InterpreterService {
       output = unmaskObjectPII(output, piiMap);
     }
 
+    // A creation without a name cannot be executed: ask for the name instead of failing later in
+    // normalization ("crea una pratica", found by the real-model evaluation).
+    if (output.action === 'create_practice' && !output.artistName?.trim()) {
+      output = {
+        schemaVersion: CURRENT_INTERPRETER_SCHEMA_VERSION,
+        action: 'clarification_required',
+        confidence: output.confidence,
+        filters: output.filters,
+        artistName: null,
+        nextState: null,
+        clarification: {
+          question:
+            'Per chi devo creare la pratica? Indica il nome (es. "crea pratica per Mario Rossi").',
+          reason: 'MISSING_NAME',
+          candidatePracticeIds: [],
+          options: [],
+        },
+      };
+    }
+
     // Confidence threshold evaluation: if confidence is below threshold, generate CLARIFICATION_REQUIRED
     if (
       output.action !== 'clarification_required' &&
