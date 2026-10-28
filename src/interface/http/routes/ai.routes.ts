@@ -1,6 +1,9 @@
 import { performance } from 'node:perf_hooks';
 
+import { z } from 'zod';
+
 import {
+  AI_TRACE_OUTCOMES,
   defaultAITracer,
   type AITracer,
   type AITraceRecord,
@@ -36,17 +39,50 @@ export type AiRoutesDeps = {
   tracer?: AITracer;
 };
 
+const AiTracesQuerySchema = z
+  .object({
+    outcome: z.enum(AI_TRACE_OUTCOMES).optional(),
+    // ISO dates or date-times, e.g. 2026-10-01 or 2026-10-01T08:00:00Z.
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .refine((q) => !q.from || !q.to || q.from <= q.to, {
+    message: '"from" must not be after "to"',
+    path: ['from'],
+  });
+
 export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) => {
   const tracer = deps.tracer ?? defaultAITracer;
 
-  // List recent traces strictly scoped to tenant
+  // Traces of the caller's tenant, most recent first, filterable by outcome and time range.
   app.get('/ai/traces', async (req, reply) => {
-    const auth = requireRole(req, AUTH_ROLES.PRACTICE_TRANSITION);
-    const traces = tracer.getTraces({
-      tenantId: auth.tenantId,
-      limit: 50,
-    });
-    return reply.status(200).send({ success: true, data: traces });
+    try {
+      const auth = requireRole(req, AUTH_ROLES.PRACTICE_TRANSITION);
+      const query = AiTracesQuerySchema.parse(req.query);
+      const { items, total } = await tracer.queryTraces({
+        tenantId: auth.tenantId,
+        outcome: query.outcome,
+        from: query.from,
+        to: query.to,
+        page: query.page,
+        limit: query.limit,
+      });
+      return reply.status(200).send({
+        success: true,
+        data: items,
+        meta: {
+          total,
+          page: query.page,
+          limit: query.limit,
+          totalPages: Math.ceil(total / query.limit),
+        },
+      });
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
   });
 
   app.post<{ Body: { input?: unknown } }>('/ai/execute', async (req, reply) => {

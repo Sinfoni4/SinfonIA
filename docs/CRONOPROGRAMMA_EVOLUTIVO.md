@@ -51,7 +51,7 @@ flowchart TD
 
 | Fase (cronoprogramma) | Stato | Note |
 | :--- | :--- | :--- |
-| **3A** LLM esplicito & AI tracing | **COMPLETATA** | Tracer solo in memoria; filtri di `/ai/traces` non esposti |
+| **3A** LLM esplicito & AI tracing | **COMPLETATA** | Tracce su database con conservazione, `/ai/traces` con filtri e paginazione (29/10/2026) |
 | **3B** Document AI & OCR | **COMPLETATA (sviluppo)** | OCR reale in-process su foto e PDF, certificati, upload multipart, limiti di formato e dimensione, nessun valore inventato, storage S3/MinIO, conferma della pratica su Telegram (28/10/2026). Da fare: misura dell'accuratezza su documenti reali |
 | **3C** Outbox dispatcher & push scadenze | **COMPLETATA (sviluppo)** | Dispatcher con retry e dead letter, consegna su Telegram e webhook (28/10/2026); scadenzario con promemoria a 30/15/7/1 giorni, API e comandi Telegram (29/10/2026). Da fare: prova con il bot reale in staging |
 | **3D** WhatsApp Business | **IN SVILUPPO** | Webhook con firma, collegamento con invito, conversazione comune a Telegram (test di parità), notifiche (29/10/2026). Da fare: template Meta con pulsanti e prova con un numero reale (richiedono la verifica Meta Business) |

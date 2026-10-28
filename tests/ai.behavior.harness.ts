@@ -320,6 +320,7 @@ async function main(): Promise<void> {
         RATE_LIMIT_PER_MINUTE: 120,
         RATE_LIMIT_AI_PER_MINUTE: 20,
         RATE_LIMIT_TENANT_PER_MINUTE: 600,
+        AI_TRACE_RETENTION_DAYS: 90,
         LLM_PROVIDER: 'openai',
         AZURE_OPENAI_API_VERSION: '2024-10-21',
       },

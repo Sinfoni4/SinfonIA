@@ -103,8 +103,8 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 | Previsto | Stato reale |
 | :--- | :--- |
 | `DisabledLLMClient` + HTTP 503 con fallback deterministico | ✅ Fatto e testato |
-| `AITracer` con latenza, token, prompt/completion, audit per tenant, `GET /ai/traces` | 🟡 Registra latenza, token ed esito per tenant. Non salva il testo di prompt e completion (scelta coerente con il GDPR, ma diversa dal piano). Tracce solo in memoria; filtri non esposti dall'endpoint |
-| Paginazione, ordinamento e ricerca su `ContextService` | ✅ Presenti; le pratiche vengono però caricate tutte e tagliate in memoria |
+| `AITracer` con latenza, token, prompt/completion, audit per tenant, `GET /ai/traces` | ✅ Tracce su database con conservazione configurabile, filtri e paginazione (Step 3, 29/10/2026). Non salva il testo di prompt e risposta, per scelta coerente con il GDPR |
+| Paginazione, ordinamento e ricerca su `ContextService` | ✅ Presenti, con il limite applicato nella query al database |
 | Deliverable: lint pulito, `tests/ai.phase3a.test.ts` | ✅ |
 
 ### 5.2 Fase 3B (Pilastro 1) — Document AI e OCR: **parziale**
@@ -240,6 +240,15 @@ gantt
 - `GET /ai/traces` con filtri `outcome`, `from`, `to`, `limit` e paginazione.
 - `ContextService` e `listPractices` con limite applicato dal database invece che in memoria.
 - **Accettazione**: tracce conservate dopo un riavvio; filtri testati; query di contesto con `LIMIT` verificata.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Tracce su database | ✅ | Tabella `ai_trace` (migrazione `20261029140000_step3_ai_trace`): tenant, utente, modello, provider, esito, azione, latenza, token, errore. **Nessun testo di prompt o risposta**; gli errori sono salvati con i dati personali oscurati e troncati. Salvataggio in background: un problema del database non fa fallire la richiesta dell'utente |
+| Conservazione | ✅ | `AI_TRACE_RETENTION_DAYS` (default 90): un processo in background elimina ogni ora le tracce più vecchie |
+| `GET /ai/traces` | ✅ | Filtri `outcome`, `from`, `to` (date ISO), paginazione `page`/`limit` (max 100), più recenti prima, solo il tenant di chi chiama (ADMIN e OPERATOR). L'elenco resta in `data`, totale e pagine in `meta`: i client esistenti continuano a funzionare. Parametri non validi → 400 |
+| Limite del contesto AI nel database | ✅ | Già introdotto con le correzioni della PR #1 (`take` nella query); ora verificato da un test |
+| Test | ✅ | `tests/ai.traces.test.ts`: tracce presenti dopo un «riavvio» (nuovo client e nuovo tracer), filtri e paginazione con isolamento tra tenant, errori oscurati, conservazione, endpoint HTTP con validazione e permessi, `take` nella query del contesto. Suite 308/308 |
 
 #### Step 4 — Completamento 3B: OCR reale (9 g) · Pilastro 1
 - Motore OCR reale dietro `DocumentOcrService`: servizio Document AI o modello vision con residenza dei dati UE (4 g).

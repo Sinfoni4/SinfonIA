@@ -71,6 +71,8 @@ const ConfigSchema = z
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(120),
     RATE_LIMIT_AI_PER_MINUTE: z.coerce.number().int().min(1).default(20),
     RATE_LIMIT_TENANT_PER_MINUTE: z.coerce.number().int().min(1).default(600),
+    // AI traces older than this are deleted (they hold no prompt text, only metadata).
+    AI_TRACE_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
   })
   .refine(
     (c) =>

@@ -7,6 +7,7 @@ import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
 import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
 import { createAzureOpenAIProvider, createOpenAIProvider } from './ai/providers/openai.provider.js';
+import { AITracer } from './ai/tracing/ai.tracer.js';
 import {
   validateBeforeDecision,
   validateResolvedCommand,
@@ -19,6 +20,7 @@ import { PracticeExportHandler } from './core/outbox/practice-export.handler.js'
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
+import { AiTraceRepository } from './data/repositories/ai-trace.repository.js';
 import { createStorageService } from './data/storage/storage.factory.js';
 import { printRuntimeTestGuide } from './dev/dev.tests.js';
 import { buildServer } from './interface/http/server.js';
@@ -231,9 +233,14 @@ TEST 5 — /devstate health metrics
     whatsappChannel ? 'WhatsApp channel enabled' : 'WhatsApp channel disabled (WHATSAPP_* not set)',
   );
 
+  // AI traces are kept in memory and persisted, so they survive restarts.
+  const aiTraceRepository = new AiTraceRepository(prisma);
+  const tracer = new AITracer(200, { store: aiTraceRepository, log: logger });
+
   const app = buildServer(config, logger, {
     practiceService,
     complianceService,
+    tracer,
     ...(whatsappChannel && config.WHATSAPP_APP_SECRET && config.WHATSAPP_VERIFY_TOKEN
       ? {
           whatsappWebhook: {
@@ -310,6 +317,15 @@ TEST 5 — /devstate health metrics
         name: 'scheduler',
         intervalMs: config.SCHEDULER_INTERVAL_MS,
         run: () => schedulerService.tick(),
+      },
+      {
+        name: 'ai-trace-retention',
+        intervalMs: 60 * 60_000,
+        run: async () => ({
+          deleted: await aiTraceRepository.deleteOlderThan(
+            new Date(Date.now() - config.AI_TRACE_RETENTION_DAYS * 86_400_000),
+          ),
+        }),
       },
       {
         name: 'outbox',
