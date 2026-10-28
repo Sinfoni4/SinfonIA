@@ -299,11 +299,15 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     return tenant.id;
   }
 
-  async function enqueue(tenantId: string, eventType = PRACTICE_EXPORT_GENERATED) {
+  async function enqueue(
+    tenantId: string,
+    eventType = PRACTICE_EXPORT_GENERATED,
+    payload?: Record<string, unknown>,
+  ) {
     const message = await new OutboxRepository(prisma).createMessage({
       tenantId,
       eventType,
-      payload: { title: 'Export ottobre', csv: 'id;nome\n1;Prova', practiceCount: 1 },
+      payload: payload ?? { title: 'Export ottobre', csv: 'id;nome\n1;Prova', practiceCount: 1 },
     });
     // The message is due from the DB time of its insert: keep the test clock past it, even when
     // a loaded machine makes the setup slower than expected.
@@ -411,6 +415,23 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     await dispatcher(channels).dispatchOnce();
     expect((await reload(message.id)).status).toBe('PROCESSED');
     expect(channels.telegram.sent).toEqual(['3001']);
+  });
+
+  it('sends a text instead of an empty file when the export has no practices', async () => {
+    const tenantId = await setupTenant({ admins: ['8001'] });
+    const message = await enqueue(tenantId, PRACTICE_EXPORT_GENERATED, {
+      title: 'Export ottobre',
+      csv: '',
+      practiceCount: 0,
+    });
+    const channels = fakeChannels();
+
+    await dispatcher(channels).dispatchOnce();
+
+    expect((await reload(message.id)).status).toBe('PROCESSED');
+    expect(channels.telegram.texts).toEqual([
+      { chatId: '8001', text: expect.stringContaining('Nessuna pratica nel periodo') as unknown },
+    ]);
   });
 
   it('dead-letters permanent failures immediately', async () => {

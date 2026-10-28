@@ -44,12 +44,18 @@ export class PracticeExportHandler implements OutboxEventHandler {
     };
     const caption = `📊 ${payload.title ?? 'Export pratiche'}\nPratiche incluse: ${payload.practiceCount ?? 0}`;
 
+    // Telegram rejects empty files ("file must be non-empty"): with no practices, say so in text.
+    const hasRows = (payload.csv ?? '').length > 0;
+
     return [
       ...(await telegramDeliveries(
         this.prisma,
         message.tenantId,
         this.channels.telegram,
-        (telegram, chatId) => telegram.sendDocument(chatId, document, caption),
+        (telegram, chatId) =>
+          hasRows
+            ? telegram.sendDocument(chatId, document, caption)
+            : telegram.sendMessage(chatId, `${caption}\nNessuna pratica nel periodo.`),
       )),
       ...(await webhookDeliveries(this.prisma, message, this.channels.webhook, payload)),
     ];

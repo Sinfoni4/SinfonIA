@@ -37,6 +37,18 @@ describe('background workers', () => {
     expect(log.info).toHaveBeenCalledWith({ job: 'slow', done: 1 }, 'Background job completed');
   });
 
+  it('does not log runs that only skipped work', async () => {
+    vi.useFakeTimers();
+    const info = vi.fn();
+    const run = vi.fn(() => Promise.resolve({ triggeredCount: 0, skippedCount: 2 }));
+
+    startBackgroundWorkers([{ name: 'idle', intervalMs: 100, run }], { info, error: vi.fn() });
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(info).not.toHaveBeenCalled();
+  });
+
   it('skips runs while the database circuit is open and logs failures', async () => {
     vi.useFakeTimers();
     const run = vi.fn(() => Promise.reject(new Error('boom')));

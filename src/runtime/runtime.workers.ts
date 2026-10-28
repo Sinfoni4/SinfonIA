@@ -13,6 +13,8 @@ export type BackgroundJob = {
   run: () => Promise<Record<string, number>>;
 };
 
+const QUIET_STATS = new Set(['skippedCount', 'alreadySent']);
+
 const timers: NodeJS.Timeout[] = [];
 const inFlight = new Set<Promise<void>>();
 
@@ -31,7 +33,9 @@ export function startBackgroundWorkers(jobs: BackgroundJob[], log: Logger): void
       const execution = job
         .run()
         .then((stats) => {
-          if (Object.values(stats).some((n) => n > 0)) {
+          // Runs that only skipped work (e.g. tasks already done this period) are not logged.
+          const didWork = Object.entries(stats).some(([key, n]) => !QUIET_STATS.has(key) && n > 0);
+          if (didWork) {
             log.info({ job: job.name, ...stats }, 'Background job completed');
           }
         })
