@@ -119,6 +119,16 @@ Le scadenze della cooperativa e dei soci (DURC, formazione sicurezza, certificaz
 - **Telegram**: `scadenze`, `nuova scadenza <tipo> <gg/mm/aaaa> <descrizione>` (tipi: durc, sicurezza, bio, visita, patentino, altro), `chiudi scadenza <codice>`.
 - **Promemoria**: a 30, 15, 7 e 1 giorno e il giorno della scadenza, su Telegram agli amministratori e al socio interessato e sul webhook del tenant (tramite l'outbox). Il job `CHECK_COMPLIANCE_DEADLINES` gira ogni giorno per ogni tenant; ogni promemoria parte una sola volta (vincolo unico su scadenza e soglia) e si invia solo la soglia più vicina già raggiunta. Le date seguono il calendario italiano.
 
+## Canale WhatsApp
+
+Il canale WhatsApp (WhatsApp Business Cloud API di Meta) ha lo stesso comportamento del bot Telegram: la logica di conversazione è comune (`src/interface/conversation/conversation.service.ts`) e i due canali sono adattatori.
+
+- **Attivazione**: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` (tutti insieme). Nell'app Meta il webhook va puntato a `https://<host>/webhooks/whatsapp` con lo stesso verify token.
+- **Sicurezza**: le richieste di Meta sono autenticate dalla firma `X-Hub-Signature-256` (HMAC-SHA256 del corpo con l'app secret); senza firma valida la richiesta è rifiutata con 401.
+- **Collegamento**: il socio scrive `start <codice invito>`; il numero viene legato a un utente del tenant (`whatsapp_identity`).
+- **Messaggi**: testo, foto e documenti (OCR come su Telegram); notifiche di export e scadenze tramite l'outbox.
+- **Limite di Meta**: oltre 24 ore dall'ultimo messaggio dell'utente si possono inviare solo template approvati; finché non sono configurati, le notifiche in quel caso falliscono con il motivo esplicito.
+
 ## LLM (OpenAI)
 
 Per abilitare l’interprete con un modello reale imposta in `.env`

@@ -10,6 +10,7 @@ import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
+import { whatsappRoutes, type WhatsAppRoutesOptions } from './routes/whatsapp.routes.js';
 
 import type { ContextService } from '../../ai/context/context.service.js';
 import type { DecisionEngine } from '../../ai/decision/decision.engine.js';
@@ -26,6 +27,8 @@ export type ServerDeps = {
   practiceService: PracticeApplicationService;
   // Optional so that tests and tools can build the server without the compliance module.
   complianceService?: ComplianceService;
+  // Present only when the WhatsApp channel is configured.
+  whatsappWebhook?: WhatsAppRoutesOptions;
   interpreterService: InterpreterService;
   executorService: ExecutorService;
   contextService: ContextService;
@@ -93,6 +96,9 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   // Routes (HTTP only): business logic lives in Core / AI.
   void app.register(practiceRoutes, { ...deps, maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES });
   void app.register(aiRoutes, deps);
+  if (deps.whatsappWebhook) {
+    void app.register(whatsappRoutes, deps.whatsappWebhook);
+  }
   if (deps.complianceService) {
     void app.register(complianceRoutes, { complianceService: deps.complianceService });
   }

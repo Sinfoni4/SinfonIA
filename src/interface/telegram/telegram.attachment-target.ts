@@ -84,26 +84,26 @@ export function formatAttachmentQuestion(candidates: AttachmentCandidate[]): str
   ].join('\n');
 }
 
-type PendingAttachment = {
-  file: TelegramFileRef;
+type PendingAttachment<F> = {
+  file: F;
   candidates: AttachmentCandidate[];
   expiresAt: number;
 };
 
 /** Files waiting for the user to choose a practice, kept in memory for a short time. */
-export class PendingAttachmentStore {
-  private readonly pending = new Map<string, PendingAttachment>();
+export class PendingAttachmentStore<F = TelegramFileRef> {
+  private readonly pending = new Map<string, PendingAttachment<F>>();
 
   constructor(
     private readonly ttlMs = 10 * 60_000,
     private readonly now: () => number = Date.now,
   ) {}
 
-  set(userId: string, file: TelegramFileRef, candidates: AttachmentCandidate[]): void {
+  set(userId: string, file: F, candidates: AttachmentCandidate[]): void {
     this.pending.set(userId, { file, candidates, expiresAt: this.now() + this.ttlMs });
   }
 
-  get(userId: string): Omit<PendingAttachment, 'expiresAt'> | null {
+  get(userId: string): Omit<PendingAttachment<F>, 'expiresAt'> | null {
     const entry = this.pending.get(userId);
     if (!entry) return null;
     if (entry.expiresAt <= this.now()) {

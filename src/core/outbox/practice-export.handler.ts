@@ -1,11 +1,6 @@
-import { telegramDeliveries, webhookDeliveries } from './outbox.recipients.js';
+import { chatDeliveries, webhookDeliveries } from './outbox.recipients.js';
 
-import type {
-  OutboxDelivery,
-  OutboxEventHandler,
-  TelegramNotifier,
-  WebhookNotifier,
-} from './outbox.delivery.js';
+import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
 
@@ -32,7 +27,7 @@ export class PracticeExportHandler implements OutboxEventHandler {
 
   constructor(
     private readonly prisma: PrismaLike,
-    private readonly channels: { telegram?: TelegramNotifier; webhook?: WebhookNotifier },
+    private readonly channels: OutboxChannels,
   ) {}
 
   async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
@@ -48,14 +43,10 @@ export class PracticeExportHandler implements OutboxEventHandler {
     const hasRows = (payload.csv ?? '').length > 0;
 
     return [
-      ...(await telegramDeliveries(
-        this.prisma,
-        message.tenantId,
-        this.channels.telegram,
-        (telegram, chatId) =>
-          hasRows
-            ? telegram.sendDocument(chatId, document, caption)
-            : telegram.sendMessage(chatId, `${caption}\nNessuna pratica nel periodo.`),
+      ...(await chatDeliveries(this.prisma, message.tenantId, this.channels, (telegram, chatId) =>
+        hasRows
+          ? telegram.sendDocument(chatId, document, caption)
+          : telegram.sendMessage(chatId, `${caption}\nNessuna pratica nel periodo.`),
       )),
       ...(await webhookDeliveries(this.prisma, message, this.channels.webhook, payload)),
     ];
