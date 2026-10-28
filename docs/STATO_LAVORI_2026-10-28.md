@@ -257,7 +257,7 @@ gantt
 
 **CI su GitHub (28/10/2026)**: alla prima pubblicazione la pipeline falliva già all'installazione delle dipendenze, su tutti i branch: due binari solo Windows erano dipendenze dirette (da `643f298`) e il lockfile, generato con npm 11, non era accettato dall'npm 10 della CI. Corretti entrambi: CI verde su GitHub Actions.
 
-Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture); con lo Step 5 potrà passare in coda asincrona.
+Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture), ma dal 28/10/2026 non blocca più il server: lettura e rasterizzazione dei PDF girano in un worker thread (`src/ai/ocr/pdf-worker.ts`), come già l'OCR di Tesseract. Misura sul PDF scansionato di prova: il blocco massimo del processo principale scende da 718 ms a 33 ms per pagina (175 → 31 ms per un PDF digitale), con lo stesso risultato. Il worker elabora un documento alla volta, ha un timeout di 60 s per documento (oltre, viene riavviato) e si chiude allo spegnimento. Resta da valutare una coda asincrona (risposta 202 e risultato via notifica) se i tempi su documenti reali lo richiederanno.
 
 #### Step 5 — Outbox dispatcher (3 g) · Pilastro 2, prerequisito anche del 3
 - Worker `src/core/scheduler/outbox.dispatcher.ts`: lettura con `FOR UPDATE SKIP LOCKED`, retry esponenziale, stato `DEAD_LETTER` (migrazione con `attempts`, `next_attempt_at`).
