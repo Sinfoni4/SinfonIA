@@ -411,25 +411,25 @@ describe('Attachments: HTTP upload (multipart and base64)', () => {
     });
   }
 
-  function multipartBody(file: Buffer, fileName: string, hint?: string) {
+  function multipartBody(file: Buffer, fileName: string, hint?: string, hintAfterFile = false) {
     const boundary = '----sinfoniaTestBoundary';
-    const parts: Buffer[] = [];
-    if (hint) {
-      parts.push(
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: form-data; name="hint"\r\n\r\n${hint}\r\n`,
-        ),
-      );
-    }
-    parts.push(
+    const hintPart = hint
+      ? [
+          Buffer.from(
+            `--${boundary}\r\nContent-Disposition: form-data; name="hint"\r\n\r\n${hint}\r\n`,
+          ),
+        ]
+      : [];
+    const filePart = [
       Buffer.from(
         `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: image/jpeg\r\n\r\n`,
       ),
       file,
-      Buffer.from(`\r\n--${boundary}--\r\n`),
-    );
+      Buffer.from('\r\n'),
+    ];
+    const parts = hintAfterFile ? [...filePart, ...hintPart] : [...hintPart, ...filePart];
     return {
-      payload: Buffer.concat(parts),
+      payload: Buffer.concat([...parts, Buffer.from(`--${boundary}--\r\n`)]),
       contentType: `multipart/form-data; boundary=${boundary}`,
     };
   }
@@ -456,6 +456,22 @@ describe('Attachments: HTTP upload (multipart and base64)', () => {
     expect(call.fileName).toBe('scontrino.jpg');
     expect(call.hint).toBe('scontrino pranzo');
     expect(Buffer.compare(call.content, photo)).toBe(0);
+  });
+
+  it('accepts the multipart hint after the file too', async () => {
+    const addAttachment = vi.fn().mockResolvedValue({ attachment: { id: 'att-mp2' } });
+    const app = buildApp({ addAttachment } as unknown as PracticeApplicationService);
+    const body = multipartBody(fixture('receipt-photo.jpg'), 'scontrino.jpg', 'pranzo', true);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/practices/${practiceId}/attachments`,
+      headers: { ...authHeaders(tenantId, userId, 'MEMBER'), 'content-type': body.contentType },
+      payload: body.payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect((addAttachment.mock.calls[0]?.[0] as { hint?: string }).hint).toBe('pranzo');
   });
 
   it('returns 413 for a multipart file above ATTACHMENT_MAX_BYTES', async () => {

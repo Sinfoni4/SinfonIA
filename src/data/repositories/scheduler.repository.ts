@@ -4,8 +4,9 @@ import { requireTenantId } from '../guard/tenant.js';
 import type { PrismaLike, PrismaTx } from '../types/prisma.js';
 import type { SchedulerJob, SchedulerRun } from '@prisma/client';
 
-// Upper bound for a locked scheduler task; the guarding transaction is rolled back after this.
-const DEFAULT_LOCK_TIMEOUT_MS = 5 * 60_000;
+// Upper bound for a locked scheduler task. Generous on purpose: when the guarding transaction
+// times out the lock is released, and another worker could start the same task while it runs.
+const DEFAULT_LOCK_TIMEOUT_MS = 60 * 60_000;
 
 export type CreateSchedulerJobInput = {
   tenantId: string;
@@ -46,21 +47,30 @@ export class SchedulerRepository {
     fn: () => Promise<T>,
     options: { timeoutMs?: number } = {},
   ): Promise<{ executed: boolean; result?: T }> {
+    let completed: { executed: true; result: T } | undefined;
     const run = async (tx: PrismaTx): Promise<{ executed: boolean; result?: T }> => {
       if (!(await this.tryAcquireXactLock(tx, key))) {
         return { executed: false };
       }
-      return { executed: true, result: await fn() };
+      completed = { executed: true, result: await fn() };
+      return completed;
     };
 
     if (!('$transaction' in this.prisma)) {
       return run(this.prisma);
     }
 
-    return this.prisma.$transaction(run, {
-      maxWait: 5_000,
-      timeout: options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
-    });
+    try {
+      return await this.prisma.$transaction(run, {
+        maxWait: 5_000,
+        timeout: options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
+      });
+    } catch (err: unknown) {
+      // `fn` writes through its own connections and has already committed: a lock transaction that
+      // timed out while it ran must not turn a completed task into a reported failure.
+      if (completed) return completed;
+      throw err;
+    }
   }
 
   async findOrCreateJob(

@@ -50,6 +50,10 @@ export type BotDeps = {
 };
 
 let botInstance: TelegramClient | null = null;
+// Bot API limit for downloading files (getFile).
+const TELEGRAM_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
+// Most recent practices considered when choosing where a received file goes.
+const ATTACHMENT_PRACTICE_LOOKUP_LIMIT = 20;
 // Files received while the user still has to choose the target practice.
 const pendingAttachments = new PendingAttachmentStore();
 let pollingActive = false;
@@ -235,8 +239,12 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         }
 
         // Reject oversized files before asking anything or downloading them from Telegram.
-        const maxBytes = deps.practiceService.getMaxAttachmentBytes?.();
-        if (maxBytes !== undefined && file.fileSize !== undefined && file.fileSize > maxBytes) {
+        // The Bot API cannot download files above 20 MB, whatever the configured limit.
+        const maxBytes = Math.min(
+          deps.practiceService.getMaxAttachmentBytes?.() ?? Infinity,
+          TELEGRAM_DOWNLOAD_LIMIT_BYTES,
+        );
+        if (file.fileSize !== undefined && file.fileSize > maxBytes) {
           await bot.sendMessage(
             chatId,
             formatAttachmentRejection(
@@ -247,7 +255,11 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         }
 
         const practices = deps.practiceService.listPractices
-          ? await deps.practiceService.listPractices({ tenantId: tenant.id, userId: dbUser.id })
+          ? await deps.practiceService.listPractices({
+              tenantId: tenant.id,
+              userId: dbUser.id,
+              limit: ATTACHMENT_PRACTICE_LOOKUP_LIMIT,
+            })
           : [];
         const target = resolveAttachmentTarget(practices, text);
 

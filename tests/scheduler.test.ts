@@ -129,6 +129,22 @@ describe('durable scheduler with PostgreSQL (Phase 2C)', () => {
     }
   });
 
+  itWithDb('reports a task that outlives the lock transaction as executed', async () => {
+    const prisma = createPrismaClient(DATABASE_URL!);
+    await prisma.$connect();
+    try {
+      const repo = new SchedulerRepository(prisma);
+      const res = await repo.withAdvisoryLock(
+        'test-lock-timeout',
+        () => new Promise<string>((resolve) => setTimeout(() => resolve('done'), 400)),
+        { timeoutMs: 100 },
+      );
+      expect(res).toEqual({ executed: true, result: 'done' });
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
   itWithDb('exports practices of every tenant user, not only the admin', async () => {
     const prisma = createPrismaClient(DATABASE_URL!);
     await prisma.$connect();

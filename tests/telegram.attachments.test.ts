@@ -37,6 +37,22 @@ describe('resolveAttachmentTarget', () => {
     expect(target).toMatchObject({ type: 'selected', practice: { id: 'p2' } });
   });
 
+  it('matches the caption on whole words only', () => {
+    const target = resolveAttachmentTarget(
+      [practice('p1', 'Rossi'), practice('p2', 'Bianchi')],
+      'fattura Rossini',
+    );
+    expect(target.type).toBe('ask');
+  });
+
+  it('never picks a closed practice without asking', () => {
+    const target = resolveAttachmentTarget([practice('p0', 'Vecchia', 'COMPLETED')], '');
+    expect(target).toEqual({
+      type: 'ask',
+      candidates: [practice('p0', 'Vecchia', 'COMPLETED')],
+    });
+  });
+
   it('asks when more than one practice is possible, listing at most five', () => {
     const practices = Array.from({ length: 7 }, (_, i) => practice(`p${i}`, `Pratica ${i}`));
     const target = resolveAttachmentTarget(practices, 'ecco il documento');
@@ -73,7 +89,7 @@ describe('parseAttachmentSelection and PendingAttachmentStore', () => {
 describe('Telegram bot: choosing the practice for a received file', () => {
   type Listener = (msg: TelegramMessage) => Promise<void> | void;
 
-  function setup(userId: string, practices: AttachmentCandidate[]) {
+  function setup(userId: string, practices: AttachmentCandidate[], maxBytes = 10 * 1024 * 1024) {
     let listener: Listener | undefined;
     const sent: string[] = [];
     const bot = {
@@ -118,7 +134,7 @@ describe('Telegram bot: choosing the practice for a received file', () => {
         executeCommand: vi.fn(),
         listPractices: vi.fn().mockResolvedValue(practices),
         addAttachment,
-        getMaxAttachmentBytes: () => 10 * 1024 * 1024,
+        getMaxAttachmentBytes: () => maxBytes,
       },
       handleMessage: vi.fn().mockResolvedValue('ok'),
     } as unknown as BotDeps;
@@ -202,6 +218,22 @@ describe('Telegram bot: choosing the practice for a received file', () => {
     });
 
     expect(addAttachment).not.toHaveBeenCalled();
+    expect(bot.getFile).not.toHaveBeenCalled();
+    expect(sent.at(-1)).toContain('troppo grande');
+  });
+
+  it('rejects files above the Telegram download limit even with a higher configured limit', async () => {
+    const { send, sent, bot } = setup('user-106', twoPractices, 50 * 1024 * 1024);
+
+    await send({
+      document: {
+        file_id: 'doc-2',
+        file_unique_id: 'u',
+        file_name: 'grande.pdf',
+        file_size: 25 * 1024 * 1024,
+      },
+    });
+
     expect(bot.getFile).not.toHaveBeenCalled();
     expect(sent.at(-1)).toContain('troppo grande');
   });
