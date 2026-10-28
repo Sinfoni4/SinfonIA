@@ -6,6 +6,7 @@ import { AuditService } from '../../data/services/audit.service.js';
 import { defaultStorageService, type StorageService } from '../../data/storage/storage.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
+import { AttachmentRejectedError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
 import { escapeCsvField, exportFilterTitle, isWithinExportFilter } from './practice.export.js';
@@ -16,6 +17,7 @@ import type { PracticeExportFilter } from './practice.export.js';
 import type { PracticeKind, PracticePayloadKind } from './practice.payload.js';
 import type { DocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
 import type { DocumentOcrResult } from '../../ai/ocr/ocr.types.js';
+import type { DetectedFileKind } from '../../ai/ocr/text-extraction.js';
 import type { PracticeAttachmentDTO } from '../../data/repositories/attachment.repository.js';
 import type { PaginatedResult } from '../../data/repositories/practice.repository.js';
 import type { PracticeDTO } from '../../data/types/domain.js';
@@ -69,6 +71,17 @@ export type PracticeCommandResult =
   | { type: 'export'; result: PracticeExportResult; send: boolean }
   | { type: 'not_found'; name: string };
 
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+// The stored MIME type comes from the detected content, never from the client declaration.
+const MIME_BY_KIND: Record<DetectedFileKind, string> = {
+  pdf: 'application/pdf',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  text: 'text/plain',
+};
+
 function toView(dto: PracticeDTO): PracticeView {
   const payload = readPracticePayload(dto.payload);
   const name = payload.name ?? `Pratica ${dto.id.slice(0, 8)}`;
@@ -104,12 +117,15 @@ export class PracticeApplicationService {
   private readonly storageService: StorageService;
   private readonly ocrService: DocumentOcrService;
 
+  private readonly maxAttachmentBytes: number;
+
   constructor(
     private readonly prisma: PrismaClient,
     options?: {
       storageService?: StorageService;
       ocrService?: DocumentOcrService;
       attachmentRepository?: AttachmentRepository;
+      maxAttachmentBytes?: number;
     },
   ) {
     this.workflow = new PracticeWorkflow(prisma);
@@ -117,6 +133,11 @@ export class PracticeApplicationService {
     this.attachmentRepository = options?.attachmentRepository ?? new AttachmentRepository(prisma);
     this.storageService = options?.storageService ?? defaultStorageService;
     this.ocrService = options?.ocrService ?? defaultDocumentOcrService;
+    this.maxAttachmentBytes = options?.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
+  }
+
+  getMaxAttachmentBytes(): number {
+    return this.maxAttachmentBytes;
   }
 
   async createPractice(input: {
@@ -167,10 +188,9 @@ export class PracticeApplicationService {
       userId: input.userId,
       status: input.status,
       search: input.search,
+      ...(typeof input.limit === 'number' && input.limit > 0 ? { limit: input.limit } : {}),
     });
-    const views = rows.map(toView);
-
-    return typeof input.limit === 'number' && input.limit > 0 ? views.slice(0, input.limit) : views;
+    return rows.map(toView);
   }
 
   async listPracticesPaginated(
@@ -260,11 +280,13 @@ export class PracticeApplicationService {
       userId: input.userId,
     });
 
+    const mimeType = this.validateAttachment(input.content);
+
     const storageResult = await this.storageService.save(
       input.tenantId,
       input.fileName,
       input.content,
-      input.mimeType,
+      mimeType,
     );
 
     let ocrStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED';
@@ -272,7 +294,7 @@ export class PracticeApplicationService {
     try {
       ocrResult = await this.ocrService.processDocument(
         input.content,
-        input.mimeType,
+        mimeType,
         input.fileName,
         input.hint,
       );
@@ -280,15 +302,24 @@ export class PracticeApplicationService {
       ocrStatus = 'FAILED';
     }
 
-    const attachment = await this.attachmentRepository.createAttachment(input.tenantId, {
-      practiceId: input.practiceId,
-      fileName: input.fileName,
-      mimeType: input.mimeType,
-      fileSize: storageResult.fileSize,
-      storagePath: storageResult.storagePath,
-      ocrStatus,
-      ocrResult,
-    });
+    let attachment: PracticeAttachmentDTO;
+    try {
+      attachment = await this.attachmentRepository.createAttachment(input.tenantId, {
+        practiceId: input.practiceId,
+        fileName: input.fileName,
+        mimeType,
+        fileSize: storageResult.fileSize,
+        storagePath: storageResult.storagePath,
+        ocrStatus,
+        ocrResult,
+      });
+    } catch (err: unknown) {
+      // Without its record the stored file could never be listed or deleted: remove it.
+      await this.storageService
+        .delete(input.tenantId, storageResult.storagePath)
+        .catch(() => undefined);
+      throw err;
+    }
 
     let updatedPractice = practice;
     if (ocrResult) {
@@ -312,6 +343,7 @@ export class PracticeApplicationService {
             uploadedAt: attachment.createdAt.toISOString(),
             ocrStatus,
             documentType: ocrResult.documentType,
+            reviewRequired: ocrResult.reviewRequired,
           },
         ],
         lastOcrResult: ocrResult,
@@ -330,6 +362,28 @@ export class PracticeApplicationService {
       practice: updatedPractice,
       ocrResult,
     };
+  }
+
+  /** Enforces size and format limits; returns the MIME type detected from the content. */
+  private validateAttachment(content: Buffer | Uint8Array): string {
+    if (content.length === 0) {
+      throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'The attached file is empty');
+    }
+    if (content.length > this.maxAttachmentBytes) {
+      const maxMb = Math.round((this.maxAttachmentBytes / 1024 / 1024) * 10) / 10;
+      throw new AttachmentRejectedError(
+        'ATTACHMENT_TOO_LARGE',
+        `The attached file exceeds the ${maxMb} MB limit`,
+      );
+    }
+    const kind = this.ocrService.detectFileKind(content);
+    if (!kind) {
+      throw new AttachmentRejectedError(
+        'UNSUPPORTED_MEDIA_TYPE',
+        'Unsupported file format: allowed formats are PDF, JPEG, PNG, WEBP and plain text',
+      );
+    }
+    return MIME_BY_KIND[kind];
   }
 
   async listAttachments(input: {

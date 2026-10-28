@@ -39,7 +39,7 @@ L'intervento architetturale e ingegneristico sulle **Fasi 1 e 2** ha trasformato
 ### Step 1B: Autenticazione Bearer HS256 & Route Guards RBAC
 
 - **Autenticazione Stateless JWT (HS256)**:
-  - Firma e verifica di token simmetrici con claims standard (`sub`, `tenant_id`, `role`, `iss`, `aud`, `exp`).
+  - Firma e verifica di token simmetrici con claims standard (`sub`, `tid` per il tenant, `role`, `iat`, `iss`, `aud`, `exp`).
   - Pre-handler Fastify (`requireAuth`) che estrae il token dall'header `Authorization: Bearer <token>`, valida la firma, verifica scadenza e audience, ed inietta `request.authContext = { userId, tenantId, role }`.
 - **Controllo degli Accessi Basato sui Ruoli (RBAC)**:
   - Definizione dell'enum dei ruoli: `ADMIN`, `OPERATOR`, `MEMBER`.
@@ -71,7 +71,7 @@ L'intervento architetturale e ingegneristico sulle **Fasi 1 e 2** ha trasformato
   - Introduzione del modello canonico unificato `Practice` con:
     - `id` (UUID), `tenant_id` (UUID), `user_id` (UUID)
     - `name` (String), `kind` (String, es. `generic`, `music`, `legal`, `fiscal`)
-    - `status`: ciclo di vita FSM deterministico (`CREATED` $\rightarrow$ `VALIDATED` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `COMPLETED`, con fallback `REJECTED`)
+    - `status`: ciclo di vita FSM deterministico (`CREATED` $\rightarrow$ `VALIDATED`/`SUBMITTED` $\rightarrow$ `COMPLETED`, con esito terminale `FAILED` da `SUBMITTED`; vedi `src/core/workflow/state-machine.ts`)
     - `version`: lock ottimistico contro aggiornamenti concorrenti
     - `schema_version`: evoluzione dello schema dei dati
 - **Command Parser Deterministico**:
@@ -100,12 +100,14 @@ L'intervento architetturale e ingegneristico sulle **Fasi 1 e 2** ha trasformato
     $$\text{idempotencyKey} = \text{tenantId} : \text{taskType} : \text{frequency} : \text{periodKey}$$
     (Es. `01ebe...:EXPORT_PRACTICES:daily:2026-10-26`).
   - Vincolo `UNIQUE ("idempotency_key")` a livello database PostgreSQL per impedire doppie esecuzioni.
-- **PostgreSQL Session Advisory Locks**:
-  - Utilizzo di `pg_try_advisory_lock(hashtext(lockKey))` per garantire mutua esclusione non-bloccante tra più istanze di worker paralleli.
+- **PostgreSQL Transaction Advisory Locks** (rivisto il 28/10/2026):
+  - Utilizzo di `pg_try_advisory_xact_lock` all'interno di una transazione dedicata (`SchedulerRepository.withAdvisoryLock`) per garantire mutua esclusione non-bloccante tra più istanze di worker paralleli. Il lock viene rilasciato da PostgreSQL al commit o al rollback.
+  - La versione iniziale usava lock di sessione (`pg_try_advisory_lock` / `pg_advisory_unlock`) tramite il pool di connessioni Prisma: acquisizione e rilascio potevano avvenire su connessioni diverse, lasciando il lock trattenuto. Il difetto è coperto ora dal test di regressione in `tests/scheduler.test.ts`.
   - Se un worker acquisisce il lock, esegue il job; altri worker che tentano di processare lo stesso task per lo stesso tenant rilevano il lock occupato e saltano l'esecuzione senza generare conflitti o duplicati.
-- **Pattern Outbox Transazionale**:
-  - Tabella `outbox_message` con stato `PENDING` $\rightarrow$ `SENT` $\rightarrow$ `FAILED`.
-  - Gli artefatti generati (es. export CSV) vengono scritti nella tabella outbox, garantendo affidabilità e consistenza event-driven.
+- **Export Schedulato**: l'export periodico include le pratiche di tutti gli utenti del tenant (fino al 28/10/2026 includeva per errore solo quelle del primo amministratore).
+- **Pattern Outbox (solo scrittura)**:
+  - Tabella `outbox_message` con stato `PENDING` $\rightarrow$ `PROCESSED` / `FAILED`.
+  - Gli artefatti generati (es. export CSV) vengono scritti nella tabella outbox. **Il dispatcher che consuma i messaggi e li consegna non è ancora implementato**: i messaggi restano in stato `PENDING`.
 - **Eliminazione del Burst al Boot**:
   - Lo scheduler non memorizza più timer in memoria volatile. Al riavvio dell'applicazione (`tick`), interroga la tabella `scheduler_run`: se il periodo corrente risulta già `COMPLETED`, il task viene saltato (`skippedCount: 1, triggeredCount: 0`).
 
@@ -136,7 +138,7 @@ Il Gate 2D ha validato tramite test automatici e analisi formale delle query le 
   3. Verifica del lock advisory PostgreSQL: esattamente 1 worker acquisisce il lock e completa l'esecuzione (`totalTriggered: 1`), l'altro fallisce l'acquisizione e termina no-op (`totalSkipped: 1`).
   4. Verifica che la funzione di export sia stata invocata esattamente 1 sola volta (`totalExportCalls: 1`).
   5. Verifica che nella tabella `outbox_message` sia presente un solo record per l'evento generato.
-- **Esito**: **PASSED**. Concorrenza multi-worker sicura al 100%.
+- **Esito**: **PASSED**. Il gate non copriva il rilascio del lock su una connessione diversa del pool; il caso è ora verificato da `tests/scheduler.test.ts` (`never leaks the advisory lock on pooled connections or on failure`).
 
 ### Gate 3: Equivalenza Funzionale HTTP vs Telegram
 

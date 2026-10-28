@@ -4,6 +4,12 @@
 **Progetto**: SinfonIA — Core Orchestration, Enterprise AI Engine & Document Intelligence  
 **Architettura AI**: Deterministic Core + Non-Destructive LLM Interpreter + Guardrails di Sicurezza
 
+> **Nota di revisione (28/10/2026)** — Questo report è stato allineato allo stato reale del codice dopo l'audit [`AUDIT_ENTERPRISE_2026-10-28.md`](AUDIT_ENTERPRISE_2026-10-28.md). In sintesi:
+> - Il "motore OCR" al commit `4f2b1f3` **non eseguiva OCR**. Dal 28/10/2026 l'OCR è reale e in-process (Tesseract, modello italiano), con lettura del testo dei PDF digitali e OCR dei PDF scansionati: vedi §3.4.
+> - Le metriche del golden set eseguite in CI (`npm run ai:eval`) usano un **LLM simulato** che restituisce l'output atteso: verificano la pipeline, non la qualità di un modello reale.
+> - I nomi di persone e pratiche **non sono pseudonimizzati** prima dell'invio all'LLM.
+> - Le etichette "Fase 3C/3D" di questo report non coincidono con i pilastri 3C (Push/Outbox) e 3D (WhatsApp) del cronoprogramma, che restano da realizzare.
+
 ---
 
 ## 1. Visione d'Insieme & Obiettivi della Fase 3
@@ -20,9 +26,9 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 | Step | Nome Modulo | Obiettivo Primario | Risultato Chiave |
 | :--- | :--- | :--- | :--- |
 | **Fase 3A** | **Modalità Esplicita, AI Tracing & Context Optimization** | Trasparenza esecutiva, fallback deterministico e contenimento costi prompt | `DisabledLLMClient` con HTTP 503 descrittivo, `AITracer` in-memory per-tenant (`GET /ai/traces`), `ContextService` con paginazione e ricerca keyword |
-| **Fase 3B** | **Structured Output, JSON Repair, Clarification Flow & Document AI OCR** | Standardizzazione schema versionato, auto-riparazione JSON e acquisizione documenti | Schema JSON v1 (`ResolvedCommandSchema`), retry & repair automatico, flusso di chiarimento zero-side-effect, motore OCR (`practice_attachment`) per fatture/DDT |
-| **Fase 3C** | **Prompt Injection Defense, Semantic Delimitation & PII Minimization** | Protezione multilivello da jailbreak, isolamento dei dati e conformità GDPR | Tag semantici `<user_input>`, `PromptGuard` pre-LLM (0% bypass), `PiiMinimizer` (Codice Fiscale, IBAN, carte) e documento `DATA_RESIDENCY_AND_GDPR.md` |
-| **Fase 3D** | **Evaluation Harness, Golden Set & Gate Finale 3D** | Validazione quantitativa continua, test deterministici CI e golden dataset | Golden Set di 19 scenari, tracking quantitativo (Success Rate 100%, Wrong Execution 0%), CLI `npm run ai:eval`, 5 test del Gate 3D superati al 100% |
+| **Fase 3B** | **Structured Output, JSON Repair, Clarification Flow & Document AI OCR** | Standardizzazione schema versionato, auto-riparazione JSON e acquisizione documenti | Schema JSON v1 (`interpreter.types.ts`), retry & repair automatico, flusso di chiarimento zero-side-effect, allegati (`practice_attachment`) con estrazione testuale per fatture/DDT/scontrini (OCR reale non ancora implementato) |
+| **Fase 3C** | **Prompt Injection Defense, Semantic Delimitation & PII Minimization** | Protezione multilivello da jailbreak, isolamento dei dati e conformità GDPR | Tag semantici `<user_input>`, `PromptGuard` pre-LLM a pattern (100% di blocco sui 4 scenari del golden set), `PiiMinimizer` (Codice Fiscale, IBAN, carte, email, telefono; nomi esclusi) e documento `DATA_RESIDENCY_AND_GDPR.md` |
+| **Fase 3D** | **Evaluation Harness, Golden Set & Gate Finale 3D** | Validazione quantitativa continua, test deterministici CI e golden dataset | Golden Set di 19 scenari, harness con LLM simulato in CI (`npm run ai:eval`) e modalità con modello reale (`npm run ai:eval:nightly`, non schedulata), 5 test del Gate 3D superati |
 
 ---
 
@@ -32,18 +38,19 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 - **File**: [`src/ai/providers/disabled.provider.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/providers/disabled.provider.ts)
 - **Comportamento**:
   - Quando `ENABLE_LLM=false`, il provider restituisce un client deterministico protetto che rifiuta le interpretazioni in linguaggio naturale con eccezione tipizzata `LLMDisabledError`.
-  - Sulle route Fastify (`POST /ai/execute`), la richiesta risponde con **HTTP 503 Service Unavailable**, specificando in formato strutturato i comandi deterministici pronti all'uso:
-    - `POST /practices`
-    - `POST /practices/:id/transition`
-    - `GET /practices`
-  - **Fallback Deterministico Trasparente**: se l'utente o il client invia un payload contenente comandi espliciti (es. `{ "action": "CREATE_PRACTICE", "artistName": "Mario Rossi" }`), il sistema esegue l'operazione in modalità deterministica anche a LLM spento, garantendo business continuity.
+  - Sulle route Fastify (`POST /ai/execute`), la richiesta risponde con **HTTP 503 Service Unavailable**, elencando in `availableCommands` i comandi deterministici accettati:
+    - `crea pratica <nome>`
+    - `stato pratica <nome>`
+    - `export pratiche [oggi|mese|anno]`
+  - **Fallback Deterministico Trasparente**: se l'`input` testuale corrisponde a uno dei comandi deterministici (es. `{ "input": "crea pratica Mario Rossi" }`), il sistema esegue l'operazione tramite `parsePracticeCommand` anche a LLM spento.
 
 ### 2. `AITracer`: Tracing e Monitoraggio Per-Tenant
 - **File**: [`src/ai/tracing/ai.tracer.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/tracing/ai.tracer.ts)
 - **Funzionalità**:
   - Buffer circolare in-memory per registrare fino a 1.000 tracce di esecuzione AI senza memory leak.
   - Metadati catturati: `requestId`, `tenantId`, `userId`, `model`, `provider`, `promptTokens`, `completionTokens`, `latencyMs`, `outcome` (`SUCCESS`, `PARSE_ERROR`, `AMBIGUOUS_INTENT`, `SECURITY_REJECTED`, `LLM_DISABLED`, `DETERMINISTIC_FALLBACK`), `action`, `error`, `timestamp`.
-  - **Endpoint REST**: `GET /ai/traces` protetto da RBAC (`ADMIN` / `OPERATOR`), rigorosamente confinato al `tenant_id` dell'utente richiedente, con supporto a filtri per `outcome`, range temporale (`from`, `to`) e paginazione con `limit`.
+  - **Endpoint REST**: `GET /ai/traces` protetto da RBAC (`ADMIN` / `OPERATOR`), rigorosamente confinato al `tenant_id` dell'utente richiedente; restituisce le ultime 50 tracce. I filtri per `outcome` e intervallo temporale esistono in `AITracer.getTraces` ma non sono ancora esposti dall'endpoint.
+  - Le tracce sono in memoria del singolo processo: si perdono al riavvio e non sono condivise tra repliche.
 
 ### 3. Paginazione, Ordinamento e Ricerca Keyword su `ContextService`
 - **File**: [`src/ai/context/context.service.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/context/context.service.ts)
@@ -56,7 +63,7 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 ## 3. Fase 3B: Structured Output, Auto-Riparazione, Chiarimenti & Document AI
 
 ### 1. Schema Versionato & Structured Output
-- **File**: [`src/ai/interpreter/command.schema.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/interpreter/command.schema.ts)
+- **File**: [`src/ai/interpreter/interpreter.types.ts`](../src/ai/interpreter/interpreter.types.ts)
 - **Validazione Zod Post-Generazione**:
   - Schema JSON rigido con marcatura esplicita `schemaVersion: 1`.
   - Struttura tipizzata comprendente:
@@ -71,7 +78,7 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 - **File**: [`src/ai/interpreter/interpreter.service.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/interpreter/interpreter.service.ts)
 - **Funzionalità di Riparazione**:
   - `repairMalformedJson()`: estrae automaticamente blocchi JSON racchiusi in markdown code fences (` ```json `), pulisce virgole pendenti (trailing commas), gestisce apici non correttamente escapati e segmenti troncati.
-  - Retry adattivo: in caso di JSON non valido o schema disallineato, l'interprete effettua un secondo tentativo inviando un prompt di correzione specifico al provider prima di arrendersi.
+  - Retry adattivo: in caso di JSON non valido o schema disallineato, l'interprete effettua fino a 2 ulteriori tentativi (`maxRepairRetries`) inviando un prompt di correzione specifico al provider prima di arrendersi.
 
 ### 3. Soglia di Confidenza & Flusso di Chiarimento Zero-Ambiguità
 - **File**: [`src/ai/decision/decision.engine.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/decision/decision.engine.ts)
@@ -85,19 +92,23 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
   - Tabella `practice_attachment` con isolamento multi-tenant:
     - `id` (UUID), `tenant_id` (UUID), `practice_id` (UUID)
     - `file_name`, `mime_type`, `file_size`, `storage_path`
-    - `ocr_status` (`PENDING`, `COMPLETED`, `FAILED`), `ocr_result` (JSONB)
-- **Storage Isolato Locale/S3**:
-  - Storage adapter filesystem organizzato per tenant (`storage/<tenant_id>/attachments/`).
-- **Motore OCR Strutturato** ([`src/ai/ocr/document.ocr.engine.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/ocr/document.ocr.engine.ts)):
-  - Classificazione tipo documento: `INVOICE`, `DELIVERY_NOTE` (DDT), `RECEIPT` (scontrino), `CERTIFICATE`.
-  - Estrazione dati strutturati validati con schemi Zod `InvoiceOcrSchema` e `DeliveryNoteOcrSchema`:
+    - `ocr_status` (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`), `ocr_result` (JSONB)
+- **Storage Isolato Locale**:
+  - Storage configurabile con `STORAGE_DRIVER`: filesystem locale per tenant (`.runtime/storage/<tenant_id>/`, default) oppure S3/MinIO (`<tenant_id>/attachments/...`, regione predefinita `eu-south-1`, cifratura lato server opzionale). In entrambi i casi lettura e cancellazione sono confinate al tenant del chiamante.
+- **Estrazione Documentale** ([`src/ai/ocr/document-ocr.service.ts`](../src/ai/ocr/document-ocr.service.ts)):
+  - **Pipeline (dal 28/10/2026)**: il formato reale è rilevato dai magic bytes (PDF, JPEG, PNG, WEBP, testo), mai dal MIME dichiarato. Le immagini passano dall'OCR Tesseract eseguito in-process con il modello italiano incluso nel pacchetto `@tesseract.js-data/ita` (nessun download a runtime, nessun dato verso terzi). I PDF digitali vengono letti dal livello di testo; i PDF scansionati vengono rasterizzati (fino a 5 pagine) e passati all'OCR ([`text-extraction.ts`](../src/ai/ocr/text-extraction.ts)).
+  - **Nessun valore inventato**: i campi non leggibili restano `null` e sono elencati in `missingFields`; `warnings` segnala P.IVA con cifra di controllo errata, totali incoerenti e confidenza OCR sotto il 70%; `reviewRequired` chiede una verifica umana. In precedenza il parser sostituiva i campi mancanti con valori fittizi (P.IVA `IT00000000000`, totale `100`, data odierna, IVA 22%).
+  - **Metadati di estrazione**: `extraction.source` (`plain_text`, `pdf_text`, `ocr_image`, `ocr_pdf`), numero di pagine e confidenza media OCR.
+  - Classificazione tipo documento: `invoice`, `delivery_note` (DDT), `receipt` (scontrino), `certificate` (con categoria `BIO`, `DURC`, `SICUREZZA_LAVORO`, `VISITA_MEDICA`, `PATENTINO`, `ALTRO` e date di emissione/scadenza), `generic`.
+  - Estrazione dati strutturati validati con schemi Zod `InvoiceOcrSchema`, `DeliveryNoteOcrSchema`, `ReceiptOcrSchema` e `CertificateOcrSchema`:
     - Partita IVA / Codice Fiscale del fornitore/cessionario.
     - Numero progressivo e data contabile.
     - Imponibile, aliquote IVA e totale documento.
     - Linee di dettaglio di prodotti, lotti e quantità.
 - **Arricchimento Pratica & API REST**:
   - Aggiornamento automatico del campo `payload` JSONB della pratica con i metadati estratti dall'allegato.
-  - `POST /practices/:id/attachments`: upload allegati via multipart o base64 con elaborazione OCR sincrona/asincrona.
+  - `POST /practices/:id/attachments`: upload `multipart/form-data` (campo `file`, campo opzionale `hint` inviato prima del file) oppure JSON con contenuto base64 (`contentBase64`); elaborazione sincrona. Limite di dimensione configurabile con `ATTACHMENT_MAX_BYTES` (default 10 MB, risposta 413); formati non supportati rifiutati con 415. Il MIME salvato è quello rilevato dal contenuto.
+  - Telegram: foto e documenti seguono la stessa pipeline. Il file viene associato direttamente solo se l'utente ha una sola pratica aperta o se la didascalia nomina una pratica; altrimenti il bot chiede di scegliere (numero o "annulla"). Il bot riassume i dati letti, indica quelli da verificare e rifiuta i file troppo grandi prima di scaricarli.
   - `GET /practices/:id/attachments`: elenco e consultazione documenti per pratica con rispetto delle query scoped per tenant.
 
 ---
@@ -120,7 +131,7 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
   - L'attacco viene bloccato prima ancora di effettuare la chiamata all'LLM.
   - Tracciamento della violazione su `AITracer` con `outcome: SECURITY_REJECTED`.
   - Risposta con `clarification_required` che invita l'utente a riformulare una richiesta valida.
-  - **0% di bypass** garantito nei test di penetration.
+  - **Limite**: il rilevamento si basa su 10 pattern regex, prevalentemente in lingua inglese. Il 100% di blocco è misurato sui 4 scenari di injection del golden set; parafrasi, testo in italiano o codifiche alternative possono non essere intercettati. La delimitazione `<user_input>` resta la difesa principale.
 
 ### 3. `PiiMinimizer`: Mascheramento PII & Conformità GDPR
 - **File**: [`src/ai/security/pii-minimizer.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/security/pii-minimizer.ts)
@@ -132,7 +143,8 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
     - **Indirizzi Email** e **Numeri di Telefono** (cellulari e fissi).
   - Sostituzione con token opachi prima della chiamata all'LLM (es. `[CODICE_FISCALE_1]`, `[IBAN_1]`).
   - **Unmasking Locale**: ripristino sicuro dei valori originali solo internamente prima dell'esecuzione nel database Core.
-  - **Redazione nei Log**: `redactPII()` garantisce che nessun dato personale compaia nei log di audit e tracing.
+  - **Redazione nei Log**: `redactPIIForLogging()` rimuove i pattern sopra elencati da log e tracing.
+  - **Limite**: nomi e cognomi (nell'input e nei nomi pratica inclusi nel contesto) non sono riconosciuti né pseudonimizzati e vengono inviati al provider LLM in chiaro.
 - **Documentazione Normativa**:
   - Creato [`docs/DATA_RESIDENCY_AND_GDPR.md`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/docs/DATA_RESIDENCY_AND_GDPR.md) con documentazione dettagliata su:
     - Art. 5 (Minimizzazione dei dati) & Art. 25 (Data Protection by Design).
@@ -156,10 +168,12 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 - **File**: [`src/ai/evaluation/evaluation.harness.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/src/ai/evaluation/evaluation.harness.ts)
 - **Script Esecutore**: [`scripts/run-eval.ts`](file:///c:/Users/flavi/Documents/SOCIETA'/SinfonIA/SinfonIA-sviluppo/SinfonIA/scripts/run-eval.ts)
 - **Comandi NPM**:
-  - `npm run ai:eval`: suite deterministica rapida adatta alla Continuous Integration (CI).
-  - `npm run ai:eval:nightly`: suite notturna o di pre-release con modello LLM reale.
+  - `npm run ai:eval`: suite deterministica rapida. Usa un client LLM simulato (`simulateLlmResponse`) che costruisce la risposta a partire dall'esito atteso dello scenario: verifica normalizzazione, guardrail ed esecuzione, **non** la qualità di un modello.
+  - `npm run ai:eval:nightly`: stessa suite con modello OpenAI reale. Non è ancora schedulata in CI.
 
 ### 3. Metriche Quantitative del Golden Set
+
+Le metriche seguenti provengono dalla modalità simulata; token e costi sono stime fisse per scenario.
 
 ```text
 ======================================================================
@@ -202,11 +216,12 @@ La suite [`tests/gate.phase3d.test.ts`](file:///c:/Users/flavi/Documents/SOCIETA
 | :--- | :--- | :--- | :--- |
 | **Gate Finale 3D** | `tests/gate.phase3d.test.ts` | **5 / 5** | Tutti i gate superati con esito positivo |
 | **AI Security & Injection** | `tests/ai.security.test.ts` | **16 / 16** | Jailbreak, exfiltration, role impersonation, PII minimizer |
-| **Document AI & OCR** | `tests/ocr.document.test.ts` | **11 / 11** | Multipart, base64, categorizzazione fatture/DDT, payload enrich |
+| **Document AI & OCR** | `tests/ocr.document.test.ts` | **11 / 11** | Upload base64, categorizzazione fatture/DDT da testo, payload enrich |
+| **OCR reale e limiti allegati** | `tests/ocr.engine.test.ts` | **23 / 23** | OCR su foto, PDF digitale e PDF scansionato (fixture in `tests/fixtures/ocr/`), nessun valore inventato, limiti di formato e dimensione, upload multipart |
 | **Structured Output & Repair** | `tests/ai.step3b.test.ts` | **11 / 11** | Schema v1, JSON repair, soglie confidenza e clarification flow |
 | **AI Phase 3A Tracing & Context** | `tests/ai.phase3a.test.ts` | **7 / 7** | Disabled LLM client, HTTP 503, fallback deterministico, audit trace |
 | **Totale Suite Fase 3** | | **50+ test** | **100% PASS** |
 
 - **Typecheck TypeScript**: `npm run typecheck` completato con codice `0` (zero errori).
 - **ESLint Quality Gate**: `npm run lint` completato con codice `0` (zero errori, zero warning).
-- **Formattazione Prettier**: 100% conforme alle linee guida del repository.
+- **Formattazione Prettier**: al commit `4f2b1f3` 4 file della Fase 3D non erano conformi (CI rossa); corretto il 28/10/2026.

@@ -38,8 +38,9 @@ export class LocalStorageService implements StorageService {
     }
 
     const resolved = path.resolve(this.baseDir, storagePath);
-    // Security check: ensure path does not escape the tenant directory
-    if (!resolved.startsWith(tenantDir)) {
+    // Security check: ensure path does not escape the tenant directory. The trailing
+    // separator stops a sibling directory sharing the prefix ("<tenant>-other") from matching.
+    if (!resolved.startsWith(tenantDir + path.sep)) {
       throw new Error('Access denied: storage path outside tenant directory');
     }
     return resolved;

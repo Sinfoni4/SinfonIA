@@ -1,3 +1,4 @@
+import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
 import { AUTH_ROLES } from '../auth/auth.types.js';
 import { requireRole } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
@@ -14,13 +15,58 @@ import {
 } from '../validation/practice.validation.js';
 
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 
 export type PracticeRoutesDeps = {
   practiceService: PracticeApplicationService;
+  maxAttachmentBytes?: number;
 };
 
+type AttachmentUpload = { fileName: string; mimeType: string; content: Buffer; hint?: string };
+
+// Room for the JSON envelope around the base64 content (file name, MIME type, hint).
+const BASE64_ENVELOPE_BYTES = 64 * 1024;
+
+function readBase64Upload(body: unknown): AttachmentUpload {
+  const parsed = PracticeAttachmentBodySchema.parse(body);
+  return {
+    fileName: parsed.fileName,
+    mimeType: parsed.mimeType,
+    content: Buffer.from(parsed.contentBase64, 'base64'),
+    hint: parsed.hint,
+  };
+}
+
+// Reads every part, so the optional "hint" field is accepted before or after the file.
+async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUpload> {
+  let file: Omit<AttachmentUpload, 'hint'> | undefined;
+  let hint: string | undefined;
+  try {
+    for await (const part of req.parts()) {
+      if (part.type === 'file') {
+        const content = await part.toBuffer();
+        if (part.fieldname === 'file') {
+          file = { fileName: part.filename, mimeType: part.mimetype, content };
+        }
+      } else if (part.fieldname === 'hint') {
+        hint = String(part.value);
+      }
+    }
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
+      throw new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'The attached file is too large');
+    }
+    throw err;
+  }
+  if (!file) {
+    throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
+  }
+  return { ...file, hint };
+}
+
 export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, deps, done) => {
+  const maxAttachmentBytes = deps.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
+
   // POST /practices — Create a new practice
   app.post('/practices', async (req, reply) => {
     try {
@@ -135,31 +181,34 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
     }
   });
 
-  // POST /practices/:id/attachments — Upload an attachment and process OCR
-  app.post('/practices/:id/attachments', async (req, reply) => {
-    try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_CREATE);
-      const params = PracticeAttachmentParamsSchema.parse(req.params);
-      const body = PracticeAttachmentBodySchema.parse(req.body);
+  // POST /practices/:id/attachments — Upload an attachment and process OCR.
+  // Accepts multipart/form-data (field "file", optional "hint" sent before the file)
+  // or JSON with base64 content.
+  app.post(
+    '/practices/:id/attachments',
+    { bodyLimit: Math.ceil((maxAttachmentBytes * 4) / 3) + BASE64_ENVELOPE_BYTES },
+    async (req, reply) => {
+      try {
+        const auth = requireRole(req, AUTH_ROLES.PRACTICE_CREATE);
+        const params = PracticeAttachmentParamsSchema.parse(req.params);
+        const upload = req.isMultipart()
+          ? await readMultipartUpload(req)
+          : readBase64Upload(req.body);
 
-      const buffer = Buffer.from(body.contentBase64, 'base64');
+        const result = await deps.practiceService.addAttachment({
+          tenantId: auth.tenantId,
+          userId: auth.userId,
+          practiceId: params.id,
+          ...upload,
+        });
 
-      const result = await deps.practiceService.addAttachment({
-        tenantId: auth.tenantId,
-        userId: auth.userId,
-        practiceId: params.id,
-        fileName: body.fileName,
-        mimeType: body.mimeType,
-        content: buffer,
-        hint: body.hint,
-      });
-
-      return reply.status(201).send(ok(result));
-    } catch (err: unknown) {
-      const mapped = mapErrorToHttp(err);
-      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
-    }
-  });
+        return reply.status(201).send(ok(result));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
 
   // GET /practices/:id/attachments — List attachments for a practice
   app.get('/practices/:id/attachments', async (req, reply) => {

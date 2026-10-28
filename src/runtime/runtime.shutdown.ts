@@ -1,3 +1,4 @@
+import { defaultDocumentOcrService } from '../ai/ocr/document-ocr.service.js';
 import { stopTelegramPollingForRestart } from '../interface/telegram/telegram.bot.js';
 
 import { releaseProcessLock } from './runtime.processLock.js';
@@ -26,6 +27,12 @@ export async function gracefulShutdown(reason: string) {
   try {
     const mod = await import('../index.js');
     await mod.disconnectPrismaClient();
+  } catch {
+    // swallow
+  }
+
+  try {
+    await defaultDocumentOcrService.terminate();
   } catch {
     // swallow
   }

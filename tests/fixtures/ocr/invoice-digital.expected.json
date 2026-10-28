@@ -1,0 +1,11 @@
+{
+  "documentType": "invoice",
+  "fields": {
+    "supplierVat": "IT01234567897",
+    "documentNumber": "2026/118",
+    "documentDate": "2026-10-15",
+    "taxableAmount": 1250.5,
+    "vatAmount": 275.11,
+    "totalAmount": 1525.61
+  }
+}

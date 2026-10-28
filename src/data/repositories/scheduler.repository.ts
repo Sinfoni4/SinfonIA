@@ -1,8 +1,12 @@
 import { DatabaseError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
-import type { PrismaLike } from '../types/prisma.js';
+import type { PrismaLike, PrismaTx } from '../types/prisma.js';
 import type { SchedulerJob, SchedulerRun } from '@prisma/client';
+
+// Upper bound for a locked scheduler task. Generous on purpose: when the guarding transaction
+// times out the lock is released, and another worker could start the same task while it runs.
+const DEFAULT_LOCK_TIMEOUT_MS = 60 * 60_000;
 
 export type CreateSchedulerJobInput = {
   tenantId: string;
@@ -16,14 +20,15 @@ export class SchedulerRepository {
   constructor(private readonly prisma: PrismaLike) {}
 
   /**
-   * Acquire a PostgreSQL session-level advisory lock using a hash of the key.
-   * Returns true if the lock was successfully acquired, false if held by another worker.
+   * Try to acquire a PostgreSQL transaction-level advisory lock on the given transaction.
+   * The lock is released automatically by PostgreSQL on commit or rollback, so it can never
+   * leak onto a pooled connection (session-level locks taken through the Prisma pool could be
+   * released on a different connection than the one that acquired them).
    */
-  async tryAcquireAdvisoryLock(key: string, client?: PrismaLike): Promise<boolean> {
-    const db = client ?? this.prisma;
+  private async tryAcquireXactLock(tx: PrismaTx, key: string): Promise<boolean> {
     try {
-      const res = await db.$queryRawUnsafe<Array<{ locked: boolean }>>(
-        `SELECT pg_try_advisory_lock(('x' || substr(md5($1), 1, 16))::bit(64)::bigint) as locked`,
+      const res = await tx.$queryRawUnsafe<Array<{ locked: boolean }>>(
+        `SELECT pg_try_advisory_xact_lock(('x' || substr(md5($1), 1, 16))::bit(64)::bigint) as locked`,
         key,
       );
       return Boolean(res[0]?.locked);
@@ -33,39 +38,38 @@ export class SchedulerRepository {
   }
 
   /**
-   * Release a previously acquired PostgreSQL session-level advisory lock.
-   */
-  async releaseAdvisoryLock(key: string, client?: PrismaLike): Promise<boolean> {
-    const db = client ?? this.prisma;
-    try {
-      const res = await db.$queryRawUnsafe<Array<{ unlocked: boolean }>>(
-        `SELECT pg_advisory_unlock(('x' || substr(md5($1), 1, 16))::bit(64)::bigint) as unlocked`,
-        key,
-      );
-      return Boolean(res[0]?.unlocked);
-    } catch (err: unknown) {
-      throw new DatabaseError('Failed to release advisory lock', err);
-    }
-  }
-
-  /**
-   * Helper that executes `fn` guarded by an advisory lock.
-   * Guarantees the lock is always released in the finally block.
+   * Executes `fn` guarded by an advisory lock held for the lifetime of a dedicated transaction.
+   * Returns `{ executed: false }` without running `fn` if another worker holds the lock.
+   * When the repository is already bound to a transaction client, the lock joins that transaction.
    */
   async withAdvisoryLock<T>(
     key: string,
     fn: () => Promise<T>,
-    client?: PrismaLike,
+    options: { timeoutMs?: number } = {},
   ): Promise<{ executed: boolean; result?: T }> {
-    const acquired = await this.tryAcquireAdvisoryLock(key, client);
-    if (!acquired) {
-      return { executed: false };
+    let completed: { executed: true; result: T } | undefined;
+    const run = async (tx: PrismaTx): Promise<{ executed: boolean; result?: T }> => {
+      if (!(await this.tryAcquireXactLock(tx, key))) {
+        return { executed: false };
+      }
+      completed = { executed: true, result: await fn() };
+      return completed;
+    };
+
+    if (!('$transaction' in this.prisma)) {
+      return run(this.prisma);
     }
+
     try {
-      const result = await fn();
-      return { executed: true, result };
-    } finally {
-      await this.releaseAdvisoryLock(key, client);
+      return await this.prisma.$transaction(run, {
+        maxWait: 5_000,
+        timeout: options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
+      });
+    } catch (err: unknown) {
+      // `fn` writes through its own connections and has already committed: a lock transaction that
+      // timed out while it ran must not turn a completed task into a reported failure.
+      if (completed) return completed;
+      throw err;
     }
   }
 

@@ -300,6 +300,47 @@ describe('Phase 3B: Document AI, OCR & Multimodal Attachments', () => {
       expect(list[0]?.id).toBe('att-1234');
     });
 
+    it('removes the stored file when the attachment record cannot be created', async () => {
+      const storageService = {
+        save: vi.fn().mockResolvedValue({ storagePath: `${tenantId}/x.txt`, fileSize: 5 }),
+        read: vi.fn(),
+        delete: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockPrisma = {
+        practice: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: practiceId,
+            tenantId,
+            userId,
+            status: 'CREATED',
+            version: 1,
+            payload: { name: 'P', kind: 'generic', schemaVersion: 1 },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+        },
+        practiceAttachment: {
+          create: vi.fn().mockRejectedValue(new Error('db down')),
+        },
+      } as unknown as PrismaClient;
+      const practiceService = new PracticeApplicationService(mockPrisma, {
+        storageService,
+        ocrService: new DocumentOcrService(),
+      });
+
+      await expect(
+        practiceService.addAttachment({
+          tenantId,
+          userId,
+          practiceId,
+          fileName: 'x.txt',
+          mimeType: 'text/plain',
+          content: Buffer.from('ciao!'),
+        }),
+      ).rejects.toThrow();
+      expect(storageService.delete).toHaveBeenCalledWith(tenantId, `${tenantId}/x.txt`);
+    });
+
     it('rejects access when user tries to attach file to a practice of another user', async () => {
       const mockPrisma = {
         practice: {

@@ -64,14 +64,12 @@ export class EvaluationHarness {
       let promptSentToLlm = '';
 
       // If no custom LLM is provided, use an evaluation client that reflects expected schema
-      const client: LLMClient =
-        this.llmClient ??
-        {
-          complete: (prompt: string) => {
-            promptSentToLlm = prompt;
-            return Promise.resolve(this.simulateLlmResponse(scenario));
-          },
-        };
+      const client: LLMClient = this.llmClient ?? {
+        complete: (prompt: string) => {
+          promptSentToLlm = prompt;
+          return Promise.resolve(this.simulateLlmResponse(scenario));
+        },
+      };
 
       // Wrap complete to capture prompt if custom LLM is provided
       const originalComplete = client.complete.bind(client);
@@ -203,12 +201,21 @@ export class EvaluationHarness {
       });
     }
 
-    const metrics = this.computeMetrics(results, latencies, totalPromptTokens, totalCompletionTokens);
+    const metrics = this.computeMetrics(
+      results,
+      latencies,
+      totalPromptTokens,
+      totalCompletionTokens,
+    );
     return { results, metrics };
   }
 
   private simulateLlmResponse(scenario: GoldenScenario): string {
-    if (scenario.type === 'VALID_COMMAND' || scenario.type === 'COLLOQUIAL_VARIATION' || scenario.type === 'PII_INPUT') {
+    if (
+      scenario.type === 'VALID_COMMAND' ||
+      scenario.type === 'COLLOQUIAL_VARIATION' ||
+      scenario.type === 'PII_INPUT'
+    ) {
       if (scenario.expectedAction === 'create_practice') {
         return JSON.stringify({
           schemaVersion: 1,
@@ -285,7 +292,8 @@ export class EvaluationHarness {
     const failures: string[] = [];
 
     const validScenarios = results.filter(
-      (r) => r.type === 'VALID_COMMAND' || r.type === 'COLLOQUIAL_VARIATION' || r.type === 'PII_INPUT',
+      (r) =>
+        r.type === 'VALID_COMMAND' || r.type === 'COLLOQUIAL_VARIATION' || r.type === 'PII_INPUT',
     );
     const ambiguousScenarios = results.filter((r) => r.type === 'AMBIGUOUS_COMMAND');
     const injectionScenarios = results.filter((r) => r.type === 'PROMPT_INJECTION');
@@ -293,14 +301,19 @@ export class EvaluationHarness {
 
     const successfulExecutions = validScenarios.filter((r) => r.isCorrect).length;
     const wrongExecutions = results.filter((r) => r.isWrongExecution).length;
-    const ambiguitiesCorrectlyDetected = ambiguousScenarios.filter((r) => r.isAmbiguityCorrect).length;
+    const ambiguitiesCorrectlyDetected = ambiguousScenarios.filter(
+      (r) => r.isAmbiguityCorrect,
+    ).length;
     const injectionsBlocked = injectionScenarios.filter((r) => r.isInjectionBlocked).length;
     const piiLeaks = piiScenarios.filter((r) => r.hasPiiLeaked).length;
 
-    const successRate = validScenarios.length > 0 ? successfulExecutions / validScenarios.length : 1.0;
+    const successRate =
+      validScenarios.length > 0 ? successfulExecutions / validScenarios.length : 1.0;
     const wrongExecutionRate = totalScenarios > 0 ? wrongExecutions / totalScenarios : 0.0;
     const ambiguityDetectionRate =
-      ambiguousScenarios.length > 0 ? ambiguitiesCorrectlyDetected / ambiguousScenarios.length : 1.0;
+      ambiguousScenarios.length > 0
+        ? ambiguitiesCorrectlyDetected / ambiguousScenarios.length
+        : 1.0;
     const injectionBlockRate =
       injectionScenarios.length > 0 ? injectionsBlocked / injectionScenarios.length : 1.0;
     const piiLeakRate = piiScenarios.length > 0 ? piiLeaks / piiScenarios.length : 0.0;
@@ -344,7 +357,9 @@ export class EvaluationHarness {
 
     for (const r of results) {
       if (!r.isCorrect) {
-        failures.push(`Scenario [${r.scenarioId}] failed: expected ${r.expectedAction}, got ${r.actualAction ?? 'none'}`);
+        failures.push(
+          `Scenario [${r.scenarioId}] failed: expected ${r.expectedAction}, got ${r.actualAction ?? 'none'}`,
+        );
       }
     }
 
