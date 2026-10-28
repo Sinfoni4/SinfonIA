@@ -313,6 +313,7 @@ Non esiste ancora un server di staging: la prova è stata fatta su un PC di svil
 | Foto di un documento: download, OCR, associazione alla pratica, risposta | ✅ (documento classificato come generico e marcato da verificare: rientra nella prova OCR su documenti reali) |
 | Nuova scadenza da Telegram con promemoria immediato | ✅ |
 | Elenco delle scadenze | ✅ |
+| Chiusura di una scadenza da Telegram (registrata nell'audit log) | ✅ |
 | Export schedulato consegnato come file CSV | ✅ dopo la correzione |
 | Export senza pratiche | ✅ dopo la correzione |
 | Rimessa in coda di un messaggio in dead letter | ✅ dopo la correzione |
@@ -324,7 +325,7 @@ Bug trovati e corretti (branch `fix/staging-findings`), ciascuno con un test di 
 3. **Conferma della scadenza imprecisa**: prometteva sempre i promemoria a 30, 15, 7 e 1 giorno; ora elenca solo quelli che arriveranno davvero.
 4. **Log dei worker rumoroso**: una riga a ogni giro dello scheduler anche senza lavoro svolto; ora solo quando qualcosa viene eseguito.
 
-Da fare: un server di staging vero (oggi la prova dipende da un PC acceso) e la chiusura di una scadenza da Telegram, non ancora provata con il bot reale.
+Da fare: un server di staging vero (oggi la prova dipende da un PC acceso).
 
 #### Step 7 — Canale WhatsApp (6 g) · Pilastro 3
 - `src/interface/whatsapp/`: webhook Meta `GET` (challenge) e `POST` con verifica della firma `X-Hub-Signature-256`.
