@@ -38,6 +38,7 @@ export type OutboxDocument = {
 
 export interface TelegramNotifier {
   sendDocument(chatId: string, document: OutboxDocument, caption: string): Promise<void>;
+  sendMessage(chatId: string, text: string): Promise<void>;
 }
 
 export type WebhookEvent = {

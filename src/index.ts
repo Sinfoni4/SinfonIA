@@ -12,6 +12,8 @@ import {
   validateResolvedCommand,
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
+import { ComplianceService } from './core/compliance/compliance.service.js';
+import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
@@ -164,9 +166,11 @@ TEST 5 — /devstate health metrics
   const contextService = new ContextService(practiceService);
   const decisionEngine = new DecisionEngine();
   const normalizerService = new NormalizerService();
+  const complianceService = new ComplianceService(prisma);
 
   const app = buildServer(config, logger, {
     practiceService,
+    complianceService,
     interpreterService,
     executorService,
     contextService,
@@ -192,6 +196,7 @@ TEST 5 — /devstate health metrics
     const bot = new TelegramBotService({
       prisma,
       practiceService,
+      complianceService,
       handleMessage: (input, identity) => adapter.handleMessage(input, identity),
       log: logger,
     });
@@ -220,25 +225,27 @@ TEST 5 — /devstate health metrics
   if (!config.OUTBOX_WEBHOOK_SECRET) {
     logger.warn('OUTBOX_WEBHOOK_SECRET not set: tenant webhooks will be dead-lettered');
   }
-  const schedulerService = new SchedulerService(prisma, practiceService);
+  const schedulerService = new SchedulerService(prisma, practiceService, { complianceService });
+  const outboxChannels = {
+    ...(tgToken?.trim()
+      ? { telegram: createTelegramNotifier(new TelegramClient(tgToken.trim())) }
+      : {}),
+    ...(config.OUTBOX_WEBHOOK_SECRET
+      ? {
+          webhook: createWebhookNotifier({
+            secret: config.OUTBOX_WEBHOOK_SECRET,
+            allowInsecureHttp: config.NODE_ENV !== 'production',
+            allowPrivateNetwork: config.NODE_ENV !== 'production',
+          }),
+        }
+      : {}),
+  };
   const dispatcher = new OutboxDispatcher(prisma, {
     maxAttempts: config.OUTBOX_MAX_ATTEMPTS,
     log: logger,
     handlers: [
-      new PracticeExportHandler(prisma, {
-        ...(tgToken?.trim()
-          ? { telegram: createTelegramNotifier(new TelegramClient(tgToken.trim())) }
-          : {}),
-        ...(config.OUTBOX_WEBHOOK_SECRET
-          ? {
-              webhook: createWebhookNotifier({
-                secret: config.OUTBOX_WEBHOOK_SECRET,
-                allowInsecureHttp: config.NODE_ENV !== 'production',
-                allowPrivateNetwork: config.NODE_ENV !== 'production',
-              }),
-            }
-          : {}),
-      }),
+      new PracticeExportHandler(prisma, outboxChannels),
+      new ComplianceReminderHandler(prisma, outboxChannels),
     ],
   });
   startBackgroundWorkers(

@@ -1,4 +1,7 @@
+export * from './compliance/compliance.dates.js';
+export * from './compliance/compliance.service.js';
 export * from './errors/attachment.errors.js';
+export * from './errors/compliance.errors.js';
 export * from './errors/concurrency.errors.js';
 export * from './errors/workflow.errors.js';
 export * from './practice/practice.application.service.js';

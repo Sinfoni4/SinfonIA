@@ -1,4 +1,4 @@
-import { DeliveryError } from './outbox.delivery.js';
+import { telegramDeliveries, webhookDeliveries } from './outbox.recipients.js';
 
 import type {
   OutboxDelivery,
@@ -37,72 +37,21 @@ export class PracticeExportHandler implements OutboxEventHandler {
 
   async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
     const payload = (message.payload ?? {}) as ExportPayload;
-    const deliveries: OutboxDelivery[] = [];
+    const document = {
+      filename: exportFilename(payload, message.createdAt),
+      content: Buffer.from(payload.csv ?? '', 'utf-8'),
+      mimeType: 'text/csv',
+    };
+    const caption = `📊 ${payload.title ?? 'Export pratiche'}\nPratiche incluse: ${payload.practiceCount ?? 0}`;
 
-    const telegram = this.channels.telegram;
-    const admins = await this.prisma.user.findMany({
-      where: { tenantId: message.tenantId, role: 'ADMIN', telegramId: { not: null } },
-      orderBy: { createdAt: 'asc' },
-      select: { telegramId: true },
-    });
-    if (!telegram) {
-      // Bot not configured in this process (e.g. token missing during a deploy): keep the
-      // recipients and retry, instead of dead-lettering the export as having none.
-      for (const { telegramId } of admins) {
-        deliveries.push({
-          target: `telegram:${telegramId!}`,
-          send: () =>
-            Promise.reject(
-              new DeliveryError('Bot Telegram non configurato (TELEGRAM_BOT_TOKEN)', {
-                permanent: false,
-              }),
-            ),
-        });
-      }
-    } else {
-      const document = {
-        filename: exportFilename(payload, message.createdAt),
-        content: Buffer.from(payload.csv ?? '', 'utf-8'),
-        mimeType: 'text/csv',
-      };
-      const caption = `📊 ${payload.title ?? 'Export pratiche'}\nPratiche incluse: ${payload.practiceCount ?? 0}`;
-      for (const { telegramId } of admins) {
-        const chatId = telegramId!;
-        deliveries.push({
-          target: `telegram:${chatId}`,
-          send: () => telegram.sendDocument(chatId, document, caption),
-        });
-      }
-    }
-
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: message.tenantId },
-      select: { webhookUrl: true },
-    });
-    const webhookUrl = tenant?.webhookUrl?.trim();
-    if (webhookUrl) {
-      const webhook = this.channels.webhook;
-      deliveries.push({
-        target: 'webhook',
-        send: webhook
-          ? () =>
-              webhook.post(webhookUrl, {
-                id: message.id,
-                eventType: message.eventType,
-                tenantId: message.tenantId,
-                createdAt: message.createdAt.toISOString(),
-                data: payload,
-              })
-          : // A configured endpoint must not be skipped silently: dead-letter until the secret is set.
-            () =>
-              Promise.reject(
-                new DeliveryError('Webhook non configurato: manca OUTBOX_WEBHOOK_SECRET', {
-                  permanent: true,
-                }),
-              ),
-      });
-    }
-
-    return deliveries;
+    return [
+      ...(await telegramDeliveries(
+        this.prisma,
+        message.tenantId,
+        this.channels.telegram,
+        (telegram, chatId) => telegram.sendDocument(chatId, document, caption),
+      )),
+      ...(await webhookDeliveries(this.prisma, message, this.channels.webhook, payload)),
+    ];
   }
 }

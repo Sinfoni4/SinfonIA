@@ -1,11 +1,18 @@
-import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { SchedulerRepository } from '../../data/repositories/scheduler.repository.js';
 import { errorLabel } from '../../shared/errors.js';
-import { normalizeExportFilter } from '../practice/practice.export.js';
+import { ComplianceService } from '../compliance/compliance.service.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
+import { ComplianceDeadlinesTask, ExportPracticesTask } from './scheduler.tasks.js';
+
+import type { SchedulerTaskHandler } from './scheduler.tasks.js';
 import type { PracticeApplicationService } from '../practice/practice.application.service.js';
-import type { SchedulerFrequency, SchedulerTask, Tenant } from '../tenant/tenant.store.js';
+import type {
+  SchedulerFrequency,
+  SchedulerTask,
+  SchedulerTaskType,
+  Tenant,
+} from '../tenant/tenant.store.js';
 import type { PrismaClient } from '@prisma/client';
 
 export function resolveDynamicPayload(
@@ -95,16 +102,34 @@ export function computeIdempotencyKey(
   return `${tenantId}:${taskType}:${frequency}:${period}`;
 }
 
+/**
+ * Tasks every tenant gets, with their own frequency, whatever its scheduler settings: compliance
+ * reminders must not depend on the tenant having enabled scheduled exports.
+ */
+const SYSTEM_TASKS: Array<{ task: SchedulerTask; frequency: SchedulerFrequency }> = [
+  { task: { type: 'CHECK_COMPLIANCE_DEADLINES' }, frequency: 'daily' },
+];
+const SYSTEM_TASK_TYPES = new Set<SchedulerTaskType>(SYSTEM_TASKS.map((s) => s.task.type));
+
 export class SchedulerService {
   private readonly schedulerRepo: SchedulerRepository;
-  private readonly outboxRepo: OutboxRepository;
+  private readonly handlers: Map<SchedulerTaskType, SchedulerTaskHandler>;
 
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly practiceService: Pick<PracticeApplicationService, 'exportPractices'>,
+    practiceService: Pick<PracticeApplicationService, 'exportPractices'>,
+    options: {
+      /** Replaces the default task handlers (export and compliance check). */
+      handlers?: SchedulerTaskHandler[];
+      complianceService?: Pick<ComplianceService, 'sendDueReminders'>;
+    } = {},
   ) {
     this.schedulerRepo = new SchedulerRepository(prisma);
-    this.outboxRepo = new OutboxRepository(prisma);
+    const handlers = options.handlers ?? [
+      new ExportPracticesTask(prisma, practiceService),
+      new ComplianceDeadlinesTask(options.complianceService ?? new ComplianceService(prisma)),
+    ];
+    this.handlers = new Map(handlers.map((h) => [h.type, h]));
   }
 
   /**
@@ -124,13 +149,14 @@ export class SchedulerService {
     }
 
     for (const tenant of tenants) {
-      if (!tenant.scheduler?.enabled) {
-        continue;
-      }
+      const configured = tenant.scheduler?.enabled
+        ? (tenant.tasks ?? defaultSchedulerTasks)
+            .filter((task) => !SYSTEM_TASK_TYPES.has(task.type))
+            .map((task) => ({ task, frequency: tenant.scheduler.frequency ?? 'monthly' }))
+        : [];
 
-      const tasks = tenant.tasks ?? defaultSchedulerTasks;
-      for (const task of tasks) {
-        const executed = await this.executeTenantTask(tenant, task, now);
+      for (const { task, frequency } of [...configured, ...SYSTEM_TASKS]) {
+        const executed = await this.executeTenantTask(tenant, task, frequency, now);
         if (executed) {
           triggeredCount++;
         } else {
@@ -145,9 +171,14 @@ export class SchedulerService {
   private async executeTenantTask(
     tenant: Tenant,
     task: SchedulerTask,
+    frequency: SchedulerFrequency,
     now: Date,
   ): Promise<boolean> {
-    const frequency = tenant.scheduler.frequency ?? 'monthly';
+    const handler = this.handlers.get(task.type);
+    if (!handler) {
+      console.warn(`⚠️ SCHEDULER — no handler for task=${task.type} tenant=${tenant.id}`);
+      return false;
+    }
     const idempotencyKey = computeIdempotencyKey(tenant.id, task.type, frequency, now);
 
     // 1. Fast check: has this already succeeded in PostgreSQL for this period?
@@ -164,7 +195,7 @@ export class SchedulerService {
       payload: task.payload,
     });
 
-    // 3. Acquire PostgreSQL session advisory lock to prevent duplicate runs across workers
+    // 3. Acquire PostgreSQL advisory lock to prevent duplicate runs across workers
     const lockKey = `scheduler:${tenant.id}:${task.type}`;
     const { executed, result } = await this.schedulerRepo.withAdvisoryLock(lockKey, async () => {
       // Double check idempotency inside lock
@@ -192,37 +223,11 @@ export class SchedulerService {
       });
 
       try {
-        let runResult: Record<string, unknown> = {};
-
-        if (task.type === 'EXPORT_PRACTICES') {
-          const resolvedPayload = resolveDynamicPayload(task.payload ?? {}, now);
-          const filter = normalizeExportFilter(resolvedPayload);
-
-          // Tenant-wide export: no userId, so practices of every tenant user are included.
-          const exported = await this.practiceService.exportPractices({
-            tenantId: tenant.id,
-            filter,
-          });
-
-          runResult = {
-            title: exported.title,
-            practiceCount: exported.practices.length,
-            filter: exported.filter,
-          };
-
-          // Write to Outbox table for durable delivery
-          await this.outboxRepo.createMessage({
-            tenantId: tenant.id,
-            eventType: 'PRACTICE_EXPORT_GENERATED',
-            payload: {
-              title: exported.title,
-              csv: exported.csv,
-              practiceCount: exported.practices.length,
-              filter: exported.filter,
-              generatedAt: now.toISOString(),
-            },
-          });
-        }
+        const runResult = await handler.run({
+          tenant,
+          payload: resolveDynamicPayload(task.payload ?? {}, now),
+          now,
+        });
 
         // Mark run as COMPLETED
         await this.schedulerRepo.completeRun(run.id, runResult);

@@ -10,8 +10,11 @@ import type { PrismaLike } from '../../data/types/prisma.js';
 export type IntegrationType = 'none' | 'external';
 export type SchedulerFrequency = 'daily' | 'weekly' | 'monthly';
 
+export const SCHEDULER_TASK_TYPES = ['EXPORT_PRACTICES', 'CHECK_COMPLIANCE_DEADLINES'] as const;
+export type SchedulerTaskType = (typeof SCHEDULER_TASK_TYPES)[number];
+
 export type SchedulerTask = {
-  type: 'EXPORT_PRACTICES';
+  type: SchedulerTaskType;
   payload?: Record<string, unknown>;
 };
 
@@ -40,7 +43,7 @@ export const defaultSchedulerTasks: SchedulerTask[] = [
 ];
 
 const SchedulerTaskSchema = z.object({
-  type: z.literal('EXPORT_PRACTICES'),
+  type: z.enum(SCHEDULER_TASK_TYPES),
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 

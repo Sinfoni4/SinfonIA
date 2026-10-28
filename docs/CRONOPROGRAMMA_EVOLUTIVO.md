@@ -18,7 +18,7 @@ flowchart TD
     subgraph ATTUALE["Fase 3: AI Avanzata & I 3 Pilastri Abilitanti"]
         F3A["Fase 3A (Completata): LLM Esplicito & AI Tracing"]
         F3B["Fase 3B (Pilastro 1, Completata): Document AI & OCR Allegati"]
-        F3C["Fase 3C (Pilastro 2, Da fare): Outbox Dispatcher & Push Scadenze"]
+        F3C["Fase 3C (Pilastro 2, Completata): Outbox Dispatcher & Push Scadenze"]
         F3D["Fase 3D (Pilastro 3, Da fare): Canale WhatsApp Business"]
         F2 --> F3A --> F3B --> F3C --> F3D
     end
@@ -47,13 +47,13 @@ flowchart TD
 
 ### Stato della Fase 3 (verificato il 28/10/2026)
 
-> **Attenzione alla numerazione**: i commit `315b8de` ("phase3c") e `3a75a9a` ("phase3d") e il [report di Fase 3](FASE_3_REPORT.md) usano le etichette 3C e 3D per **sicurezza dei prompt** ed **evaluation harness**, lavori non previsti da questo cronoprogramma. I pilastri 3C (Push/Outbox) e 3D (WhatsApp) descritti sotto **non sono stati realizzati**.
+> **Attenzione alla numerazione**: i commit `315b8de` ("phase3c") e `3a75a9a` ("phase3d") e il [report di Fase 3](FASE_3_REPORT.md) usano le etichette 3C e 3D per **sicurezza dei prompt** ed **evaluation harness**, lavori non previsti da questo cronoprogramma. Il pilastro 3C (Push/Outbox) è stato realizzato con gli Step 5 e 6 dello [Stato Lavori](STATO_LAVORI_2026-10-28.md); il 3D (WhatsApp) **non è ancora stato realizzato**.
 
 | Fase (cronoprogramma) | Stato | Note |
 | :--- | :--- | :--- |
 | **3A** LLM esplicito & AI tracing | **COMPLETATA** | Tracer solo in memoria; filtri di `/ai/traces` non esposti |
 | **3B** Document AI & OCR | **COMPLETATA (sviluppo)** | OCR reale in-process su foto e PDF, certificati, upload multipart, limiti di formato e dimensione, nessun valore inventato, storage S3/MinIO, conferma della pratica su Telegram (28/10/2026). Da fare: misura dell'accuratezza su documenti reali |
-| **3C** Outbox dispatcher & push scadenze | **DA FARE** | Outbox scritto ma mai consumato; nessun modello `compliance_deadline` |
+| **3C** Outbox dispatcher & push scadenze | **COMPLETATA (sviluppo)** | Dispatcher con retry e dead letter, consegna su Telegram e webhook (28/10/2026); scadenzario con promemoria a 30/15/7/1 giorni, API e comandi Telegram (29/10/2026). Da fare: prova con il bot reale in staging |
 | **3D** WhatsApp Business | **DA FARE** | Nessun codice in `src/interface/whatsapp/` |
 | Extra: sicurezza prompt & PII | **PARZIALE** | Delimitazione e pattern guard attivi; nomi non pseudonimizzati |
 | Extra: evaluation harness | **PARZIALE** | Golden set di 19 scenari con LLM simulato; esecuzione con modello reale non schedulata |

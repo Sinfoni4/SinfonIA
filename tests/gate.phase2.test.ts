@@ -63,7 +63,8 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
         const fixedNow = new Date('2026-10-26T12:00:00Z');
 
         const initialTick = await schedulerA.tick(fixedNow, tenant.id);
-        expect(initialTick.triggeredCount).toBe(1);
+        // The export plus the daily compliance check every tenant gets.
+        expect(initialTick.triggeredCount).toBe(2);
 
         // 2. Simulate complete service shutdown / reboot
         serviceA = null;
@@ -85,11 +86,11 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
         // Verify ZERO burst on boot (durable scheduler skips because run is already persisted)
         const rebootTick = await schedulerB.tick(fixedNow, tenant.id);
         expect(rebootTick.triggeredCount).toBe(0);
-        expect(rebootTick.skippedCount).toBe(1);
+        expect(rebootTick.skippedCount).toBe(2);
 
         const runs = await prisma.schedulerRun.findMany({ where: { tenantId: tenant.id } });
-        expect(runs).toHaveLength(1);
-        expect(runs[0]?.status).toBe('COMPLETED');
+        expect(runs).toHaveLength(2);
+        expect(runs.every((r) => r.status === 'COMPLETED')).toBe(true);
       } finally {
         await prisma.$disconnect();
       }
@@ -148,7 +149,8 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
         ]);
 
         const totalTriggered = res1.triggeredCount + res2.triggeredCount;
-        expect(totalTriggered).toBe(1); // Exactly one worker succeeds
+        // Exactly one worker runs each task (export and compliance check).
+        expect(totalTriggered).toBe(2);
         expect(totalExportCalls).toBe(1); // Zero duplicate exports
 
         // Verify outbox contains exactly 1 message

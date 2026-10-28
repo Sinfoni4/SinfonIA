@@ -16,6 +16,7 @@ import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import {
   AttachmentRejectedError,
+  ComplianceValidationError,
   ConcurrencyError,
   InvalidStateTransitionError,
 } from '../../../core/index.js';
@@ -26,6 +27,9 @@ export type NormalizedError = { statusCode: number; code: string; message: strin
 
 export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof AuthError) {
+    return { statusCode: err.statusCode, code: err.code, message: err.message };
+  }
+  if (err instanceof ComplianceValidationError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
   if (err instanceof AttachmentRejectedError) {

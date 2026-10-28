@@ -66,7 +66,8 @@ Non eseguito: `npm run ai:eval:nightly` (chiamate a pagamento al modello OpenAI 
 | Difesa prompt injection e minimizzazione PII | 🟡 Parziale: pattern limitati, nomi non pseudonimizzati |
 | Allegati e OCR | 🟢 OCR reale in-process su foto e PDF, upload multipart, limiti di formato e dimensione (aggiornato 28/10/2026; prima: 🔴 nessun OCR reale) |
 | Evaluation harness | 🟡 Infrastruttura presente, in CI usa un LLM simulato |
-| Push/scadenzario, WhatsApp, Odoo, connettori PA, telemetria, dashboard | 🔵 Non iniziati |
+| Scadenzario e promemoria (DURC, sicurezza, bio, visite, patentini) | 🟢 API, comandi Telegram e promemoria a 30/15/7/1 giorni e alla scadenza (Step 6, 29/10/2026) |
+| WhatsApp, Odoo, connettori PA, telemetria, dashboard | 🔵 Non iniziati |
 
 ### 4.2 Interventi P1 (prossimi)
 
@@ -119,17 +120,15 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 | Arricchimento del `payload` della pratica | ✅ Funziona quando l'estrazione produce dati |
 | Test su immagini e PDF campione | 🔴 I test usano solo testo semplice |
 
-### 5.3 Fase 3C (Pilastro 2) — Push e scadenzario: **non iniziata**
+### 5.3 Fase 3C (Pilastro 2) — Push e scadenzario: **completata in sviluppo** (Step 5 e 6; prima: non iniziata)
 
 | Previsto | Stato reale |
 | :--- | :--- |
 | `outbox.dispatcher.ts` con retry esponenziale, dead-letter, consegna su Telegram/WhatsApp/webhook | ✅ Telegram e webhook (Step 5, 28/10/2026); WhatsApp con lo Step 7 |
-| Modello `compliance_deadline` e `src/core/compliance/` | ⚫ Assenti |
-| Job `CHECK_COMPLIANCE_DEADLINES` (avvisi a 30/15/7/1 giorni) | ⚫ Assente; lo scheduler gestisce un solo tipo di task (`EXPORT_PRACTICES`) |
-| Notifiche push all'utente | ⚫ Assenti |
-| `tests/compliance.scheduler.test.ts` | ⚫ Assente |
-
-Basi già pronte: scheduler idempotente con lock corretto (P0) e dispatcher dell'outbox (Step 5).
+| Modello `compliance_deadline` e `src/core/compliance/` | ✅ Step 6 |
+| Job `CHECK_COMPLIANCE_DEADLINES` (avvisi a 30/15/7/1 giorni) | ✅ Step 6, più un avviso il giorno della scadenza |
+| Notifiche push all'utente | ✅ Su Telegram agli amministratori e al socio interessato, e sul webhook del tenant |
+| `tests/compliance.scheduler.test.ts` | ✅ Step 6 |
 
 ### 5.4 Fase 3D (Pilastro 3) — WhatsApp Business: **non iniziata**
 
@@ -289,6 +288,19 @@ Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture);
 - Registro dei task dello scheduler estendibile; nuovo job `CHECK_COMPLIANCE_DEADLINES` con avvisi a 30/15/7/1 giorni, idempotenti per scadenza e soglia.
 - Messaggi di notifica formattati, accodati in outbox e consegnati dallo Step 5.
 - **Accettazione**: `tests/compliance.scheduler.test.ts` — una scadenza genera esattamente un avviso per soglia, anche con tick ripetuti e due worker.
+
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Modello e servizio | ✅ | Tabelle `compliance_deadline` e `compliance_reminder` (migrazione `20261029100000_step6_compliance_deadlines`); categorie `DURC`, `SICUREZZA_LAVORO`, `CERTIFICAZIONE_BIO`, `VISITA_MEDICA`, `PATENTINO`, `ALTRO`. Una scadenza può riguardare la cooperativa o un singolo socio. `src/core/compliance/` |
+| API REST | ✅ | `POST /compliance/deadlines`, `GET /compliance/deadlines` (filtri stato, categoria, socio, entro N giorni), `POST /compliance/deadlines/:id/close`. Creazione e chiusura per operatori e amministratori; i soci vedono solo le proprie. Creazione e chiusura registrate nell'audit log |
+| Comandi Telegram | ✅ | `scadenze`, `nuova scadenza durc 31/12/2026 DURC cooperativa`, `chiudi scadenza <codice>`; tipi in parole semplici (durc, sicurezza, bio, visita, patentino, altro) e messaggi che spiegano l'errore |
+| Registro dei task dello scheduler | ✅ | Ogni tipo di task è un handler registrato (`src/core/scheduler/scheduler.tasks.ts`). `CHECK_COMPLIANCE_DEADLINES` è un task di sistema: gira ogni giorno per ogni tenant, anche se gli export schedulati sono disattivati |
+| Promemoria esattamente una volta | ✅ | Vincolo unico su (scadenza, soglia) e messaggio in outbox nella stessa transazione: tick ripetuti e più worker non duplicano. Si invia la soglia più stretta raggiunta: una scadenza registrata a 5 giorni riceve solo l'avviso dei 7 giorni, non tre avvisi insieme. Una scadenza creata a meno di 30 giorni riceve subito il suo avviso. Date secondo il calendario italiano (Europe/Rome) |
+| Consegna | ✅ | Handler `COMPLIANCE_DEADLINE_REMINDER` nel dispatcher dello Step 5: Telegram agli ADMIN e al socio interessato, webhook del tenant. Logica dei destinatari condivisa con l'export |
+| Test | ✅ | 30 nuovi test (`tests/compliance.scheduler.test.ts`, `tests/compliance.test.ts`); suite completa 212/212. Il test di accettazione fallisce se si cambia la scelta della soglia |
+| Collegamento con l'OCR dei certificati | ⏳ | I certificati letti dall'OCR hanno già categoria e data di scadenza: si può proporre di registrarli come scadenza con un tocco |
 
 #### Step 7 — Canale WhatsApp (6 g) · Pilastro 3
 - `src/interface/whatsapp/`: webhook Meta `GET` (challenge) e `POST` con verifica della firma `X-Hub-Signature-256`.

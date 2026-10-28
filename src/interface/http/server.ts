@@ -8,6 +8,7 @@ import { AuthService } from './auth/auth.service.js';
 import { requireAuthContext } from './auth/guards.js';
 import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
+import { complianceRoutes } from './routes/compliance.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
 
 import type { ContextService } from '../../ai/context/context.service.js';
@@ -17,11 +18,14 @@ import type { InterpreterService } from '../../ai/interpreter/interpreter.servic
 import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
 import type { AITracer } from '../../ai/tracing/ai.tracer.js';
 import type { AppConfig } from '../../config/config.js';
+import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
 
 export type ServerDeps = {
   practiceService: PracticeApplicationService;
+  // Optional so that tests and tools can build the server without the compliance module.
+  complianceService?: ComplianceService;
   interpreterService: InterpreterService;
   executorService: ExecutorService;
   contextService: ContextService;
@@ -89,6 +93,9 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   // Routes (HTTP only): business logic lives in Core / AI.
   void app.register(practiceRoutes, { ...deps, maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES });
   void app.register(aiRoutes, deps);
+  if (deps.complianceService) {
+    void app.register(complianceRoutes, { complianceService: deps.complianceService });
+  }
 
   // Future-ready: auth middleware, rate limiting (structure only).
   return app;
