@@ -181,7 +181,8 @@ describe('durable scheduler with PostgreSQL (Phase 2C)', () => {
 
       const schedulerService = new SchedulerService(prisma, practiceService);
       const tick = await schedulerService.tick(new Date(), tenant.id);
-      expect(tick.triggeredCount).toBe(1);
+      // The export plus the daily compliance check every tenant gets.
+      expect(tick.triggeredCount).toBe(2);
 
       const outbox = await prisma.outboxMessage.findFirst({ where: { tenantId: tenant.id } });
       expect((outbox?.payload as { practiceCount?: number }).practiceCount).toBe(2);
@@ -230,13 +231,14 @@ describe('durable scheduler with PostgreSQL (Phase 2C)', () => {
 
         // First tick: should execute
         const tick1 = await schedulerService.tick(now, tenant.id);
-        expect(tick1.triggeredCount).toBe(1);
+        // The export plus the daily compliance check every tenant gets.
+        expect(tick1.triggeredCount).toBe(2);
         expect(exportCount).toBe(1);
 
         // Second tick: should be skipped (idempotent, zero burst on restart/re-tick)
         const tick2 = await schedulerService.tick(now, tenant.id);
         expect(tick2.triggeredCount).toBe(0);
-        expect(tick2.skippedCount).toBe(1);
+        expect(tick2.skippedCount).toBe(2);
         expect(exportCount).toBe(1); // Not called again
 
         // Verify scheduler_run record in DB

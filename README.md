@@ -99,6 +99,8 @@ l'esecuzione. I trigger PostgreSQL verificano che `practice.user_id` e
 
 Lo scheduler (`src/core/scheduler/scheduler.service.ts`) è completamente durevole, idempotente e sicuro contro corse critiche:
 
+- **Task registrati**: ogni tipo di task è un handler (`src/core/scheduler/scheduler.tasks.ts`). I task configurati nel tenant (oggi `EXPORT_PRACTICES`) girano se `scheduler_enabled`; i task di sistema (`CHECK_COMPLIANCE_DEADLINES`, giornaliero) girano per ogni tenant.
+
 - **Persistenza & Idempotenza**: i job sono persistiti in `scheduler_job` e ogni esecuzione è tracciata in `scheduler_run` con vincolo UNIQUE su `idempotency_key` (`<tenantId>:<taskType>:<frequency>:<period>`).
 - **Nessun burst all'avvio**: lo stato non è più volatile in-memory; al riavvio del processo lo scheduler verifica nel DB le esecuzioni già completate per il periodo corrente evitando riesecuzioni immediate.
 - **PostgreSQL Advisory Lock**: esecuzione protetta da un advisory lock di transazione (`pg_try_advisory_xact_lock`), rilasciato automaticamente al commit o rollback, garantendo che in presenza di repliche multiple solo un worker alla volta esegua il task per un tenant.
@@ -108,6 +110,14 @@ Lo scheduler (`src/core/scheduler/scheduler.service.ts`) è completamente durevo
   - **Webhook**: `POST` JSON all'URL del tenant (`tenant.webhook_url`), solo HTTPS in produzione. Header `x-sinfonia-event`, `x-sinfonia-delivery` (id stabile tra i tentativi, per deduplicare), `x-sinfonia-timestamp` e `x-sinfonia-signature: sha256=<HMAC-SHA256 di "<timestamp>.<corpo>" con OUTBOX_WEBHOOK_SECRET>`. Senza segreto i webhook non partono e il messaggio va in dead letter. In produzione sono rifiutati gli indirizzi di rete interna e i reindirizzamenti non vengono seguiti.
   - **Affidabilità**: più processi possono consegnare in parallelo senza doppioni (`FOR UPDATE SKIP LOCKED` e lease di 5 minuti); ogni destinatario consegnato viene registrato e non riceve di nuovo il messaggio. Errori temporanei: nuovo tentativo con backoff esponenziale (30 s → 1 h). Errori permanenti o tentativi esauriti (`OUTBOX_MAX_ATTEMPTS`, default 8): stato `DEAD_LETTER` con il motivo in `error`.
   - **Worker**: scheduler e dispatcher girano su intervalli propri (`SCHEDULER_INTERVAL_MS`, `OUTBOX_DISPATCH_INTERVAL_MS`), separati dal controllo di salute del database.
+
+## Scadenzario adempimenti
+
+Le scadenze della cooperativa e dei soci (DURC, formazione sicurezza, certificazione biologica, visite mediche, patentini) sono in `compliance_deadline` e gestite da `src/core/compliance/`.
+
+- **API**: `POST /compliance/deadlines` (`category`, `title`, `dueDate` `AAAA-MM-GG`, `userId` facoltativo del socio interessato, `notes`), `GET /compliance/deadlines` (`status`, `category`, `userId`, `withinDays`, `limit`), `POST /compliance/deadlines/:id/close`. Creazione e chiusura: `ADMIN` e `OPERATOR`; i `MEMBER` vedono solo le scadenze che li riguardano.
+- **Telegram**: `scadenze`, `nuova scadenza <tipo> <gg/mm/aaaa> <descrizione>` (tipi: durc, sicurezza, bio, visita, patentino, altro), `chiudi scadenza <codice>`.
+- **Promemoria**: a 30, 15, 7 e 1 giorno e il giorno della scadenza, su Telegram agli amministratori e al socio interessato e sul webhook del tenant (tramite l'outbox). Il job `CHECK_COMPLIANCE_DEADLINES` gira ogni giorno per ogni tenant; ogni promemoria parte una sola volta (vincolo unico su scadenza e soglia) e si invia solo la soglia più vicina già raggiunta. Le date seguono il calendario italiano.
 
 ## LLM (OpenAI)
 

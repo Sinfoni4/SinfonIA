@@ -73,6 +73,7 @@ describe('telegram notifier', () => {
   ])('maps Bot API error %i to permanent=%s', async (code, permanent) => {
     const notifier = createTelegramNotifier({
       sendDocument: () => Promise.reject(new TelegramApiError('failed', code)),
+      sendMessage: vi.fn(),
     });
     await expect(notifier.sendDocument('1', doc, 'c')).rejects.toMatchObject({ permanent });
   });
@@ -80,6 +81,7 @@ describe('telegram notifier', () => {
   it('waits for retry_after on flood control', async () => {
     const notifier = createTelegramNotifier({
       sendDocument: () => Promise.reject(new TelegramApiError('too many', 429, 7)),
+      sendMessage: vi.fn(),
     });
     await expect(notifier.sendDocument('1', doc, 'c')).rejects.toMatchObject({
       permanent: false,
@@ -201,18 +203,41 @@ describe('webhook notifier', () => {
 });
 
 type FakeChannels = {
-  telegram: TelegramNotifier & { sent: string[]; failWith: Map<string, Error> };
+  telegram: TelegramNotifier & {
+    sent: string[];
+    texts: Array<{ chatId: string; text: string }>;
+    failWith: Map<string, Error>;
+  };
   webhook: WebhookNotifier & { sent: WebhookEvent[]; failWith: Error | null };
 };
+
+// The outbox is shared by every run against the test database, and messages left for retry by an
+// earlier run are claimed too. Chat ids carry a per-run prefix and tenants are tracked, so the
+// fake channels only record (and fail) this run's deliveries.
+const RUN = String(Date.now()).slice(-7);
+const runTenants = new Set<string>();
+const chat = (id: string) => `${RUN}${id}`;
 
 function fakeChannels(): FakeChannels {
   const telegram = {
     sent: [] as string[],
+    texts: [] as Array<{ chatId: string; text: string }>,
     failWith: new Map<string, Error>(),
     sendDocument(chatId: string) {
-      const err = telegram.failWith.get(chatId);
+      if (!chatId.startsWith(RUN)) return Promise.resolve();
+      const id = chatId.slice(RUN.length);
+      const err = telegram.failWith.get(id);
       if (err) return Promise.reject(err);
-      telegram.sent.push(chatId);
+      telegram.sent.push(id);
+      return Promise.resolve();
+    },
+    sendMessage(chatId: string, text: string) {
+      if (!chatId.startsWith(RUN)) return Promise.resolve();
+      const id = chatId.slice(RUN.length);
+      const err = telegram.failWith.get(id);
+      if (err) return Promise.reject(err);
+      telegram.sent.push(id);
+      telegram.texts.push({ chatId: id, text });
       return Promise.resolve();
     },
   };
@@ -220,6 +245,7 @@ function fakeChannels(): FakeChannels {
     sent: [] as WebhookEvent[],
     failWith: null as Error | null,
     post(_url: string, event: WebhookEvent) {
+      if (!runTenants.has(event.tenantId)) return Promise.resolve();
       if (webhook.failWith) return Promise.reject(webhook.failWith);
       webhook.sent.push(event);
       return Promise.resolve();
@@ -258,9 +284,9 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     const users = new UserRepository(prisma);
     for (const telegramId of options.admins ?? []) {
       await users.createUser(tenant.id, {
-        email: `admin-${telegramId}@outbox.local`,
+        email: `admin-${chat(telegramId)}@outbox.local`,
         role: 'ADMIN',
-        telegramId,
+        telegramId: chat(telegramId),
       });
     }
     // Members never receive exports.
@@ -269,6 +295,7 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
       role: 'MEMBER',
       telegramId: `m-${randomUUID().slice(0, 8)}`,
     });
+    runTenants.add(tenant.id);
     return tenant.id;
   }
 
@@ -321,7 +348,11 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     const row = await reload(message.id);
     expect(row.status).toBe('PROCESSED');
     expect(row.attempts).toBe(1);
-    expect(row.deliveredTargets.sort()).toEqual(['telegram:1001', 'telegram:1002', 'webhook']);
+    expect(row.deliveredTargets.sort()).toEqual([
+      `telegram:${chat('1001')}`,
+      `telegram:${chat('1002')}`,
+      'webhook',
+    ]);
     expect(channels.telegram.sent.sort()).toEqual(['1001', '1002']);
     expect(channels.webhook.sent.map((e) => e.id)).toEqual([message.id]);
 
@@ -343,7 +374,7 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     expect(row.status).toBe('FAILED');
     expect(row.error).toContain('webhook: Webhook ha risposto 503');
     expect(row.nextAttemptAt.getTime()).toBe(clock.getTime() + 1000);
-    expect(row.deliveredTargets).toEqual(['telegram:2001']);
+    expect(row.deliveredTargets).toEqual([`telegram:${chat('2001')}`]);
 
     // Not due yet.
     await dispatcher(channels).dispatchOnce();
@@ -495,12 +526,13 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
     let clockAtSecondSend = 0;
     const telegram: TelegramNotifier = {
       async sendDocument(chatId) {
-        if (chatId === '7101') advance(50_000); // a slow delivery early in the batch
-        if (chatId === '7102') {
+        if (chatId === chat('7101')) advance(50_000); // a slow delivery early in the batch
+        if (chatId === chat('7102')) {
           clockAtSecondSend = clock.getTime();
           secondLockedUntil = (await reload(second.id)).lockedUntil;
         }
       },
+      sendMessage: () => Promise.resolve(),
     };
 
     await new OutboxDispatcher(prisma, {

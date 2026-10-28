@@ -25,15 +25,17 @@ model Tenant {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @default(now()) @map("updated_at")
 
-  users          User[]
-  practices      Practice[]
-  auditLogs      AuditLog[]
-  invites        InviteCode[]
-  userTenants    UserTenant[]
-  schedulerJobs  SchedulerJob[]
-  schedulerRuns  SchedulerRun[]
-  outboxMessages OutboxMessage[]
-  attachments    PracticeAttachment[]
+  users               User[]
+  practices           Practice[]
+  auditLogs           AuditLog[]
+  invites             InviteCode[]
+  userTenants         UserTenant[]
+  schedulerJobs       SchedulerJob[]
+  schedulerRuns       SchedulerRun[]
+  outboxMessages      OutboxMessage[]
+  attachments         PracticeAttachment[]
+  complianceDeadlines ComplianceDeadline[]
+  complianceReminders ComplianceReminder[]
 
   @@map("tenant")
 }
@@ -78,9 +80,10 @@ model User {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  practices Practice[]
-  auditLogs AuditLog[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  practices           Practice[]
+  auditLogs           AuditLog[]
+  complianceDeadlines ComplianceDeadline[]
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -106,8 +109,8 @@ model Practice {
   createdAt DateTime       @default(now()) @map("created_at")
   updatedAt DateTime       @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   attachments PracticeAttachment[]
 
   @@index([tenantId])
@@ -192,10 +195,10 @@ enum OutboxStatus {
 }
 
 model OutboxMessage {
-  id          String       @id @default(uuid()) @db.Uuid
-  tenantId    String       @map("tenant_id") @db.Uuid
-  eventType   String       @map("event_type")
-  payload     Json
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @map("tenant_id") @db.Uuid
+  eventType        String       @map("event_type")
+  payload          Json
   status           OutboxStatus @default(PENDING)
   error            String?
   // Delivery attempts so far (reset when a dead letter is requeued).
@@ -246,4 +249,59 @@ model PracticeAttachment {
   @@index([practiceId])
   @@index([tenantId, ocrStatus])
   @@map("practice_attachment")
+}
+
+enum ComplianceCategory {
+  DURC
+  SICUREZZA_LAVORO
+  CERTIFICAZIONE_BIO
+  VISITA_MEDICA
+  PATENTINO
+  ALTRO
+}
+
+enum ComplianceDeadlineStatus {
+  OPEN
+  CLOSED
+}
+
+model ComplianceDeadline {
+  id        String                   @id @default(uuid()) @db.Uuid
+  tenantId  String                   @map("tenant_id") @db.Uuid
+  // Member the deadline refers to; null = the cooperative itself.
+  userId    String?                  @map("user_id") @db.Uuid
+  createdBy String?                  @map("created_by") @db.Uuid
+  category  ComplianceCategory
+  title     String
+  dueDate   DateTime                 @map("due_date") @db.Date
+  notes     String?
+  status    ComplianceDeadlineStatus @default(OPEN)
+  closedAt  DateTime?                @map("closed_at")
+  createdAt DateTime                 @default(now()) @map("created_at")
+  updatedAt DateTime                 @updatedAt @map("updated_at")
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reminders ComplianceReminder[]
+
+  @@index([tenantId, status, dueDate])
+  @@index([status, dueDate])
+  @@map("compliance_deadline")
+}
+
+model ComplianceReminder {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  deadlineId      String   @map("deadline_id") @db.Uuid
+  // Days before the due date this reminder is for (30, 15, 7, 1; 0 = due today or overdue).
+  thresholdDays   Int      @map("threshold_days")
+  outboxMessageId String?  @map("outbox_message_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deadline ComplianceDeadline @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+
+  @@unique([deadlineId, thresholdDays])
+  @@index([tenantId])
+  @@map("compliance_reminder")
 }

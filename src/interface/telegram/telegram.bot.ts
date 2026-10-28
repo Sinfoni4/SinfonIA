@@ -1,3 +1,4 @@
+import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
 import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
@@ -8,6 +9,7 @@ import { errorLabel } from '../../shared/errors.js';
 
 import { formatAttachmentRejection, formatAttachmentResult } from './attachment.formatter.js';
 import { handleDevState } from './commands/devstate.command.js';
+import { executeComplianceCommand } from './compliance.command.js';
 import { formatPracticeCommandResult } from './practice.command.formatter.js';
 import {
   formatAttachmentQuestion,
@@ -29,6 +31,7 @@ import {
 import { runtimeAwareExecute } from './telegram.runtimeAware.js';
 import { safeReply } from './telegram.transport.js';
 
+import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { PrismaClient, UserRole } from '@prisma/client';
 
@@ -45,6 +48,7 @@ export type BotDeps = {
     getMaxAttachmentBytes?: PracticeApplicationService['getMaxAttachmentBytes'];
     listPractices?: PracticeApplicationService['listPractices'];
   };
+  complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
   handleMessage: (input: string, identity: TelegramIdentity) => Promise<string>;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
 };
@@ -99,9 +103,11 @@ Puoi:
 • validarle
 • completarle
 • controllarne lo stato
+• gestire le scadenze (DURC, sicurezza, bio, visite mediche, patentini)
 
 Prova a scrivere:
-"valida la pratica di Mario Rossi"`;
+"valida la pratica di Mario Rossi"
+"scadenze" oppure "nuova scadenza durc 31/12/2026 DURC cooperativa"`;
   }
 
   return `👋 Ciao! Ti aiuto a gestire le tue pratiche.
@@ -110,6 +116,7 @@ Puoi:
 • creare una pratica
 • controllare lo stato
 • chiedere aggiornamenti
+• vedere le tue scadenze (scrivi "scadenze")
 
 Prova a scrivere:
 "crea pratica per Mario Rossi"`;
@@ -293,6 +300,18 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
           await uploadToPractice(pending.file, chosen);
           return;
         }
+      }
+
+      const complianceCommand = deps.complianceService ? parseComplianceCommand(trimmed) : null;
+      if (complianceCommand && deps.complianceService) {
+        const replyText = await executeComplianceCommand(complianceCommand, {
+          complianceService: deps.complianceService,
+          tenantId: tenant.id,
+          userId: dbUser.id,
+          role: dbUser.role,
+        });
+        await bot.sendMessage(chatId, replyText);
+        return;
       }
 
       const command = parsePracticeCommand(trimmed);

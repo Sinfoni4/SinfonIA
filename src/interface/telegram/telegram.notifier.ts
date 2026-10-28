@@ -27,12 +27,19 @@ export function toDeliveryError(err: unknown): unknown {
 }
 
 export function createTelegramNotifier(
-  client: Pick<TelegramClient, 'sendDocument'>,
+  client: Pick<TelegramClient, 'sendDocument' | 'sendMessage'>,
 ): TelegramNotifier {
   return {
     async sendDocument(chatId: string, document: OutboxDocument, caption: string) {
       try {
         await client.sendDocument(chatId, document, { caption });
+      } catch (err: unknown) {
+        throw toDeliveryError(err);
+      }
+    },
+    async sendMessage(chatId: string, text: string) {
+      try {
+        await client.sendMessage(chatId, text);
       } catch (err: unknown) {
         throw toDeliveryError(err);
       }
