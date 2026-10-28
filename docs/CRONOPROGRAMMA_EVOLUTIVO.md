@@ -16,10 +16,10 @@ flowchart TD
     end
 
     subgraph ATTUALE["Fase 3: AI Avanzata & I 3 Pilastri Abilitanti"]
-        F3A["Fase 3A (In corso): LLM Esplicito & AI Tracing"]
-        F3B["Fase 3B (Pilastro 1): Document AI & OCR Allegati"]
-        F3C["Fase 3C (Pilastro 2): Outbox Dispatcher & Push Scadenze"]
-        F3D["Fase 3D (Pilastro 3): Canale WhatsApp Business"]
+        F3A["Fase 3A (Completata): LLM Esplicito & AI Tracing"]
+        F3B["Fase 3B (Pilastro 1, Parziale): Document AI & OCR Allegati"]
+        F3C["Fase 3C (Pilastro 2, Da fare): Outbox Dispatcher & Push Scadenze"]
+        F3D["Fase 3D (Pilastro 3, Da fare): Canale WhatsApp Business"]
         F2 --> F3A --> F3B --> F3C --> F3D
     end
 
@@ -43,7 +43,22 @@ flowchart TD
 | :--- | :--- | :--- | :--- | :--- |
 | **Fase 0** | Baseline di Sicurezza e Qualità | Setup ESLint, Prettier, TypeScript strict, Secret scanner, CI | **COMPLETATA** | Commit `c928e0e` |
 | **Fase 1** | Tenant Isolation & RBAC | Isolamento PostgreSQL con trigger, JWT HS256, ruoli, Telegram Client | **COMPLETATA** | Commit `40296c4` |
-| **Fase 2** | Dominio Pratiche & Scheduler Durevole | Modello unificato `Practice`, payload JSONB, indici GIN, Advisory Locks, Outbox, 4 Gate di validazione | **COMPLETATA** | [docs/FASI_1_E_2_REPORT.md](FASI_1_E_2_REPORT.md) |
+| **Fase 2** | Dominio Pratiche & Scheduler Durevole | Modello unificato `Practice`, payload JSONB, indici GIN, Advisory Locks, Outbox (sola scrittura), 4 Gate di validazione | **COMPLETATA** | [docs/FASI_1_E_2_REPORT.md](FASI_1_E_2_REPORT.md) |
+
+### Stato della Fase 3 (verificato il 28/10/2026)
+
+> **Attenzione alla numerazione**: i commit `315b8de` ("phase3c") e `3a75a9a` ("phase3d") e il [report di Fase 3](FASE_3_REPORT.md) usano le etichette 3C e 3D per **sicurezza dei prompt** ed **evaluation harness**, lavori non previsti da questo cronoprogramma. I pilastri 3C (Push/Outbox) e 3D (WhatsApp) descritti sotto **non sono stati realizzati**.
+
+| Fase (cronoprogramma) | Stato | Note |
+| :--- | :--- | :--- |
+| **3A** LLM esplicito & AI tracing | **COMPLETATA** | Tracer solo in memoria; filtri di `/ai/traces` non esposti |
+| **3B** Document AI & OCR | **PARZIALE** | Tabella, storage locale, upload REST base64 e Telegram presenti. **OCR reale assente**: estrazione solo da contenuto testuale; adapter S3/MinIO e upload multipart assenti |
+| **3C** Outbox dispatcher & push scadenze | **DA FARE** | Outbox scritto ma mai consumato; nessun modello `compliance_deadline` |
+| **3D** WhatsApp Business | **DA FARE** | Nessun codice in `src/interface/whatsapp/` |
+| Extra: sicurezza prompt & PII | **PARZIALE** | Delimitazione e pattern guard attivi; nomi non pseudonimizzati |
+| Extra: evaluation harness | **PARZIALE** | Golden set di 19 scenari con LLM simulato; esecuzione con modello reale non schedulata |
+
+Dettaglio completo: [AUDIT_ENTERPRISE_2026-10-28.md](AUDIT_ENTERPRISE_2026-10-28.md).
 
 ---
 

@@ -172,7 +172,7 @@ export class SchedulerService {
         return false;
       }
 
-      // Verify there is an active ADMIN user for this tenant
+      // Scheduled tasks run only for tenants with at least one ADMIN user
       const adminUser = await this.prisma.user.findFirst({
         where: { tenantId: tenant.id, role: 'ADMIN' },
         orderBy: { createdAt: 'asc' },
@@ -198,9 +198,9 @@ export class SchedulerService {
           const resolvedPayload = resolveDynamicPayload(task.payload ?? {}, now);
           const filter = normalizeExportFilter(resolvedPayload);
 
+          // Tenant-wide export: no userId, so practices of every tenant user are included.
           const exported = await this.practiceService.exportPractices({
             tenantId: tenant.id,
-            userId: adminUser.id,
             filter,
           });
 

@@ -101,14 +101,17 @@ Lo scheduler (`src/core/scheduler/scheduler.service.ts`) è completamente durevo
 
 - **Persistenza & Idempotenza**: i job sono persistiti in `scheduler_job` e ogni esecuzione è tracciata in `scheduler_run` con vincolo UNIQUE su `idempotency_key` (`<tenantId>:<taskType>:<frequency>:<period>`).
 - **Nessun burst all'avvio**: lo stato non è più volatile in-memory; al riavvio del processo lo scheduler verifica nel DB le esecuzioni già completate per il periodo corrente evitando riesecuzioni immediate.
-- **PostgreSQL Advisory Lock**: esecuzione protetta da session lock advisory (`pg_try_advisory_lock`), garantendo che in presenza di repliche multiple solo un worker alla volta esegua il task per un tenant.
-- **Outbox Pattern**: gli export e le notifiche generate dai job vengono persistite nella tabella `outbox_message`.
+- **PostgreSQL Advisory Lock**: esecuzione protetta da un advisory lock di transazione (`pg_try_advisory_xact_lock`), rilasciato automaticamente al commit o rollback, garantendo che in presenza di repliche multiple solo un worker alla volta esegua il task per un tenant.
+- **Export tenant-wide**: l'export schedulato include le pratiche di tutti gli utenti del tenant.
+- **Outbox (solo scrittura)**: gli export generati dai job vengono persistiti nella tabella `outbox_message` in stato `PENDING`. Il dispatcher che li consegna non è ancora implementato.
 
 ## LLM (OpenAI)
 
 Per abilitare l’interprete con un modello reale imposta in `.env`
 `ENABLE_LLM=true` e `OPENAI_API_KEY=...`. Opzionale: `OPENAI_MODEL=gpt-4o-mini`.
-Senza queste variabili viene usato l’interprete deterministico locale (stub).
+Senza queste variabili `POST /ai/execute` accetta solo i comandi deterministici
+(`crea pratica <nome>`, `stato pratica <nome>`, `export pratiche [oggi|mese|anno]`)
+e risponde HTTP 503 `LLM_DISABLED` a ogni altro testo.
 Test manuali con input umani: vedi [docs/MANUAL_TESTING_LLM.md](docs/MANUAL_TESTING_LLM.md).
 
 ## Workflow pratiche

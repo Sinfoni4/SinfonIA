@@ -1,14 +1,7 @@
 export type GoldenScenarioType =
-  | 'VALID_COMMAND'
-  | 'AMBIGUOUS_COMMAND'
-  | 'COLLOQUIAL_VARIATION'
-  | 'PROMPT_INJECTION'
-  | 'PII_INPUT';
+  'VALID_COMMAND' | 'AMBIGUOUS_COMMAND' | 'COLLOQUIAL_VARIATION' | 'PROMPT_INJECTION' | 'PII_INPUT';
 
-export type ExpectedAction =
-  | 'create_practice'
-  | 'transition_practice'
-  | 'clarification_required';
+export type ExpectedAction = 'create_practice' | 'transition_practice' | 'clarification_required';
 
 export interface GoldenScenario {
   id: string;

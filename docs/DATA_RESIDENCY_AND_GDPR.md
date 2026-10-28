@@ -15,8 +15,10 @@ SinfonIA adotta il principio di minimizzazione dei dati prima di qualsiasi inter
    - **Numeri di Carte di Credito**: sostituiti con `[CARD_NUMBER_1]`.
    - **Indirizzi Email**: sostituiti con `[EMAIL_1]`.
    - **Numeri di Telefono / Cellulari**: sostituiti con `[PHONE_1]`.
+
+   > **Limite attuale (verificato il 28/10/2026)**: nomi e cognomi **non** sono riconosciuti dal minimizzatore. Il nome indicato nell'input (es. "crea pratica per Mario Rossi") e i nomi delle pratiche del tenant inclusi nel contesto del prompt (`interpreter.prompt.ts`) vengono inviati al provider LLM **in chiaro**. Prima dell'uso con dati reali serve la pseudonimizzazione dei nomi oppure una base giuridica e un accordo di trattamento (DPA) che copra questo invio.
 2. **Ripristino Bidirezionale Locale (Unmasking)**:
-   La corrispondenza tra token sintetico e dato reale (`piiMap`) è mantenuta **esclusivamente in memoria locale volatile** nel processo dell'applicazione. Una volta ricevuta la risposta strutturata dal provider LLM, il servizio SinfonIA ripristina i valori originali per consentire la corretta esecuzione aziendale senza che il fornitore AI abbia mai memorizzato o visionato i dati personali in chiaro.
+   La corrispondenza tra token sintetico e dato reale (`piiMap`) è mantenuta **esclusivamente in memoria locale volatile** nel processo dell'applicazione. Una volta ricevuta la risposta strutturata dal provider LLM, il servizio SinfonIA ripristina i valori originali per consentire la corretta esecuzione aziendale: per le categorie mascherate sopra elencate il fornitore AI non riceve il valore in chiaro.
 3. **Redazione nei Log Persistenti**:
    I log applicativi generati tramite Pino (`src/shared/logger.ts`) includono regole di redazione automatica (`[REDACTED]`) per intestazioni di autenticazione, token JWT, password, email, numeri di telefono e payload testuali.
 
@@ -47,18 +49,21 @@ Quando un pattern malevolo viene rilevato:
 3. L'evento viene registrato nell'`AITracer` con esito `SECURITY_REJECTED`.
 4. Viene garantita **totale assenza di mutazioni di stato** sul database.
 
+**Limite**: il rilevamento si basa su un insieme ristretto di pattern regex, prevalentemente in inglese, e non intercetta parafrasi, testo in italiano o codifiche alternative. Va considerato una difesa aggiuntiva rispetto alla delimitazione dei dati e alla validazione deterministica nel Core, non una garanzia.
+
 ---
 
 ## 3. Data Residency & Provider Compliance
 
 ### 3.1 Localizzazione Geografica dei Dati (Data Residency UE)
 Per conformità alle normative europee sul trasferimento internazionale dei dati (Capo V GDPR):
-- **Provider API Compatibili**:
+- **Stato attuale dell'implementazione**: l'unico provider presente nel codice è `src/ai/providers/openai.provider.ts`, che invia le richieste all'endpoint pubblico `https://api.openai.com`. Non è ancora possibile configurare un endpoint Azure OpenAI o un altro provider con residenza dei dati nell'UE; le opzioni seguenti sono **obiettivi di configurazione**, non funzionalità già disponibili.
+- **Provider API Target**:
   - **Azure OpenAI Service**: distribuzione configurabile su regioni europee (es. *West Europe - Netherlands*, *North Europe - Ireland*, *Switzerland North*). I dati rimangono all'interno dei confini dello Spazio Economico Europeo (SEE).
   - **OpenAI Enterprise / Zero Data Retention (ZDR)**: per impostazione predefinita con le API a pagamento, OpenAI non utilizza i dati inviati tramite API per addestrare i propri modelli (`data-sharing: false`) e supporta la cancellazione automatica della cronologia temporanea.
-- **Isolamento Documentale su Storage Locale / MinIO**:
-  - Gli allegati caricati dai soci (foto di fatture, DDT, ricevute) risiedono in directory separate e isolate per-tenant (`src/data/storage/storage.service.ts`), protette da controlli anti *path traversal*.
-  - Nessun documento o file binario viene trasferito su server terzi non conformi: l'OCR multimodale elabora i dati all'interno del perimetro applicativo controllato dal tenant.
+- **Isolamento Documentale su Storage Locale**:
+  - Gli allegati caricati dai soci (foto di fatture, DDT, ricevute) risiedono in directory separate e isolate per-tenant sul filesystem locale (`src/data/storage/storage.service.ts`), protette da controlli anti *path traversal*. L'adapter MinIO/S3 non è ancora implementato.
+  - Nessun documento o file binario viene trasferito a server terzi: l'estrazione dei dati avviene in-process con regole testuali. Non è presente un OCR multimodale; la sua introduzione dovrà rispettare gli stessi vincoli di residenza.
 
 ---
 
@@ -67,8 +72,8 @@ Per conformità alle normative europee sul trasferimento internazionale dei dati
 | Vettore di Attacco | Contromisura SinfonIA | Risultato di Sicurezza |
 | :--- | :--- | :--- |
 | **Prompt Injection Diretto** | Delimitazione `<user_input>` + Direttive di isolamento | L'input viene trattato solo come dato testuale inerte |
-| **Jailbreak (DAN / Developer Mode)** | `PromptGuard` pattern scanner | Blocco preventivo, esito `SECURITY_REJECTED`, zero mutazioni |
+| **Jailbreak (DAN / Developer Mode)** | `PromptGuard` pattern scanner | Blocco preventivo dei pattern noti, esito `SECURITY_REJECTED`, zero mutazioni |
 | **Tentativo Evasione Delimitatore** | `escapePromptData` (escaping `</user_input>`) | Impossibilità di evadere dal blocco dati utente |
 | **Estrazione Cross-Tenant** | Scoping tenant obbligatorio su DB + filtro contesto | I dati di altri tenant non sono fisicamente presenti nel contesto |
-| **Fuga di PII / Dati Personali** | Mascheramento sintetico pre-egress `maskPII` | Il provider esterno riceve solo token pseudonimizzati |
+| **Fuga di PII / Dati Personali** | Mascheramento sintetico pre-egress `maskPII` | CF, IBAN, carte, email e telefoni arrivano al provider come token; **nomi e cognomi arrivano in chiaro** |
 | **Manomissione Output AI** | Validazione post-generazione Zod `schemaVersion: 1` | Output non conforme rigettato o riparato deterministicamente |
