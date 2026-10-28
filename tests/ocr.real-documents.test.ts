@@ -124,3 +124,46 @@ describe('parsing of real-world receipts', () => {
     expect(result.merchantName).toBe('Brico io SpA');
   });
 });
+
+// Label variants found with the synthetic PDF set (scripts/generate-ocr-pdf-samples.ts).
+describe('document labels as different suppliers write them', () => {
+  const service = new DocumentOcrService();
+  const parse = (text: string) =>
+    service.parseDocumentText(text, 'doc.pdf') as Record<string, unknown>;
+  const invoice = (header: string, totals = 'Totale documento: 1.220,00') =>
+    parse(
+      `ORTOFRUTTA COLLINA S.R.L.\nPartita IVA: 08589490153\n${header}\nImponibile: 1.000,00\nIVA 22%: 220,00\n${totals}`,
+    );
+
+  it.each([
+    ['FATTURA N. 2026/101\nData: 01/02/2026', '2026/101'],
+    ['Fattura nr. 2026/101 del 01/02/2026', '2026/101'],
+    ['Fattura immediata n° 2026/101\nData 01.02.2026', '2026/101'],
+    ['Numero documento: 2026/101\nData documento: 01/02/2026', '2026/101'],
+  ])('reads the invoice number from "%s"', (header, number) => {
+    expect(invoice(header).documentNumber).toBe(number);
+  });
+
+  it('never takes a label fragment without digits as the number', () => {
+    expect(invoice('Fattura nr. del 01/02/2026').documentNumber).toBeNull();
+  });
+
+  it('reads "Netto a pagare" as the document total', () => {
+    expect(invoice('FATTURA N. 7\nData: 01/02/2026', 'Netto a pagare: 1.220,00').totalAmount).toBe(
+      1220,
+    );
+  });
+
+  it.each([
+    ['DOCUMENTO DI TRASPORTO\nDDT N. DDT-301\nData: 02/05/2026', 'DDT-301'],
+    ['D.D.T.\nNumero: DDT-301\nData consegna: 02/05/2026', 'DDT-301'],
+    ['DOCUMENTO DI TRASPORTO (D.P.R. 472/96)\nN. documento DDT-301 del 02/05/2026', 'DDT-301'],
+  ])('reads the delivery note number from "%s"', (header, number) => {
+    const result = parse(
+      `${header}\nMittente: Sementi del Friuli S.r.].\nP.IVA 08589490153\nDestinatario: Cooperativa Demo`,
+    );
+    expect(result.documentType).toBe('delivery_note');
+    expect(result.documentNumber).toBe(number);
+    expect(result.supplierName).toBe('Sementi del Friuli S.r.l.');
+  });
+});

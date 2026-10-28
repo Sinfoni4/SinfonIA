@@ -268,6 +268,15 @@ gantt
 - **Telegram**: quando una foto compressa dà una lettura da verificare, il bot suggerisce di rimandare il documento come «File».
 - Il campo sbagliato rimasto è il nome («Brio io SpA» invece di «Brico io S.p.A.»), segnalato da verificare. Un solo documento non basta a tarare i parametri: vanno confermati sul campione del protocollo.
 
+**Serie di PDF sintetici (28/10/2026)**: 24 PDF fittizi generati con `npm run ocr:samples` (8 fatture, 6 DDT, 5 scontrini, 5 certificati; PDF digitali, scansioni buone e scadenti, documenti su due pagine; etichette scritte nei modi diversi usati dai fornitori), misurati con `npm run ocr:accuracy -- --dir ocr-samples/pdf-sintetici`.
+
+| | Tipo corretto | Campi corretti | Errori senza revisione | Tempo medio |
+| :--- | :---: | :---: | :---: | :---: |
+| Prima | 100% | 89,7% (113/126) | 1,6% | 1,5 s |
+| Dopo | 100% | **100% (126/126)** | **0%** | 1,5 s |
+
+Gli errori non dipendevano dalla qualità della scansione ma dalle etichette: il numero del documento veniva letto solo dopo «Fattura N.» o «DDT N.» (con «Fattura nr.» il parser leggeva «r», un errore non segnalato); «Netto a pagare» non era riconosciuto come totale; «S.r.].» non veniva corretto in «S.r.l.»; una fattura senza la parola «fattura» finiva tra i documenti generici. Corretti, con test di regressione per ogni variante. Le soglie del protocollo sono rispettate su questa serie; restano da verificare su foto reali da telefono.
+
 **CI su GitHub (28/10/2026)**: alla prima pubblicazione la pipeline falliva già all'installazione delle dipendenze, su tutti i branch: due binari solo Windows erano dipendenze dirette (da `643f298`) e il lockfile, generato con npm 11, non era accettato dall'npm 10 della CI. Corretti entrambi: CI verde su GitHub Actions.
 
 Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture), ma dal 28/10/2026 non blocca più il server: lettura e rasterizzazione dei PDF girano in un worker thread (`src/ai/ocr/pdf-worker.ts`), come già l'OCR di Tesseract. Misura sul PDF scansionato di prova: il blocco massimo del processo principale scende da 718 ms a 33 ms per pagina (175 → 31 ms per un PDF digitale), con lo stesso risultato. Il worker elabora un documento alla volta, ha un timeout di 60 s per documento (oltre, viene riavviato) e si chiude allo spegnimento. Resta da valutare una coda asincrona (risposta 202 e risultato via notifica) se i tempi su documenti reali lo richiederanno.

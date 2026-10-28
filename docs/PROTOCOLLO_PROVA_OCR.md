@@ -63,6 +63,8 @@ Esempi completi: `tests/fixtures/ocr/*.expected.json`.
 
 ## 4. Eseguire la prova
 
+Per una verifica di base senza documenti reali, `npm run ocr:samples` genera in `ocr-samples/pdf-sintetici/` 24 PDF fittizi con i valori attesi (fatture, DDT, scontrini, certificati; digitali, scansionati, su due pagine), da misurare con `npm run ocr:accuracy -- --dir ocr-samples/pdf-sintetici`.
+
 ```bash
 npm run ocr:accuracy -- --dir ocr-samples --out ocr-samples/report.json
 ```

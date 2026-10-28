@@ -126,6 +126,10 @@ export class DocumentOcrService {
     if (has('certificato', 'certificazione', 'attestato', 'durc')) {
       return this.parseCertificate(text);
     }
+    // Some invoices never say "fattura" ("Numero documento: ..."): a taxable amount gives them away.
+    if (has('imponibile')) {
+      return this.parseInvoice(text);
+    }
 
     return GenericDocumentOcrSchema.parse({
       documentType: 'generic',
@@ -141,15 +145,12 @@ export class DocumentOcrService {
     const supplierName =
       this.matchGroup(text, /(?:fornitore|cedente|emittente)\s*[:.]?\s*([^\n\r]+)/i) ??
       this.findCompanyLine(text);
-    const documentNumber = this.matchGroup(
-      text,
-      /fattura\s*(?:n[°º.]?|num(?:ero)?)\s*[:.]?\s*([a-z0-9][a-z0-9/-]*)/i,
-    );
+    const documentNumber = this.findDocumentNumber(text, 'fattura');
     const documentDate = this.findDate(text, /(?:data(?:\s+documento)?)\s*[:.]?\s*/i);
 
     const totalAmount = this.findAmount(
       text,
-      /totale\s*(?:fattura|documento|da\s+pagare|eur(?:o)?|€)?\s*[:.]?\s*€?\s*/i,
+      /(?:totale\s*(?:fattura|documento|da\s+pagare|eur(?:o)?|€)?|netto\s+a\s+pagare|importo\s+totale)\s*[:.]?\s*(?:€|eur(?:o)?)?\s*/i,
     );
     let taxableAmount = this.findAmount(text, /(?:imponibile|netto\s*merce)\s*[:.]?\s*€?\s*/i);
     const vatMatch = text.match(VAT_AMOUNT_REGEX);
@@ -202,9 +203,9 @@ export class DocumentOcrService {
       supplierName: this.matchGroup(text, /(?:mittente|fornitore|cedente)\s*[:.]?\s*([^\n\r]+)/i),
       supplierVat: this.findVatNumber(text, warnings),
       documentDate: this.findDate(text, /(?:data(?:\s+documento)?)\s*[:.]?\s*/i),
-      documentNumber: this.matchGroup(
+      documentNumber: this.findDocumentNumber(
         text,
-        /(?:d\.?d\.?t\.?|documento\s*di\s*trasporto|bolla)\s*(?:n[°º.]?|num(?:ero)?)\s*[:.]?\s*([a-z0-9][a-z0-9/-]*)/i,
+        String.raw`d\.?d\.?t\.?|documento\s*di\s*trasporto|bolla`,
       ),
       recipientName: this.matchGroup(
         text,
@@ -393,6 +394,27 @@ export class DocumentOcrService {
     });
   }
 
+  /**
+   * Document number after the label variants suppliers actually use: "Fattura N. 12",
+   * "Fattura nr. 12", "Fattura immediata n° 12", "Numero documento: 12", "N. documento 12",
+   * "Numero: DDT-12". The value must contain a digit: "nr." once yielded "r" as the number.
+   */
+  private findDocumentNumber(text: string, documentWords: string): string | null {
+    const token = String.raw`([a-z0-9][a-z0-9/.-]*)`;
+    const patterns = [
+      String.raw`(?:${documentWords})\s*(?:immediata|differita|accompagnatoria)?\s*(?:n(?:r|um(?:ero)?)?\s*[°º.]?|numero)\s*[:.]?\s*${token}`,
+      String.raw`\b(?:numero|nr?\.)\s*(?:del\s+)?documento\s*[:.]?\s*${token}`,
+      String.raw`\bnumero\s*[:.]\s*${token}`,
+    ];
+    for (const pattern of patterns) {
+      for (const match of text.matchAll(new RegExp(pattern, 'gi'))) {
+        const value = match[1]?.replace(/[.-]+$/, '');
+        if (value && /\d/.test(value)) return value;
+      }
+    }
+    return null;
+  }
+
   private matchGroup(text: string, regex: RegExp): string | null {
     const value = text.match(regex)?.[1];
     if (!value) return null;
@@ -407,6 +429,8 @@ export class DocumentOcrService {
         // OCR noise at the edges of a line: table borders, stray quotes ("| Brico io SpA"").
         .replace(/^[|'"‘’“”`«»\s]+/u, '')
         .replace(/[|'"‘’“”`«»]+$/u, '')
+        // "S.r.]." / "S.r.1.": OCR confuses l, 1, I, | and ] in the legal form at the end of a name.
+        .replace(/\bS\.\s?r\.\s?[l1I|\]]\.?$/u, 'S.r.l.')
         .replace(/\s+[^\p{L}\p{N}\s]{1,2}$/u, '')
         .replace(/[\s,;:]+$/u, '')
         .trim()
