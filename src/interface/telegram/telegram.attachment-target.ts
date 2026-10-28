@@ -32,15 +32,18 @@ export function resolveAttachmentTarget(
   caption: string,
 ): AttachmentTarget {
   const open = practices.filter((p) => !TERMINAL_STATES.has(p.status));
+  // Closed practices are offered only when nothing is open, and never chosen without asking.
   const pool = open.length > 0 ? open : practices;
   if (pool.length === 0) return { type: 'none' };
-  if (pool.length === 1 && pool[0]) return { type: 'selected', practice: pool[0] };
+  if (open.length === 1 && open[0]) return { type: 'selected', practice: open[0] };
 
   const normalizedCaption = normalize(caption);
   if (normalizedCaption) {
+    // Whole-word match: "Rossi" must not match a caption mentioning "Rossini".
+    const paddedCaption = ` ${normalizedCaption} `;
     const named = pool.filter((p) => {
       const name = normalize(p.name);
-      return name.length >= 3 && normalizedCaption.includes(name);
+      return name.length >= 3 && paddedCaption.includes(` ${name} `);
     });
     if (named.length === 1 && named[0]) return { type: 'selected', practice: named[0] };
   }
@@ -53,7 +56,7 @@ function normalize(value: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
 

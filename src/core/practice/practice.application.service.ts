@@ -188,10 +188,9 @@ export class PracticeApplicationService {
       userId: input.userId,
       status: input.status,
       search: input.search,
+      ...(typeof input.limit === 'number' && input.limit > 0 ? { limit: input.limit } : {}),
     });
-    const views = rows.map(toView);
-
-    return typeof input.limit === 'number' && input.limit > 0 ? views.slice(0, input.limit) : views;
+    return rows.map(toView);
   }
 
   async listPracticesPaginated(
@@ -303,15 +302,24 @@ export class PracticeApplicationService {
       ocrStatus = 'FAILED';
     }
 
-    const attachment = await this.attachmentRepository.createAttachment(input.tenantId, {
-      practiceId: input.practiceId,
-      fileName: input.fileName,
-      mimeType,
-      fileSize: storageResult.fileSize,
-      storagePath: storageResult.storagePath,
-      ocrStatus,
-      ocrResult,
-    });
+    let attachment: PracticeAttachmentDTO;
+    try {
+      attachment = await this.attachmentRepository.createAttachment(input.tenantId, {
+        practiceId: input.practiceId,
+        fileName: input.fileName,
+        mimeType,
+        fileSize: storageResult.fileSize,
+        storagePath: storageResult.storagePath,
+        ocrStatus,
+        ocrResult,
+      });
+    } catch (err: unknown) {
+      // Without its record the stored file could never be listed or deleted: remove it.
+      await this.storageService
+        .delete(input.tenantId, storageResult.storagePath)
+        .catch(() => undefined);
+      throw err;
+    }
 
     let updatedPractice = practice;
     if (ocrResult) {

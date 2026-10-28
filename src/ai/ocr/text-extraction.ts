@@ -135,29 +135,34 @@ export class DocumentTextExtractor {
   }
 
   private async extractPdf(content: Buffer): Promise<TextExtractionResult> {
-    // pdf.js may transfer (detach) the buffer it receives, so every call gets its own copy.
-    const { totalPages, text } = await extractText(new Uint8Array(content), { mergePages: true });
-    if (text.replace(/\s/g, '').length >= MIN_PDF_TEXT_CHARS) {
-      return { text, source: 'pdf_text', pages: totalPages };
-    }
-
+    // Parsed once and reused for text and rendering; pdf.js may detach the buffer, so pass a copy.
     const pdf = await getDocumentProxy(new Uint8Array(content));
-    const pageCount = Math.min(pdf.numPages, this.maxOcrPdfPages);
-    const texts: string[] = [];
-    const confidences: number[] = [];
-    for (let page = 1; page <= pageCount; page++) {
-      const png = await renderPageAsImage(new Uint8Array(content), page, {
-        canvasImport: () => import('@napi-rs/canvas'),
-        scale: 2,
-      });
-      const ocr = await this.options.ocrEngine.recognize(Buffer.from(png));
-      texts.push(ocr.text);
-      confidences.push(ocr.confidence);
-    }
+    try {
+      const { totalPages, text } = await extractText(pdf, { mergePages: true });
+      if (text.replace(/\s/g, '').length >= MIN_PDF_TEXT_CHARS) {
+        return { text, source: 'pdf_text', pages: totalPages };
+      }
 
-    const confidence = confidences.length
-      ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
-      : 0;
-    return { text: texts.join('\n'), source: 'ocr_pdf', pages: pdf.numPages, confidence };
+      const pageCount = Math.min(pdf.numPages, this.maxOcrPdfPages);
+      const texts: string[] = [];
+      const confidences: number[] = [];
+      for (let page = 1; page <= pageCount; page++) {
+        const png = await renderPageAsImage(pdf, page, {
+          canvasImport: () => import('@napi-rs/canvas'),
+          scale: 2,
+        });
+        const ocr = await this.options.ocrEngine.recognize(Buffer.from(png));
+        texts.push(ocr.text);
+        confidences.push(ocr.confidence);
+      }
+
+      const confidence = confidences.length
+        ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
+        : 0;
+      return { text: texts.join('\n'), source: 'ocr_pdf', pages: pdf.numPages, confidence };
+    } finally {
+      // Releases pdf.js resources: without it every processed PDF stays in memory.
+      await pdf.loadingTask.destroy();
+    }
   }
 }

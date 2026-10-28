@@ -37,25 +37,31 @@ function readBase64Upload(body: unknown): AttachmentUpload {
   };
 }
 
+// Reads every part, so the optional "hint" field is accepted before or after the file.
 async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUpload> {
-  const file = await req.file();
-  if (!file) {
-    throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
-  }
+  let file: Omit<AttachmentUpload, 'hint'> | undefined;
+  let hint: string | undefined;
   try {
-    const content = await file.toBuffer();
-    const hintField = file.fields.hint;
-    const hint =
-      hintField && !Array.isArray(hintField) && hintField.type === 'field'
-        ? String(hintField.value)
-        : undefined;
-    return { fileName: file.filename, mimeType: file.mimetype, content, hint };
+    for await (const part of req.parts()) {
+      if (part.type === 'file') {
+        const content = await part.toBuffer();
+        if (part.fieldname === 'file') {
+          file = { fileName: part.filename, mimeType: part.mimetype, content };
+        }
+      } else if (part.fieldname === 'hint') {
+        hint = String(part.value);
+      }
+    }
   } catch (err: unknown) {
     if ((err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
       throw new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'The attached file is too large');
     }
     throw err;
   }
+  if (!file) {
+    throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
+  }
+  return { ...file, hint };
 }
 
 export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, deps, done) => {

@@ -93,7 +93,7 @@ export class PracticeRepository {
 
   async listPractices(
     tenantId: string,
-    filter?: { userId?: string; status?: PracticeStatus; search?: string },
+    filter?: { userId?: string; status?: PracticeStatus; search?: string; limit?: number },
   ): Promise<PracticeDTO[]> {
     requireTenantId(tenantId);
     try {
@@ -133,6 +133,7 @@ export class PracticeRepository {
       const rows = await this.prisma.practice.findMany({
         where,
         orderBy: { createdAt: 'desc' },
+        ...(filter?.limit ? { take: filter.limit } : {}),
       });
       return rows.map(toPracticeDTO);
     } catch (err: unknown) {
