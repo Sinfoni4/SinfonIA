@@ -26,6 +26,13 @@ const ConfigSchema = z.object({
   AUTH_ISSUER: z.string().min(1).default('sinfonia'),
   AUTH_AUDIENCE: z.string().min(1).default('sinfonia-api'),
   AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(3600),
+  // Maximum size of a single practice attachment (default 10 MB).
+  ATTACHMENT_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(50 * 1024 * 1024)
+    .default(10 * 1024 * 1024),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

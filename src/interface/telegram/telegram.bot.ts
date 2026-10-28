@@ -1,3 +1,4 @@
+import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
 import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
 import { bindUserToTenant, getTenantIdByInvite } from '../../core/tenant/tenant.invite.store.js';
@@ -5,6 +6,7 @@ import { getTenantByTelegramUserAsync } from '../../core/tenant/tenant.store.js'
 import { UserRepository } from '../../data/repositories/user.repository.js';
 import { errorLabel } from '../../shared/errors.js';
 
+import { formatAttachmentRejection, formatAttachmentResult } from './attachment.formatter.js';
 import { handleDevState } from './commands/devstate.command.js';
 import { formatPracticeCommandResult } from './practice.command.formatter.js';
 import { TelegramClient } from './telegram.client.js';
@@ -32,6 +34,7 @@ type BotDeps = {
   prisma: PrismaClient;
   practiceService: Pick<PracticeApplicationService, 'executeCommand'> & {
     addAttachment?: PracticeApplicationService['addAttachment'];
+    getMaxAttachmentBytes?: PracticeApplicationService['getMaxAttachmentBytes'];
     listPractices?: PracticeApplicationService['listPractices'];
   };
   handleMessage: (input: string, identity: TelegramIdentity) => Promise<string>;
@@ -180,9 +183,11 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         let fileId: string;
         let fileName: string;
         let mimeType: string;
+        let fileSize: number | undefined;
 
         if (msg.document) {
           fileId = msg.document.file_id;
+          fileSize = msg.document.file_size;
           fileName = msg.document.file_name ?? `document_${Date.now()}.pdf`;
           mimeType = msg.document.mime_type ?? 'application/octet-stream';
         } else if (msg.photo && msg.photo.length > 0) {
@@ -192,6 +197,7 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
             return;
           }
           fileId = largest.file_id;
+          fileSize = largest.file_size;
           fileName = `photo_${Date.now()}.jpg`;
           mimeType = 'image/jpeg';
         } else {
@@ -199,6 +205,17 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         }
 
         if (deps.practiceService.addAttachment) {
+          // Reject oversized files before downloading them from Telegram.
+          const maxBytes = deps.practiceService.getMaxAttachmentBytes?.();
+          if (maxBytes !== undefined && fileSize !== undefined && fileSize > maxBytes) {
+            await bot.sendMessage(
+              chatId,
+              formatAttachmentRejection(
+                new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'File too large'),
+              ),
+            );
+            return;
+          }
           try {
             const fileInfo = await bot.getFile(fileId);
             if (!fileInfo.file_path) {
@@ -216,13 +233,16 @@ function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
               hint: text,
             });
 
-            const docType = uploadResult.ocrResult?.documentType ?? 'documento';
             await bot.sendMessage(
               chatId,
-              `✅ Documento caricato con successo sulla pratica!\nTipo riconosciuto: ${docType}\nStato OCR: ${uploadResult.attachment.ocrStatus}`,
+              formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult),
             );
             return;
           } catch (uploadErr) {
+            if (uploadErr instanceof AttachmentRejectedError) {
+              await bot.sendMessage(chatId, formatAttachmentRejection(uploadErr));
+              return;
+            }
             deps.log?.error({ error: errorLabel(uploadErr), requestId }, 'Attachment upload error');
             await bot.sendMessage(
               chatId,

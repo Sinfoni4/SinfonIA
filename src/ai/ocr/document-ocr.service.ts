@@ -1,82 +1,130 @@
 import {
-  InvoiceOcrSchema,
+  CertificateOcrSchema,
   DeliveryNoteOcrSchema,
-  ReceiptOcrSchema,
   GenericDocumentOcrSchema,
+  InvoiceOcrSchema,
+  ReceiptOcrSchema,
+  type CertificateCategory,
   type DocumentOcrResult,
 } from './ocr.types.js';
+import {
+  DocumentTextExtractor,
+  TesseractOcrEngine,
+  detectFileKind,
+  type DetectedFileKind,
+  type OcrEngine,
+} from './text-extraction.js';
 
-export interface DocumentOcrServiceOptions {
-  enableAI?: boolean;
+export class UnsupportedDocumentError extends Error {
+  constructor() {
+    super('Unsupported document format: allowed formats are PDF, JPEG, PNG, WEBP and plain text');
+    this.name = 'UnsupportedDocumentError';
+  }
 }
 
-export class DocumentOcrService {
-  constructor(public readonly options: DocumentOcrServiceOptions = {}) {}
+export interface DocumentOcrServiceOptions {
+  /** OCR engine for images and scanned PDFs; defaults to the in-process Tesseract engine. */
+  ocrEngine?: OcrEngine;
+  maxOcrPdfPages?: number;
+  /** Below this mean OCR confidence (0-100) the result is flagged for human review. */
+  minOcrConfidence?: number;
+}
 
-  /**
-   * Performs Document AI / OCR extraction on raw file buffer.
-   * Supports invoices (fatture), delivery notes (DDT), receipts (scontrini), and generic documents.
-   */
-  processDocument(
-    content: Buffer | Uint8Array,
-    mimeType: string,
-    fileName: string,
-    hint?: string,
-  ): Promise<DocumentOcrResult> {
-    const rawText = this.extractRawText(content, mimeType, fileName);
-    return Promise.resolve(this.parseDocumentText(rawText, fileName, hint));
+const DATE_PATTERN = String.raw`(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})`;
+// Italian amounts: "1.525,61", "45,80", "1.200" (thousands only) or plain "1250.50".
+const AMOUNT_PATTERN = String.raw`(\d{1,3}(?:\.\d{3})*,\d{1,2}|\d{1,3}(?:\.\d{3})+(?!\d)|\d+(?:[.,]\d{1,2})?)`;
+// "IVA" as a tax amount, not as part of "P.IVA" / "Partita IVA".
+const VAT_AMOUNT_REGEX = new RegExp(
+  String.raw`(?<!p\.\s?|partita\s)\b(?:iva|imposta)\b(?:\s*\(?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*%\s*\)?)?\s*[:.]?\s*€?\s*` +
+    AMOUNT_PATTERN,
+  'i',
+);
+const VAT_NUMBER_REGEX = /(?:p\.?\s*iva|partita\s*iva|vat)\s*[:.]?\s*((?:IT)?\s?\d{11})\b/i;
+const LEGAL_FORM_REGEX =
+  /\b(?:s\.?\s?r\.?\s?l\.?|s\.?\s?p\.?\s?a\.?|s\.?\s?n\.?\s?c\.?|s\.?\s?a\.?\s?s\.?|soc\.?\s*coop)(?![a-z])/i;
+
+export class DocumentOcrService {
+  private readonly ocrEngine: OcrEngine;
+  private readonly extractor: DocumentTextExtractor;
+  private readonly minOcrConfidence: number;
+
+  constructor(options: DocumentOcrServiceOptions = {}) {
+    this.ocrEngine = options.ocrEngine ?? new TesseractOcrEngine();
+    this.extractor = new DocumentTextExtractor({
+      ocrEngine: this.ocrEngine,
+      maxOcrPdfPages: options.maxOcrPdfPages,
+    });
+    this.minOcrConfidence = options.minOcrConfidence ?? 70;
   }
 
-  private extractRawText(
+  /**
+   * Document AI pipeline: detects the real file type from its content, extracts the text
+   * (PDF text layer or in-process OCR) and parses invoices, delivery notes (DDT), receipts
+   * and certificates. Throws UnsupportedDocumentError for any other format.
+   */
+  async processDocument(
     content: Buffer | Uint8Array,
     _mimeType: string,
     fileName: string,
-  ): string {
-    const text = Buffer.from(content).toString('utf-8');
-    if (/[\w\s]{10,}/.test(text)) {
-      return text;
+    hint?: string,
+  ): Promise<DocumentOcrResult> {
+    const buffer = Buffer.from(content);
+    const kind = detectFileKind(buffer);
+    if (!kind) {
+      throw new UnsupportedDocumentError();
     }
-    return `DOCUMENT: ${fileName}\nBINARY_SIZE: ${content.length}`;
+
+    const extraction = await this.extractor.extract(buffer, kind);
+    const result = this.parseDocumentText(extraction.text, fileName, hint);
+
+    const lowConfidence =
+      typeof extraction.confidence === 'number' && extraction.confidence < this.minOcrConfidence;
+    const warnings = lowConfidence
+      ? [...result.warnings, `Low OCR confidence (${Math.round(extraction.confidence ?? 0)}%)`]
+      : result.warnings;
+
+    return {
+      ...result,
+      warnings,
+      reviewRequired: result.reviewRequired || lowConfidence,
+      extraction: {
+        source: extraction.source,
+        pages: extraction.pages,
+        confidence:
+          typeof extraction.confidence === 'number'
+            ? Math.round(extraction.confidence * 10) / 10
+            : null,
+      },
+    };
+  }
+
+  detectFileKind(content: Buffer | Uint8Array): DetectedFileKind | null {
+    return detectFileKind(Buffer.from(content));
+  }
+
+  async terminate(): Promise<void> {
+    await this.ocrEngine.terminate();
   }
 
   parseDocumentText(text: string, fileName: string, hint?: string): DocumentOcrResult {
     const lower = text.toLowerCase();
     const hintLower = (hint ?? '').toLowerCase();
+    const has = (...words: string[]) =>
+      words.some((w) => lower.includes(w) || hintLower.includes(w));
 
-    // 1. Try Invoice (Fattura)
-    if (
-      lower.includes('fattura') ||
-      hintLower.includes('fattura') ||
-      hintLower.includes('invoice') ||
-      /fattura\s+n/i.test(text)
-    ) {
-      const parsedInvoice = this.tryParseInvoice(text);
-      if (parsedInvoice) return parsedInvoice;
+    if (has('fattura', 'invoice')) {
+      return this.parseInvoice(text);
+    }
+    if (has('ddt', 'd.d.t', 'documento di trasporto', 'bolla di consegna')) {
+      return this.parseDeliveryNote(text);
+    }
+    if (has('scontrino', 'ricevuta fiscale', 'documento commerciale', 'ricevuta')) {
+      return this.parseReceipt(text);
+    }
+    if (has('certificato', 'certificazione', 'attestato', 'durc')) {
+      return this.parseCertificate(text);
     }
 
-    // 2. Try Delivery Note (DDT / Bolla di consegna)
-    if (
-      lower.includes('ddt') ||
-      lower.includes('documento di trasporto') ||
-      lower.includes('bolla di consegna') ||
-      hintLower.includes('ddt')
-    ) {
-      const parsedDdt = this.tryParseDeliveryNote(text);
-      if (parsedDdt) return parsedDdt;
-    }
-
-    // 3. Try Receipt (Scontrino / Ricevuta)
-    if (
-      lower.includes('scontrino') ||
-      lower.includes('ricevuta fiscale') ||
-      hintLower.includes('scontrino') ||
-      hintLower.includes('ricevuta')
-    ) {
-      const parsedReceipt = this.tryParseReceipt(text);
-      if (parsedReceipt) return parsedReceipt;
-    }
-
-    // 4. Default: Generic Document
     return GenericDocumentOcrSchema.parse({
       documentType: 'generic',
       title: fileName,
@@ -85,210 +133,311 @@ export class DocumentOcrService {
     });
   }
 
-  private tryParseInvoice(text: string): DocumentOcrResult | null {
-    try {
-      const vatMatch = text.match(/(?:p\.?\s*iva|partita\s*iva|vat)\s*[:.]?\s*([a-z0-9]{8,16})/i);
-      const supplierVat = vatMatch?.[1] ? vatMatch[1].toUpperCase() : 'IT00000000000';
+  private parseInvoice(text: string): DocumentOcrResult {
+    const warnings: string[] = [];
+    const supplierVat = this.findVatNumber(text, warnings);
+    const supplierName =
+      this.matchGroup(text, /(?:fornitore|cedente|emittente)\s*[:.]?\s*([^\n\r]+)/i) ??
+      this.findCompanyLine(text);
+    const documentNumber = this.matchGroup(
+      text,
+      /fattura\s*(?:n[°º.]?|num(?:ero)?)\s*[:.]?\s*([a-z0-9][a-z0-9/-]*)/i,
+    );
+    const documentDate = this.findDate(text, /(?:data(?:\s+documento)?)\s*[:.]?\s*/i);
 
-      const supplierMatch =
-        text.match(/(?:fornitore|cedente|emittente|spett\.le)\s*[:.]?\s*([^\n\r,]+)/i) ||
-        text.match(/^([A-Z0-9\s&.-]{3,40})(?:\s+s\.?r\.?l|\s+s\.?p\.?a|\s+s\.?n\.?c)/im);
-      const supplierName = supplierMatch?.[1]
-        ? supplierMatch[1].trim()
-        : 'Fornitore Non Specificato';
+    const totalAmount = this.findAmount(
+      text,
+      /totale\s*(?:fattura|documento|da\s+pagare|eur(?:o)?|€)?\s*[:.]?\s*€?\s*/i,
+    );
+    let taxableAmount = this.findAmount(text, /(?:imponibile|netto\s*merce)\s*[:.]?\s*€?\s*/i);
+    const vatMatch = text.match(VAT_AMOUNT_REGEX);
+    let vatAmount = vatMatch?.[2] ? this.parseNumber(vatMatch[2]) : null;
+    let vatRate = vatMatch?.[1] ? this.parseNumber(vatMatch[1]) : null;
 
-      const numberMatch = text.match(
-        /(?:fattura|doc(?:umento)?)\s*(?:n\.?|num(?:ero)?)\s*[:.]?\s*([a-z0-9/-]+)/i,
-      );
-      const documentNumber = numberMatch?.[1] ? numberMatch[1].trim() : 'FT-01';
-
-      const dateMatch = text.match(
-        /(?:data\s*[:.]?\s*)?(\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})/i,
-      );
-      let documentDate = new Date().toISOString().slice(0, 10);
-      if (dateMatch?.[1]) {
-        documentDate = this.normalizeDate(dateMatch[1]);
-      }
-
-      const totalMatch = text.match(
-        /(?:totale\s*(?:fattura|documento|eur|€)?)\s*[:.]?\s*€?\s*([\d.,]+)/i,
-      );
-      const totalAmount = totalMatch?.[1] ? this.parseNumber(totalMatch[1]) : 100.0;
-
-      const taxableMatch = text.match(/(?:imponibile|netto\s*merce)\s*[:.]?\s*€?\s*([\d.,]+)/i);
-      const taxableAmount = taxableMatch?.[1]
-        ? this.parseNumber(taxableMatch[1])
-        : Math.round((totalAmount / 1.22) * 100) / 100;
-
-      const vatAmountMatch = text.match(
-        /(?:iva|imposta)(?:\s*(?:\(\s*\d+%\s*\)|\d+%\s*))?\s*[:.]?\s*€?\s*([\d.,]+)/i,
-      );
-      const vatAmount = vatAmountMatch?.[1]
-        ? this.parseNumber(vatAmountMatch[1])
-        : Math.round((totalAmount - taxableAmount) * 100) / 100;
-
-      const invoiceData = {
-        documentType: 'invoice' as const,
-        supplierName,
-        supplierVat,
-        documentDate,
-        documentNumber,
-        taxableAmount,
-        vatRate: 22,
-        vatAmount,
-        totalAmount,
-        currency: 'EUR',
-        items: [],
-      };
-
-      return InvoiceOcrSchema.parse(invoiceData);
-    } catch {
-      return null;
+    // Only arithmetic derivations from values actually read on the document.
+    if (vatAmount === null && totalAmount !== null && taxableAmount !== null) {
+      vatAmount = this.round(totalAmount - taxableAmount);
     }
+    if (taxableAmount === null && totalAmount !== null && vatAmount !== null) {
+      taxableAmount = this.round(totalAmount - vatAmount);
+    }
+    if (vatRate === null && taxableAmount && vatAmount !== null) {
+      vatRate = Math.round((vatAmount / taxableAmount) * 100);
+    }
+    if (
+      totalAmount !== null &&
+      taxableAmount !== null &&
+      vatAmount !== null &&
+      Math.abs(taxableAmount + vatAmount - totalAmount) > 0.02
+    ) {
+      warnings.push('Totals do not add up: taxable amount + VAT differs from document total');
+    }
+
+    const fields = {
+      supplierName,
+      supplierVat,
+      documentDate,
+      documentNumber,
+      taxableAmount,
+      vatRate,
+      vatAmount,
+      totalAmount,
+    };
+    return InvoiceOcrSchema.parse({
+      documentType: 'invoice',
+      ...fields,
+      items: this.findInvoiceItems(text),
+      ...this.reviewInfo(fields, warnings),
+    });
   }
 
-  private tryParseDeliveryNote(text: string): DocumentOcrResult | null {
-    try {
-      const vatMatch = text.match(/(?:p\.?\s*iva|partita\s*iva|vat)\s*[:.]?\s*([a-z0-9]{8,16})/i);
-      const supplierVat = vatMatch?.[1] ? vatMatch[1].toUpperCase() : 'IT00000000000';
+  private parseDeliveryNote(text: string): DocumentOcrResult {
+    const warnings: string[] = [];
+    const fields = {
+      supplierName: this.matchGroup(text, /(?:mittente|fornitore|cedente)\s*[:.]?\s*([^\n\r]+)/i),
+      supplierVat: this.findVatNumber(text, warnings),
+      documentDate: this.findDate(text, /(?:data(?:\s+documento)?)\s*[:.]?\s*/i),
+      documentNumber: this.matchGroup(
+        text,
+        /(?:d\.?d\.?t\.?|documento\s*di\s*trasporto|bolla)\s*(?:n[°º.]?|num(?:ero)?)\s*[:.]?\s*([a-z0-9][a-z0-9/-]*)/i,
+      ),
+      recipientName: this.matchGroup(
+        text,
+        /(?:destinatario|cessionario|consegnare\s*a)\s*[:.]?\s*([^\n\r]+)/i,
+      ),
+    };
+    const carrierName = this.matchGroup(text, /vettore\s*[:.]?\s*([^\n\r]+)/i);
 
-      const supplierMatch = text.match(/(?:mittente|fornitore|cedente)\s*[:.]?\s*([^\n\r,]+)/i);
-      const supplierName = supplierMatch?.[1] ? supplierMatch[1].trim() : 'Mittente / Fornitore';
-
-      const recipientMatch = text.match(
-        /(?:destinatario|cessionario|consegnare\s*a)\s*[:.]?\s*([^\n\r,]+)/i,
-      );
-      const recipientName = recipientMatch?.[1] ? recipientMatch[1].trim() : 'Destinatario';
-
-      const numberMatch =
-        text.match(
-          /(?:ddt|documento\s*di\s*trasporto|bolla)\s*(?:n\.?|num(?:ero)?)\s*[:.]?\s*([a-z0-9/-]+)/i,
-        ) || text.match(/(?:n\.?|num(?:ero)?)\s*[:.]?\s*([a-z0-9/-]+)/i);
-      const documentNumber = numberMatch?.[1] ? numberMatch[1].trim() : 'DDT-01';
-
-      const dateMatch = text.match(
-        /(?:data\s*[:.]?\s*)?(\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})/i,
-      );
-      let documentDate = new Date().toISOString().slice(0, 10);
-      if (dateMatch?.[1]) {
-        documentDate = this.normalizeDate(dateMatch[1]);
-      }
-
-      const items: Array<{ description: string; quantity: number }> = [];
-      const lines = text.split(/\r?\n/);
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (
-          !trimmed ||
-          /^(?:ddt|documento|mittente|destinatario|data|vettore|causale)/i.test(trimmed)
-        ) {
-          continue;
-        }
-
-        const bulletMatch = trimmed.match(
-          /^(?:[-*•]|\d+[.)])\s*(.+?)(?:[:\s-](?:quantit[àa]|q\.?t[àa]|qta|qt[àa]|x)\s*[:.]?\s*(\d+)|[:\s-]+(\d+)\s*(?:pz|colli|bt|kg|ct)?$)/i,
-        );
-        if (bulletMatch) {
-          const desc = bulletMatch[1]?.trim();
-          const qtyStr = bulletMatch[2] ?? bulletMatch[3];
-          if (desc && qtyStr) {
-            items.push({
-              description: desc.replace(/[-:]$/, '').trim(),
-              quantity: Number(qtyStr),
-            });
-          }
-        }
-      }
-
-      if (items.length === 0) {
-        items.push({
-          description: 'Merce descritta in bolla',
-          quantity: 1,
-        });
-      }
-
-      const ddtData = {
-        documentType: 'delivery_note' as const,
-        supplierName,
-        supplierVat,
-        documentDate,
-        documentNumber,
-        recipientName,
-        items,
-      };
-
-      return DeliveryNoteOcrSchema.parse(ddtData);
-    } catch {
-      return null;
-    }
+    return DeliveryNoteOcrSchema.parse({
+      documentType: 'delivery_note',
+      ...fields,
+      ...(carrierName ? { carrierName } : {}),
+      items: this.findDeliveryItems(text),
+      ...this.reviewInfo(fields, warnings),
+    });
   }
 
-  private tryParseReceipt(text: string): DocumentOcrResult | null {
-    try {
-      const merchantMatch = text.match(/^([A-Z0-9\s&.-]{3,40})/m);
-      const merchantName = merchantMatch?.[1] ? merchantMatch[1].trim() : 'Esercizio Commerciale';
-
-      const totalMatch = text.match(/(?:totale\s*(?:eur|euro|€)?)\s*[:.]?\s*€?\s*([\d.,]+)/i);
-      const totalAmount = totalMatch?.[1] ? this.parseNumber(totalMatch[1]) : 15.0;
-
-      const dateMatch = text.match(
-        /(?:data\s*[:.]?\s*)?(\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})/i,
-      );
-      let documentDate = new Date().toISOString().slice(0, 10);
-      if (dateMatch?.[1]) {
-        documentDate = this.normalizeDate(dateMatch[1]);
-      }
-
-      return ReceiptOcrSchema.parse({
-        documentType: 'receipt',
-        merchantName,
-        documentDate,
-        totalAmount,
-        currency: 'EUR',
-      });
-    } catch {
-      return null;
-    }
+  private parseReceipt(text: string): DocumentOcrResult {
+    const warnings: string[] = [];
+    const firstLine = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => /[a-z]{3,}/i.test(l));
+    // OCR often adds a stray lowercase character after an all-caps shop sign ("BAR ESEMPIO i").
+    const merchantLine = firstLine?.replace(/^([^a-z]+?)\s+[a-z]$/, '$1');
+    const fields = {
+      merchantName: merchantLine ? this.cleanValue(merchantLine) : null,
+      merchantVat: this.findVatNumber(text, warnings),
+      documentDate: this.findDate(text, /(?:data)\s*[:.]?\s*/i),
+      totalAmount: this.findAmount(text, /totale\s*(?:complessivo|eur(?:o)?|€)?\s*[:.]?\s*€?\s*/i),
+    };
+    return ReceiptOcrSchema.parse({
+      documentType: 'receipt',
+      ...fields,
+      ...this.reviewInfo(fields, warnings),
+    });
   }
 
-  private normalizeDate(raw: string): string {
-    const cleaned = raw.replace(/[./]/g, '-');
-    const parts = cleaned.split('-');
-    if (parts.length !== 3) return new Date().toISOString().slice(0, 10);
+  private parseCertificate(text: string): DocumentOcrResult {
+    const titleLine = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => /certificat|attestat|durc/i.test(l));
+    const fields = {
+      title: titleLine ? this.cleanValue(titleLine) : null,
+      issuer: this.matchGroup(
+        text,
+        /(?:organismo\s+di\s+controllo|ente\s+certificatore|rilasciato\s+da|emesso\s+da)\s*[:.]?\s*([^\n\r]+)/i,
+      ),
+      holderName: this.matchGroup(
+        text,
+        /(?:operatore|intestatario|titolare|impresa|ragione\s+sociale|lavoratore)\s*[:.]?\s*([^\n\r]+)/i,
+      ),
+      certificateNumber: this.matchGroup(
+        text,
+        /(?:certificato|attestato|protocollo|codice)\s*(?:n[°º.]?|num(?:ero)?)\s*[:.]?\s*([a-z0-9][a-z0-9/-]*)/i,
+      ),
+      issueDate: this.findDate(
+        text,
+        /(?:emissione|emesso\s+il|rilasciato\s+il|rilascio)\s*[:.]?\s*/i,
+      ),
+      expiryDate: this.findDate(
+        text,
+        /(?:scadenza|scade\s+il|valido\s+fino\s+al|validit[àa]\s+fino\s+al)\s*[:.]?\s*/i,
+      ),
+    };
+    return CertificateOcrSchema.parse({
+      documentType: 'certificate',
+      category: this.detectCertificateCategory(text),
+      ...fields,
+      ...this.reviewInfo(fields, []),
+    });
+  }
 
-    const p0 = parts[0];
-    const p1 = parts[1];
-    const p2 = parts[2];
-    if (!p0 || !p1 || !p2) return new Date().toISOString().slice(0, 10);
+  private detectCertificateCategory(text: string): CertificateCategory {
+    if (/biologic|\bbio\b/i.test(text)) return 'BIO';
+    if (/durc|regolarit[àa]\s+contributiva/i.test(text)) return 'DURC';
+    if (/sicurezza|d\.?\s?lgs\.?\s*81/i.test(text)) return 'SICUREZZA_LAVORO';
+    if (/visita\s+medica|idoneit[àa]/i.test(text)) return 'VISITA_MEDICA';
+    if (/patentino|abilitazione/i.test(text)) return 'PATENTINO';
+    return 'ALTRO';
+  }
 
-    if (p0.length === 2 && p2.length === 4) {
-      return `${p2}-${p1}-${p0}`;
+  private reviewInfo(
+    fields: Record<string, unknown>,
+    warnings: string[],
+  ): { missingFields: string[]; warnings: string[]; reviewRequired: boolean } {
+    const missingFields = Object.entries(fields)
+      .filter(([, value]) => value === null)
+      .map(([key]) => key);
+    return {
+      missingFields,
+      warnings,
+      reviewRequired: missingFields.length > 0 || warnings.length > 0,
+    };
+  }
+
+  private findVatNumber(text: string, warnings: string[]): string | null {
+    const raw = text.match(VAT_NUMBER_REGEX)?.[1];
+    if (!raw) return null;
+    const vat = raw.replace(/\s/g, '').toUpperCase();
+    if (!isValidItalianVat(vat.replace(/^IT/, ''))) {
+      warnings.push(`VAT number ${vat} fails the check digit`);
     }
-    if (p0.length === 4 && p1.length === 2 && p2.length === 2) {
-      return `${p0}-${p1}-${p2}`;
+    return vat;
+  }
+
+  private findCompanyLine(text: string): string | null {
+    const line = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => LEGAL_FORM_REGEX.test(l) && !/^(?:cliente|destinatario|spett)/i.test(l));
+    return line ? this.cleanValue(line) : null;
+  }
+
+  /** Prefers a date right after a label; falls back to the first date in the text. */
+  private findDate(text: string, label: RegExp): string | null {
+    const labeled = text.match(new RegExp(label.source + DATE_PATTERN, 'i'))?.[1];
+    const raw = labeled ?? text.match(new RegExp(DATE_PATTERN))?.[1];
+    return raw ? this.normalizeDate(raw) : null;
+  }
+
+  private findAmount(text: string, label: RegExp): number | null {
+    const raw = text.match(new RegExp(label.source + AMOUNT_PATTERN, 'i'))?.[1];
+    return raw ? this.parseNumber(raw) : null;
+  }
+
+  private findInvoiceItems(text: string) {
+    const itemRegex = new RegExp(
+      String.raw`^(.+?)\s+([\d.,]+)\s*[x×]\s*€?\s*${AMOUNT_PATTERN}\s*=\s*€?\s*${AMOUNT_PATTERN}\s*$`,
+      'i',
+    );
+    return text.split(/\r?\n/).flatMap((line) => {
+      const m = line.trim().match(itemRegex);
+      if (!m?.[1] || !m[2] || !m[3] || !m[4]) return [];
+      const quantity = this.parseNumber(m[2]);
+      if (quantity <= 0) return [];
+      return [
+        {
+          description: this.cleanValue(m[1].replace(/\s+(?:kg|pz|lt|l|n\.?)$/i, '')),
+          quantity,
+          unitPrice: this.parseNumber(m[3]),
+          total: this.parseNumber(m[4]),
+        },
+      ];
+    });
+  }
+
+  private findDeliveryItems(text: string) {
+    const itemRegex =
+      /^(?:[-*•]|\d+[.)])\s*(.+?)\s*[-:]?\s*(?:(?:quantit[àa]|q\.?t[àa]|qta|x)\s*[:.]?\s*)?(\d+(?:[.,]\d+)?)\s*(pz|colli|bt|kg|ct|lt)?\s*$/i;
+    return text.split(/\r?\n/).flatMap((line) => {
+      const m = line.trim().match(itemRegex);
+      if (!m?.[1] || !m[2]) return [];
+      const quantity = this.parseNumber(m[2]);
+      if (quantity <= 0) return [];
+      return [
+        {
+          description: this.cleanValue(m[1].replace(/[-:]$/, '')),
+          quantity,
+          unitOfMeasure: (m[3] ?? 'PZ').toUpperCase(),
+        },
+      ];
+    });
+  }
+
+  private matchGroup(text: string, regex: RegExp): string | null {
+    const value = text.match(regex)?.[1];
+    if (!value) return null;
+    const cleaned = this.cleanValue(value);
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
+  /** Trims OCR noise such as trailing separators and isolated punctuation. */
+  private cleanValue(raw: string): string {
+    return raw
+      .replace(/\s+[^\p{L}\p{N}\s]{1,2}$/u, '')
+      .replace(/[\s,;:]+$/u, '')
+      .trim();
+  }
+
+  private normalizeDate(raw: string): string | null {
+    const parts = raw.split(/[-/.]/);
+    if (parts.length !== 3) return null;
+    const [a, b, c] = parts.map(Number) as [number, number, number];
+    const [year, month, day] = String(parts[0]).length === 4 ? [a, b, c] : [c, b, a];
+
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      return null;
     }
-    return new Date().toISOString().slice(0, 10);
+    return date.toISOString().slice(0, 10);
   }
 
   private parseNumber(raw: string): number {
-    let clean = raw.trim();
-    if (clean.includes(',') && clean.includes('.')) {
+    let clean = raw.trim().replace(/\s/g, '');
+    if (clean.includes(',')) {
+      // Italian format: dots are thousands separators, comma is the decimal separator.
       clean = clean.replace(/\./g, '').replace(',', '.');
-    } else if (clean.includes(',')) {
-      clean = clean.replace(',', '.');
+    } else if (/^\d{1,3}(?:\.\d{3})+$/.test(clean)) {
+      clean = clean.replace(/\./g, '');
     }
     const val = Number(clean);
-    return isNaN(val) ? 0 : Math.round(val * 100) / 100;
+    return Number.isNaN(val) ? 0 : this.round(val);
+  }
+
+  private round(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 
   private extractKeywords(text: string): string[] {
     const words = text
       .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .split(/\s+/)
       .filter((w) => w.length >= 4);
     return Array.from(new Set(words)).slice(0, 10);
   }
+}
+
+/** Italian VAT number (partita IVA) check digit. */
+export function isValidItalianVat(vat: string): boolean {
+  if (!/^\d{11}$/.test(vat)) return false;
+  let sum = 0;
+  for (let i = 0; i < 10; i++) {
+    const digit = Number(vat[i]);
+    if (i % 2 === 0) {
+      sum += digit;
+    } else {
+      const doubled = digit * 2;
+      sum += doubled > 9 ? doubled - 9 : doubled;
+    }
+  }
+  return (10 - (sum % 10)) % 10 === Number(vat[10]);
 }
 
 export const defaultDocumentOcrService = new DocumentOcrService();

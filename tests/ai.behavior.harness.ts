@@ -309,6 +309,7 @@ async function main(): Promise<void> {
         AUTH_ISSUER: 'sinfonia',
         AUTH_AUDIENCE: 'sinfonia-api',
         AUTH_TTL_SECONDS: 3600,
+        ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
       },
       logger,
       {

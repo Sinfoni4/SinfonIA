@@ -1,3 +1,4 @@
+import multipart from '@fastify/multipart';
 import Fastify from 'fastify';
 
 import { runtimeState } from '../../runtime/runtime.state.js';
@@ -80,8 +81,13 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     };
   });
 
+  // Multipart uploads: one file per request, size capped at the attachment limit.
+  void app.register(multipart, {
+    limits: { fileSize: config.ATTACHMENT_MAX_BYTES, files: 1, fields: 5 },
+  });
+
   // Routes (HTTP only): business logic lives in Core / AI.
-  void app.register(practiceRoutes, deps);
+  void app.register(practiceRoutes, { ...deps, maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES });
   void app.register(aiRoutes, deps);
 
   // Future-ready: auth middleware, rate limiting (structure only).

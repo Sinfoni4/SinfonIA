@@ -148,7 +148,9 @@ TEST 5 — /devstate health metrics
     llm,
     log: config.NODE_ENV === 'development' ? logger : undefined,
   });
-  const practiceService = new PracticeApplicationService(prisma);
+  const practiceService = new PracticeApplicationService(prisma, {
+    maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES,
+  });
   const executorService = new ExecutorService({ practiceService });
   const contextService = new ContextService(practiceService);
   const decisionEngine = new DecisionEngine();
