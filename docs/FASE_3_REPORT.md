@@ -5,7 +5,7 @@
 **Architettura AI**: Deterministic Core + Non-Destructive LLM Interpreter + Guardrails di Sicurezza
 
 > **Nota di revisione (28/10/2026)** — Questo report è stato allineato allo stato reale del codice dopo l'audit [`AUDIT_ENTERPRISE_2026-10-28.md`](AUDIT_ENTERPRISE_2026-10-28.md). In sintesi:
-> - Il "motore OCR" **non esegue OCR**: analizza con regole testuali il contenuto del file decodificato come testo. Foto e PDF reali non producono dati estratti.
+> - Il "motore OCR" al commit `4f2b1f3` **non eseguiva OCR**. Dal 28/10/2026 l'OCR è reale e in-process (Tesseract, modello italiano), con lettura del testo dei PDF digitali e OCR dei PDF scansionati: vedi §3.4.
 > - Le metriche del golden set eseguite in CI (`npm run ai:eval`) usano un **LLM simulato** che restituisce l'output atteso: verificano la pipeline, non la qualità di un modello reale.
 > - I nomi di persone e pratiche **non sono pseudonimizzati** prima dell'invio all'LLM.
 > - Le etichette "Fase 3C/3D" di questo report non coincidono con i pilastri 3C (Push/Outbox) e 3D (WhatsApp) del cronoprogramma, che restano da realizzare.
@@ -96,16 +96,19 @@ La **Fase 3** ha trasformato il layer di intelligenza artificiale di SinfonIA da
 - **Storage Isolato Locale**:
   - Storage adapter filesystem organizzato per tenant (`.runtime/storage/<tenant_id>/`). L'adapter S3/MinIO non è ancora implementato.
 - **Estrazione Documentale** ([`src/ai/ocr/document-ocr.service.ts`](../src/ai/ocr/document-ocr.service.ts)):
-  - **Limite attuale**: il contenuto del file viene decodificato come testo UTF-8 e analizzato con regole testuali. Non è presente un motore OCR né un modello vision: immagini e PDF binari vengono classificati come `generic` senza dati estratti.
-  - Classificazione tipo documento: `invoice`, `delivery_note` (DDT), `receipt` (scontrino), `generic`.
-  - Estrazione dati strutturati validati con schemi Zod `InvoiceOcrSchema`, `DeliveryNoteOcrSchema` e `ReceiptOcrSchema`:
+  - **Pipeline (dal 28/10/2026)**: il formato reale è rilevato dai magic bytes (PDF, JPEG, PNG, WEBP, testo), mai dal MIME dichiarato. Le immagini passano dall'OCR Tesseract eseguito in-process con il modello italiano incluso nel pacchetto `@tesseract.js-data/ita` (nessun download a runtime, nessun dato verso terzi). I PDF digitali vengono letti dal livello di testo; i PDF scansionati vengono rasterizzati (fino a 5 pagine) e passati all'OCR ([`text-extraction.ts`](../src/ai/ocr/text-extraction.ts)).
+  - **Nessun valore inventato**: i campi non leggibili restano `null` e sono elencati in `missingFields`; `warnings` segnala P.IVA con cifra di controllo errata, totali incoerenti e confidenza OCR sotto il 70%; `reviewRequired` chiede una verifica umana. In precedenza il parser sostituiva i campi mancanti con valori fittizi (P.IVA `IT00000000000`, totale `100`, data odierna, IVA 22%).
+  - **Metadati di estrazione**: `extraction.source` (`plain_text`, `pdf_text`, `ocr_image`, `ocr_pdf`), numero di pagine e confidenza media OCR.
+  - Classificazione tipo documento: `invoice`, `delivery_note` (DDT), `receipt` (scontrino), `certificate` (con categoria `BIO`, `DURC`, `SICUREZZA_LAVORO`, `VISITA_MEDICA`, `PATENTINO`, `ALTRO` e date di emissione/scadenza), `generic`.
+  - Estrazione dati strutturati validati con schemi Zod `InvoiceOcrSchema`, `DeliveryNoteOcrSchema`, `ReceiptOcrSchema` e `CertificateOcrSchema`:
     - Partita IVA / Codice Fiscale del fornitore/cessionario.
     - Numero progressivo e data contabile.
     - Imponibile, aliquote IVA e totale documento.
     - Linee di dettaglio di prodotti, lotti e quantità.
 - **Arricchimento Pratica & API REST**:
   - Aggiornamento automatico del campo `payload` JSONB della pratica con i metadati estratti dall'allegato.
-  - `POST /practices/:id/attachments`: upload allegati in JSON con contenuto base64 (`contentBase64`) ed elaborazione sincrona. Multipart, whitelist MIME e limiti di dimensione dedicati non sono implementati (vale il limite di 1 MB del body Fastify).
+  - `POST /practices/:id/attachments`: upload `multipart/form-data` (campo `file`, campo opzionale `hint` inviato prima del file) oppure JSON con contenuto base64 (`contentBase64`); elaborazione sincrona. Limite di dimensione configurabile con `ATTACHMENT_MAX_BYTES` (default 10 MB, risposta 413); formati non supportati rifiutati con 415. Il MIME salvato è quello rilevato dal contenuto.
+  - Telegram: foto e documenti seguono la stessa pipeline; il bot riassume i dati letti e indica quelli da verificare, e rifiuta i file troppo grandi prima di scaricarli.
   - `GET /practices/:id/attachments`: elenco e consultazione documenti per pratica con rispetto delle query scoped per tenant.
 
 ---
@@ -214,6 +217,7 @@ La suite [`tests/gate.phase3d.test.ts`](file:///c:/Users/flavi/Documents/SOCIETA
 | **Gate Finale 3D** | `tests/gate.phase3d.test.ts` | **5 / 5** | Tutti i gate superati con esito positivo |
 | **AI Security & Injection** | `tests/ai.security.test.ts` | **16 / 16** | Jailbreak, exfiltration, role impersonation, PII minimizer |
 | **Document AI & OCR** | `tests/ocr.document.test.ts` | **11 / 11** | Upload base64, categorizzazione fatture/DDT da testo, payload enrich |
+| **OCR reale e limiti allegati** | `tests/ocr.engine.test.ts` | **23 / 23** | OCR su foto, PDF digitale e PDF scansionato (fixture in `tests/fixtures/ocr/`), nessun valore inventato, limiti di formato e dimensione, upload multipart |
 | **Structured Output & Repair** | `tests/ai.step3b.test.ts` | **11 / 11** | Schema v1, JSON repair, soglie confidenza e clarification flow |
 | **AI Phase 3A Tracing & Context** | `tests/ai.phase3a.test.ts` | **7 / 7** | Disabled LLM client, HTTP 503, fallback deterministico, audit trace |
 | **Totale Suite Fase 3** | | **50+ test** | **100% PASS** |

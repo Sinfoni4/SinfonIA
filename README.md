@@ -141,6 +141,22 @@ persistito e appartenente al tenant; non vengono generati UUID sintetici.
 Le eventuali integrazioni con sistemi esterni restano adapter di modulo e non
 possono contenere logica di dominio o scrivere direttamente su `practice`.
 
+## Allegati e Document AI
+
+`POST /practices/:id/attachments` accetta `multipart/form-data` (campo `file`,
+campo opzionale `hint` prima del file) oppure JSON con `fileName` e
+`contentBase64`. Formati ammessi, rilevati dal contenuto e non dal MIME
+dichiarato: PDF, JPEG, PNG, WEBP e testo. Dimensione massima:
+`ATTACHMENT_MAX_BYTES` (default 10 MB).
+
+L'OCR gira in-process (Tesseract con modello italiano incluso nelle
+dipendenze): nessun documento lascia il server. I PDF digitali vengono letti
+dal livello di testo, quelli scansionati vengono rasterizzati e passati
+all'OCR. Fatture, DDT, scontrini e certificati producono dati strutturati; i
+campi non leggibili restano `null` e il risultato è marcato `reviewRequired`.
+Le fixture di test (documenti fittizi) si rigenerano con
+`npx tsx scripts/generate-ocr-fixtures.ts`.
+
 ## Health check
 
 - `GET /healthz`: liveness del processo (HTTP 200 finché il processo risponde).

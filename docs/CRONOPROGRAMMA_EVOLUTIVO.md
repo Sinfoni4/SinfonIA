@@ -17,7 +17,7 @@ flowchart TD
 
     subgraph ATTUALE["Fase 3: AI Avanzata & I 3 Pilastri Abilitanti"]
         F3A["Fase 3A (Completata): LLM Esplicito & AI Tracing"]
-        F3B["Fase 3B (Pilastro 1, Parziale): Document AI & OCR Allegati"]
+        F3B["Fase 3B (Pilastro 1, Quasi completa): Document AI & OCR Allegati"]
         F3C["Fase 3C (Pilastro 2, Da fare): Outbox Dispatcher & Push Scadenze"]
         F3D["Fase 3D (Pilastro 3, Da fare): Canale WhatsApp Business"]
         F2 --> F3A --> F3B --> F3C --> F3D
@@ -52,7 +52,7 @@ flowchart TD
 | Fase (cronoprogramma) | Stato | Note |
 | :--- | :--- | :--- |
 | **3A** LLM esplicito & AI tracing | **COMPLETATA** | Tracer solo in memoria; filtri di `/ai/traces` non esposti |
-| **3B** Document AI & OCR | **PARZIALE** | Tabella, storage locale, upload REST base64 e Telegram presenti. **OCR reale assente**: estrazione solo da contenuto testuale; adapter S3/MinIO e upload multipart assenti |
+| **3B** Document AI & OCR | **QUASI COMPLETA** | OCR reale in-process su foto e PDF (digitali e scansionati), certificati, upload multipart, limiti di formato e dimensione, nessun valore inventato (28/10/2026). Mancano adapter S3/MinIO e conferma della pratica di destinazione su Telegram |
 | **3C** Outbox dispatcher & push scadenze | **DA FARE** | Outbox scritto ma mai consumato; nessun modello `compliance_deadline` |
 | **3D** WhatsApp Business | **DA FARE** | Nessun codice in `src/interface/whatsapp/` |
 | Extra: sicurezza prompt & PII | **PARZIALE** | Delimitazione e pattern guard attivi; nomi non pseudonimizzati |

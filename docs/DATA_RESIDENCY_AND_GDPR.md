@@ -63,7 +63,7 @@ Per conformità alle normative europee sul trasferimento internazionale dei dati
   - **OpenAI Enterprise / Zero Data Retention (ZDR)**: per impostazione predefinita con le API a pagamento, OpenAI non utilizza i dati inviati tramite API per addestrare i propri modelli (`data-sharing: false`) e supporta la cancellazione automatica della cronologia temporanea.
 - **Isolamento Documentale su Storage Locale**:
   - Gli allegati caricati dai soci (foto di fatture, DDT, ricevute) risiedono in directory separate e isolate per-tenant sul filesystem locale (`src/data/storage/storage.service.ts`), protette da controlli anti *path traversal*. L'adapter MinIO/S3 non è ancora implementato.
-  - Nessun documento o file binario viene trasferito a server terzi: l'estrazione dei dati avviene in-process con regole testuali. Non è presente un OCR multimodale; la sua introduzione dovrà rispettare gli stessi vincoli di residenza.
+  - Nessun documento o file binario viene trasferito a server terzi: l'OCR (Tesseract) e la lettura dei PDF avvengono in-process, con il modello linguistico italiano incluso nelle dipendenze e senza download a runtime. Un eventuale futuro motore OCR cloud dovrà rispettare gli stessi vincoli di residenza nell'UE.
 
 ---
 
