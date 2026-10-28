@@ -12,14 +12,20 @@ import {
   validateResolvedCommand,
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
+import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
+import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
+import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
 import { createStorageService } from './data/storage/storage.factory.js';
 import { printRuntimeTestGuide } from './dev/dev.tests.js';
 import { buildServer } from './interface/http/server.js';
 import { TelegramAdapter } from './interface/telegram/telegram.adapter.js';
 import { TelegramBotService } from './interface/telegram/telegram.bot.js';
+import { TelegramClient } from './interface/telegram/telegram.client.js';
 import { formatTelegramResponse } from './interface/telegram/telegram.formatter.js';
+import { createTelegramNotifier } from './interface/telegram/telegram.notifier.js';
+import { createWebhookNotifier } from './interface/webhook/webhook.notifier.js';
 import { validateDatabaseConfig } from './runtime/runtime.db.config.js';
 import { forceDatabaseConnect } from './runtime/runtime.db.connect.js';
 import { checkDatabaseHealth } from './runtime/runtime.db.health.js';
@@ -28,6 +34,7 @@ import { installLifecycleHooks } from './runtime/runtime.lifecycle.js';
 import { listenWithRetry } from './runtime/runtime.port.js';
 import { acquireProcessLock } from './runtime/runtime.processLock.js';
 import { runtimeState } from './runtime/runtime.state.js';
+import { startBackgroundWorkers } from './runtime/runtime.workers.js';
 import { errorLabel } from './shared/errors.js';
 import { createLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
@@ -207,7 +214,47 @@ TEST 5 — /devstate health metrics
   });
 
   // Self-healing: periodically re-check DB and recover runtime mode.
-  startDbWatcher(prisma, practiceService);
+  startDbWatcher(prisma);
+
+  // Durable scheduler and outbox delivery, each on its own interval.
+  if (!config.OUTBOX_WEBHOOK_SECRET) {
+    logger.warn('OUTBOX_WEBHOOK_SECRET not set: tenant webhooks will be dead-lettered');
+  }
+  const schedulerService = new SchedulerService(prisma, practiceService);
+  const dispatcher = new OutboxDispatcher(prisma, {
+    maxAttempts: config.OUTBOX_MAX_ATTEMPTS,
+    log: logger,
+    handlers: [
+      new PracticeExportHandler(prisma, {
+        ...(tgToken?.trim()
+          ? { telegram: createTelegramNotifier(new TelegramClient(tgToken.trim())) }
+          : {}),
+        ...(config.OUTBOX_WEBHOOK_SECRET
+          ? {
+              webhook: createWebhookNotifier({
+                secret: config.OUTBOX_WEBHOOK_SECRET,
+                allowInsecureHttp: config.NODE_ENV !== 'production',
+              }),
+            }
+          : {}),
+      }),
+    ],
+  });
+  startBackgroundWorkers(
+    [
+      {
+        name: 'scheduler',
+        intervalMs: config.SCHEDULER_INTERVAL_MS,
+        run: () => schedulerService.tick(),
+      },
+      {
+        name: 'outbox',
+        intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
+        run: () => dispatcher.dispatchOnce(),
+      },
+    ],
+    logger,
+  );
 
   console.log('BOOTSTEP 6 — starting Telegram bootstrap');
   console.log('BOOTSTEP 7 — Telegram bootstrap completed');

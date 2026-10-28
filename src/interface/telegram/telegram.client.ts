@@ -47,7 +47,20 @@ type TelegramResponse<T> = {
   result?: T;
   description?: string;
   error_code?: number;
+  parameters?: { retry_after?: number };
 };
+
+/** Error returned by the Bot API; `retryAfterSeconds` is set on 429 (flood control). */
+export class TelegramApiError extends Error {
+  constructor(
+    message: string,
+    readonly errorCode: number,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = 'TelegramApiError';
+  }
+}
 
 type Listener = (value: TelegramMessage | Error) => void | Promise<void>;
 
@@ -107,15 +120,44 @@ export class TelegramClient {
       }),
     });
 
-    const payload = (await response.json()) as TelegramResponse<TelegramMessage>;
-    if (!response.ok || !payload.ok || !payload.result) {
-      throw new Error(
-        `Telegram sendMessage failed (${payload.error_code ?? response.status}): ${
-          payload.description ?? 'unknown error'
-        }`,
-      );
+    return this.parseResult<TelegramMessage>('sendMessage', response);
+  }
+
+  /** Sends a file (e.g. a CSV export) as a document. */
+  async sendDocument(
+    chatId: number | string,
+    document: { filename: string; content: Buffer; mimeType: string },
+    options: { caption?: string } = {},
+  ): Promise<TelegramMessage> {
+    const form = new FormData();
+    form.append('chat_id', String(chatId));
+    form.append(
+      'document',
+      new Blob([new Uint8Array(document.content)], { type: document.mimeType }),
+      document.filename,
+    );
+    if (options.caption) {
+      form.append('caption', options.caption);
     }
 
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/sendDocument`, {
+      method: 'POST',
+      body: form,
+    });
+    return this.parseResult<TelegramMessage>('sendDocument', response);
+  }
+
+  private async parseResult<T>(method: string, response: Response): Promise<T> {
+    const payload = (await response.json()) as TelegramResponse<T>;
+    if (!response.ok || !payload.ok || !payload.result) {
+      throw new TelegramApiError(
+        `Telegram ${method} failed (${payload.error_code ?? response.status}): ${
+          payload.description ?? 'unknown error'
+        }`,
+        payload.error_code ?? response.status,
+        payload.parameters?.retry_after,
+      );
+    }
     return payload.result;
   }
 

@@ -361,6 +361,9 @@ export async function runHarness(args: {
       STORAGE_DRIVER: 'local',
       S3_REGION: 'eu-south-1',
       S3_FORCE_PATH_STYLE: false,
+      SCHEDULER_INTERVAL_MS: 60_000,
+      OUTBOX_DISPATCH_INTERVAL_MS: 5_000,
+      OUTBOX_MAX_ATTEMPTS: 8,
     },
     logger,
     {

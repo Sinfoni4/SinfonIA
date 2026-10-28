@@ -61,7 +61,7 @@ Non eseguito: `npm run ai:eval:nightly` (chiamate a pagamento al modello OpenAI 
 | :--- | :--- |
 | Multi-tenancy, autenticazione JWT, RBAC, audit log, macchina a stati, API pratiche, bot Telegram | 🟢 Funzionante |
 | Scheduler durevole (idempotenza, lock, export) | 🟢 Funzionante dopo le correzioni P0 |
-| Outbox | 🟡 Solo scrittura: nessun dispatcher consegna i messaggi |
+| Outbox | 🟢 Dispatcher con retry, dead letter e consegna su Telegram e webhook firmato (aggiornato 28/10/2026, Step 5; prima: 🟡 solo scrittura) |
 | Interprete LLM, fallback deterministico, richieste di chiarimento | 🟢 Funzionante, validato solo con stub |
 | Difesa prompt injection e minimizzazione PII | 🟡 Parziale: pattern limitati, nomi non pseudonimizzati |
 | Allegati e OCR | 🟢 OCR reale in-process su foto e PDF, upload multipart, limiti di formato e dimensione (aggiornato 28/10/2026; prima: 🔴 nessun OCR reale) |
@@ -123,13 +123,13 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 
 | Previsto | Stato reale |
 | :--- | :--- |
-| `outbox.dispatcher.ts` con retry esponenziale, dead-letter, consegna su Telegram/WhatsApp/webhook | ⚫ Assente: `outbox_message` viene scritta ma mai letta |
+| `outbox.dispatcher.ts` con retry esponenziale, dead-letter, consegna su Telegram/WhatsApp/webhook | ✅ Telegram e webhook (Step 5, 28/10/2026); WhatsApp con lo Step 7 |
 | Modello `compliance_deadline` e `src/core/compliance/` | ⚫ Assenti |
 | Job `CHECK_COMPLIANCE_DEADLINES` (avvisi a 30/15/7/1 giorni) | ⚫ Assente; lo scheduler gestisce un solo tipo di task (`EXPORT_PRACTICES`) |
 | Notifiche push all'utente | ⚫ Assenti |
 | `tests/compliance.scheduler.test.ts` | ⚫ Assente |
 
-Basi già pronte: scheduler idempotente con lock corretto (P0) e tabella outbox già popolata.
+Basi già pronte: scheduler idempotente con lock corretto (P0) e dispatcher dell'outbox (Step 5).
 
 ### 5.4 Fase 3D (Pilastro 3) — WhatsApp Business: **non iniziata**
 
@@ -266,6 +266,21 @@ Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture);
 - Consegna degli export schedulati oggi rimasti in `PENDING`.
 - Separare lo scheduler e il dispatcher dal DB watcher.
 - **Accettazione**: nessun messaggio consegnato due volte con due worker in parallelo; messaggio in dead-letter dopo N tentativi falliti.
+
+**Avanzamento al 28/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Dispatcher | ✅ | `src/core/outbox/outbox.dispatcher.ts` (in una cartella propria invece che in `scheduler/`). Presa in carico con `FOR UPDATE SKIP LOCKED` e lease di 5 minuti: un messaggio di un worker caduto torna disponibile alla scadenza; gli aggiornamenti tardivi del worker caduto vengono ignorati (il numero di tentativo fa da token) |
+| Retry e dead letter | ✅ | Backoff esponenziale 30 s → 1 h con jitter ±20%, rispetta `retry_after`/`Retry-After`; `DEAD_LETTER` dopo `OUTBOX_MAX_ATTEMPTS` (default 8) o subito per errori permanenti (chat inesistente, bot bloccato, 4xx del webhook). Messaggi senza destinatari o di tipo sconosciuto in dead letter, non persi in silenzio. `requeueDeadLetter` per rimetterli in coda |
+| Nessun doppio invio | ✅ | Ogni destinatario consegnato viene registrato (`delivered_targets`): un nuovo tentativo invia solo ai destinatari mancanti. Garanzia "almeno una volta" per destinatario; il webhook riceve un id stabile (`x-sinfonia-delivery`) per deduplicare |
+| Canale Telegram | ✅ | L'export arriva come file CSV a ogni ADMIN del tenant collegato a Telegram (`sendDocument`) |
+| Canale webhook | ✅ | URL per tenant (`tenant.webhook_url`), solo HTTPS in produzione, firma HMAC-SHA256 su timestamp + corpo, nessun redirect, timeout 10 s. Senza `OUTBOX_WEBHOOK_SECRET` i webhook vanno in dead letter invece di partire non firmati |
+| Export rimasti in `PENDING` | ✅ | La migrazione li rende subito consegnabili |
+| Worker separati dal DB watcher | ✅ | `src/runtime/runtime.workers.ts`: scheduler (`SCHEDULER_INTERVAL_MS`, default 60 s) e dispatcher (`OUTBOX_DISPATCH_INTERVAL_MS`, default 5 s) su intervalli propri, senza sovrapposizioni, fermi a circuito aperto, attesi allo shutdown |
+| Test | ✅ | 24 nuovi test (`tests/outbox.dispatcher.test.ts`, `tests/runtime.workers.test.ts`), suite completa 166/166. Il test con due dispatcher in parallelo fallisce se si toglie il lock di riga |
+| Prova con Telegram reale | ⏳ | I canali sono testati con client simulati; da verificare con il bot reale in staging |
+| API per configurare il webhook del tenant e per rivedere la dead letter | ⏳ | Oggi `webhook_url` si imposta sul database e i messaggi si rimettono in coda da codice; da esporre in un'API amministrativa |
 
 #### Step 6 — Scadenzario e notifiche (4 g) · Pilastro 2
 - Modello `compliance_deadline` (categorie `DURC`, `SICUREZZA_LAVORO`, `CERTIFICAZIONE_BIO`, `VISITA_MEDICA`, `PATENTINO`) e servizio in `src/core/compliance/`.
