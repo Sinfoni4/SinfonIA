@@ -302,6 +302,30 @@ Note: l'OCR è sincrono nella richiesta (0,3–3 s per documento sulle fixture);
 | Test | ✅ | 30 nuovi test (`tests/compliance.scheduler.test.ts`, `tests/compliance.test.ts`); suite completa 212/212. Il test di accettazione fallisce se si cambia la scelta della soglia |
 | Collegamento con l'OCR dei certificati | ⏳ | I certificati letti dall'OCR hanno già categoria e data di scadenza: si può proporre di registrarli come scadenza con un tocco |
 
+#### Prova con il bot Telegram reale (28/10/2026)
+
+Non esiste ancora un server di staging: la prova è stata fatta su un PC di sviluppo, con il bot reale, un database separato (`sinfonia_staging`) e un tenant di prova, scrivendo al bot da un telefono.
+
+| Controllo | Esito |
+| :--- | :---: |
+| Collegamento con codice invito (`/start <codice>`) | ✅ |
+| Creazione di una pratica da comando | ✅ |
+| Foto di un documento: download, OCR, associazione alla pratica, risposta | ✅ (documento classificato come generico e marcato da verificare: rientra nella prova OCR su documenti reali) |
+| Nuova scadenza da Telegram con promemoria immediato | ✅ |
+| Elenco delle scadenze | ✅ |
+| Export schedulato consegnato come file CSV | ✅ dopo la correzione |
+| Export senza pratiche | ✅ dopo la correzione |
+| Rimessa in coda di un messaggio in dead letter | ✅ dopo la correzione |
+
+Bug trovati e corretti (branch `fix/staging-findings`), ciascuno con un test di regressione:
+
+1. **Orari sfasati nel database**: con il server PostgreSQL impostato su un fuso diverso da UTC (qui `Europe/Berlin`) ogni orario scritto da Prisma era salvato spostato di un'ora (due con l'ora legale). Prisma rileggeva i valori nello stesso modo e l'errore restava nascosto; è emerso perché un messaggio rimesso in coda con `now()` risultava dovuto solo un'ora dopo. Corretto forzando le sessioni del database in UTC. **Dati già esistenti**: gli orari scritti prima della correzione su server non UTC restano spostati; su un database di produzione andrebbero riallineati prima del pilota.
+2. **Export vuoto rifiutato da Telegram** («file must be non-empty») e finito in dead letter: senza pratiche ora arriva un messaggio di testo.
+3. **Conferma della scadenza imprecisa**: prometteva sempre i promemoria a 30, 15, 7 e 1 giorno; ora elenca solo quelli che arriveranno davvero.
+4. **Log dei worker rumoroso**: una riga a ogni giro dello scheduler anche senza lavoro svolto; ora solo quando qualcosa viene eseguito.
+
+Da fare: un server di staging vero (oggi la prova dipende da un PC acceso) e la chiusura di una scadenza da Telegram, non ancora provata con il bot reale.
+
 #### Step 7 — Canale WhatsApp (6 g) · Pilastro 3
 - `src/interface/whatsapp/`: webhook Meta `GET` (challenge) e `POST` con verifica della firma `X-Hub-Signature-256`.
 - Tabella `whatsapp_identity` (telefono → utente → tenant) e collegamento con codice invito.

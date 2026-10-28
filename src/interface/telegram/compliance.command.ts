@@ -1,4 +1,8 @@
-import { formatItalianDate, parseIsoDate } from '../../core/compliance/compliance.dates.js';
+import {
+  formatItalianDate,
+  parseIsoDate,
+  REMINDER_THRESHOLDS,
+} from '../../core/compliance/compliance.dates.js';
 import { COMPLIANCE_CATEGORY_LABELS } from '../../core/compliance/compliance.service.js';
 import { ComplianceValidationError } from '../../core/errors/compliance.errors.js';
 import { NotFoundError } from '../../data/errors/errors.js';
@@ -18,6 +22,20 @@ function dueText(deadline: ComplianceDeadlineView): string {
   if (deadline.daysLeft === 0) return `${date} — oggi`;
   if (deadline.daysLeft === 1) return `${date} — domani`;
   return `${date} — tra ${deadline.daysLeft} giorni`;
+}
+
+/**
+ * The reminders still to come for a deadline `daysLeft` away (the one due now, if any, is sent
+ * right after registration), e.g. "a 1 giorno e il giorno della scadenza".
+ */
+export function upcomingRemindersText(daysLeft: number): string {
+  if (daysLeft <= 0) {
+    return 'La scadenza è già oggi o passata: ricevi subito un avviso.';
+  }
+  const days = REMINDER_THRESHOLDS.filter((t) => t > 0 && t < daysLeft).map((t) =>
+    t === 1 ? '1 giorno' : `${t} giorni`,
+  );
+  return `Promemoria: ${[...days, 'il giorno della scadenza'].join(', ').replace(/, ([^,]*)$/, ' e $1')}.`;
 }
 
 export function formatDeadlineList(deadlines: ComplianceDeadlineView[]): string {
@@ -78,7 +96,7 @@ export async function executeComplianceCommand(
         '✅ Scadenza registrata',
         `📌 ${created.title}`,
         `${COMPLIANCE_CATEGORY_LABELS[created.category]} · ${dueText(created)}`,
-        `Riceverai un promemoria a 30, 15, 7 e 1 giorno. Codice: ${created.shortId}`,
+        `${upcomingRemindersText(created.daysLeft)} Codice: ${created.shortId}`,
       ].join('\n');
     }
 

@@ -21,7 +21,10 @@ import { createPrismaClient } from '../src/data/db/prisma.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { buildServer } from '../src/interface/http/server.js';
-import { executeComplianceCommand } from '../src/interface/telegram/compliance.command.js';
+import {
+  executeComplianceCommand,
+  upcomingRemindersText,
+} from '../src/interface/telegram/compliance.command.js';
 import { createLogger } from '../src/shared/logger.js';
 
 import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
@@ -168,6 +171,17 @@ describe('compliance Telegram commands', () => {
     expect(complianceService.closeDeadline).toHaveBeenCalledWith(
       expect.objectContaining({ idOrPrefix: 'ab12cd34', closedBy: 'u-op' }),
     );
+  });
+
+  it.each([
+    [45, 'Promemoria: 30 giorni, 15 giorni, 7 giorni, 1 giorno e il giorno della scadenza.'],
+    [20, 'Promemoria: 15 giorni, 7 giorni, 1 giorno e il giorno della scadenza.'],
+    // Found in staging: with 5 days left the bot promised reminders at 30, 15 and 7 days.
+    [5, 'Promemoria: 1 giorno e il giorno della scadenza.'],
+    [1, 'Promemoria: il giorno della scadenza.'],
+    [0, 'La scadenza è già oggi o passata: ricevi subito un avviso.'],
+  ])('lists only the reminders still to come with %i days left', (daysLeft, text) => {
+    expect(upcomingRemindersText(daysLeft)).toBe(text);
   });
 
   it('formats reminders for each moment', () => {
