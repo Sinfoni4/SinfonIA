@@ -7,7 +7,10 @@ import { Pool } from 'pg';
 export function createPrismaClient(databaseUrl: string) {
   // Prisma v7: relational DB connections use driver adapters.
   // The composition root is responsible for loading/validating env config.
-  const pool = new Pool({ connectionString: databaseUrl });
+  // Sessions run in UTC. Prisma sends DateTime values as UTC wall-clock time without an offset, and
+  // the columns are timestamptz: on a server whose TimeZone is not UTC (e.g. Europe/Berlin)
+  // PostgreSQL would read them as local time and store every timestamp shifted by the offset.
+  const pool = new Pool({ connectionString: databaseUrl, options: '-c TimeZone=UTC' });
   const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
