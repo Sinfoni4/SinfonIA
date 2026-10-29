@@ -41,7 +41,8 @@
     "env:check": "tsx scripts/env.check.ts",
     "auth:token": "tsx scripts/auth.token.ts",
     "tenant:provision": "tsx scripts/tenant.provision.ts",
-    "ocr:accuracy": "tsx scripts/ocr-accuracy.ts"
+    "ocr:accuracy": "tsx scripts/ocr-accuracy.ts",
+    "ocr:samples": "tsx scripts/generate-ocr-pdf-samples.ts"
   },
   "keywords": [],
   "author": "",

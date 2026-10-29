@@ -1,11 +1,11 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
-import { createWorker, OEM, type Worker } from 'tesseract.js';
+import { createWorker, OEM, PSM, type Worker } from 'tesseract.js';
 
-import { WorkerPdfExtractor } from './pdf-worker.js';
+import { DocumentWorker } from './document-worker.js';
 
-import type { PdfExtractor } from './pdf-worker.js';
+import type { ImagePreprocessor, PdfExtractor } from './document-worker.js';
 
 /**
  * Text extraction layer of the Document AI pipeline.
@@ -26,15 +26,25 @@ export interface TextExtractionResult {
   pages: number;
   /** Mean OCR confidence 0-100; undefined when no OCR was needed. */
   confidence?: number;
+  /** True when the text comes from the preprocessed second read of a photo. */
+  preprocessed?: boolean;
 }
 
+/** `block` reads the image as one uniform block of text, which suits receipts and slips. */
+export type OcrLayout = 'auto' | 'block';
+
 export interface OcrEngine {
-  recognize(image: Buffer): Promise<{ text: string; confidence: number }>;
+  recognize(
+    image: Buffer,
+    options?: { layout?: OcrLayout },
+  ): Promise<{ text: string; confidence: number }>;
   terminate(): Promise<void>;
 }
 
 // A PDF text layer shorter than this is treated as a scanned document.
 const MIN_PDF_TEXT_CHARS = 30;
+// Below this OCR confidence a photo is read a second time, preprocessed.
+const SECOND_READ_CONFIDENCE = 70;
 
 /**
  * Detects the real file type from its magic bytes. The declared MIME type is never trusted.
@@ -75,6 +85,10 @@ function isLikelyText(content: Buffer): boolean {
 /** Tesseract engine with a lazily created, reused worker and the bundled Italian model. */
 export class TesseractOcrEngine implements OcrEngine {
   private worker: Promise<Worker> | null = null;
+  private layout: OcrLayout = 'auto';
+  // The layout is a worker-wide parameter: calls are serialized so that a read never runs with
+  // the layout set by a concurrent one.
+  private queue: Promise<unknown> = Promise.resolve();
 
   private getWorker(): Promise<Worker> {
     if (!this.worker) {
@@ -95,16 +109,31 @@ export class TesseractOcrEngine implements OcrEngine {
     return this.worker;
   }
 
-  async recognize(image: Buffer): Promise<{ text: string; confidence: number }> {
-    const worker = await this.getWorker();
-    const { data } = await worker.recognize(image);
-    return { text: data.text, confidence: data.confidence };
+  recognize(
+    image: Buffer,
+    options: { layout?: OcrLayout } = {},
+  ): Promise<{ text: string; confidence: number }> {
+    const run = this.queue.then(async () => {
+      const worker = await this.getWorker();
+      const layout = options.layout ?? 'auto';
+      if (layout !== this.layout) {
+        await worker.setParameters({
+          tessedit_pageseg_mode: layout === 'block' ? PSM.SINGLE_BLOCK : PSM.AUTO,
+        });
+        this.layout = layout;
+      }
+      const { data } = await worker.recognize(image);
+      return { text: data.text, confidence: data.confidence };
+    });
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 
   async terminate(): Promise<void> {
     if (!this.worker) return;
     const worker = await this.worker;
     this.worker = null;
+    this.layout = 'auto';
     await worker.terminate();
   }
 }
@@ -113,17 +142,33 @@ export interface TextExtractorOptions {
   ocrEngine: OcrEngine;
   /** Maximum number of scanned PDF pages sent to OCR. */
   maxOcrPdfPages?: number;
-  /** PDF parsing and rendering, off the main thread by default. */
-  pdfExtractor?: PdfExtractor;
+  /** PDF parsing, page rendering and image preprocessing, off the main thread by default. */
+  documentWorker?: PdfExtractor & ImagePreprocessor;
+}
+
+// Values a business document is read for: dates, 11-digit VAT numbers, amounts with decimals.
+const KEY_FACT_PATTERNS = [
+  /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g,
+  /\b\d{11}\b/g,
+  /\b\d{1,3}(?:[.\s]?\d{3})*,\d{2}\b/g,
+];
+
+/** How useful an OCR read is: key facts found first, then the engine's confidence. */
+export function scoreOcrRead(read: { text: string; confidence: number }): number {
+  const facts = KEY_FACT_PATTERNS.reduce(
+    (count, pattern) => count + (read.text.match(pattern)?.length ?? 0),
+    0,
+  );
+  return facts * 100 + read.confidence;
 }
 
 export class DocumentTextExtractor {
   private readonly maxOcrPdfPages: number;
-  private readonly pdfExtractor: PdfExtractor;
+  private readonly documentWorker: PdfExtractor & ImagePreprocessor;
 
   constructor(private readonly options: TextExtractorOptions) {
     this.maxOcrPdfPages = options.maxOcrPdfPages ?? 5;
-    this.pdfExtractor = options.pdfExtractor ?? new WorkerPdfExtractor();
+    this.documentWorker = options.documentWorker ?? new DocumentWorker();
   }
 
   async extract(content: Buffer, kind: DetectedFileKind): Promise<TextExtractionResult> {
@@ -132,17 +177,38 @@ export class DocumentTextExtractor {
         return { text: content.toString('utf-8'), source: 'plain_text', pages: 1 };
       case 'jpeg':
       case 'png':
-      case 'webp': {
-        const ocr = await this.options.ocrEngine.recognize(content);
-        return { text: ocr.text, source: 'ocr_image', pages: 1, confidence: ocr.confidence };
-      }
+      case 'webp':
+        return this.extractImage(content);
       case 'pdf':
         return this.extractPdf(content);
     }
   }
 
+  /**
+   * Photos are read as they are; a weak read (low confidence) is followed by a second one on a
+   * preprocessed copy (enlarged, adaptive threshold, single text block), and the more useful of
+   * the two is kept. A good photo costs one read, a poor one never ends up worse than before.
+   */
+  private async extractImage(content: Buffer): Promise<TextExtractionResult> {
+    const first = await this.options.ocrEngine.recognize(content);
+    if (first.confidence >= SECOND_READ_CONFIDENCE) {
+      return { text: first.text, source: 'ocr_image', pages: 1, confidence: first.confidence };
+    }
+
+    const cleaned = await this.documentWorker.preprocess(content);
+    const second = await this.options.ocrEngine.recognize(cleaned, { layout: 'block' });
+    const best = scoreOcrRead(second) > scoreOcrRead(first) ? second : first;
+    return {
+      text: best.text,
+      source: 'ocr_image',
+      pages: 1,
+      confidence: best.confidence,
+      ...(best === second ? { preprocessed: true } : {}),
+    };
+  }
+
   private async extractPdf(content: Buffer): Promise<TextExtractionResult> {
-    const pdf = await this.pdfExtractor.extract(content, {
+    const pdf = await this.documentWorker.extract(content, {
       maxPages: this.maxOcrPdfPages,
       minTextChars: MIN_PDF_TEXT_CHARS,
     });
@@ -164,8 +230,8 @@ export class DocumentTextExtractor {
     return { text: texts.join('\n'), source: 'ocr_pdf', pages: pdf.totalPages, confidence };
   }
 
-  /** Stops the PDF worker; the OCR engine is owned and terminated by the caller. */
+  /** Stops the document worker; the OCR engine is owned and terminated by the caller. */
   async terminate(): Promise<void> {
-    await this.pdfExtractor.terminate();
+    await this.documentWorker.terminate();
   }
 }

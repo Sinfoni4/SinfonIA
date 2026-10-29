@@ -35,7 +35,8 @@ export const InvoiceOcrSchema = ResultBaseSchema.extend({
   taxableAmount: z.number().nonnegative().nullable(),
   vatRate: z.number().nonnegative().nullable(),
   vatAmount: z.number().nonnegative().nullable(),
-  totalAmount: z.number().positive().nullable(),
+  // Zero is valid (non-fiscal slips, free items) and flagged for review by the parser.
+  totalAmount: z.number().nonnegative().nullable(),
   currency: z.string().default('EUR'),
   items: z.array(InvoiceItemSchema).default([]),
 });
@@ -64,7 +65,8 @@ export const ReceiptOcrSchema = ResultBaseSchema.extend({
   merchantName: z.string().min(1).nullable(),
   merchantVat: z.string().min(8).nullable(),
   documentDate: IsoDateSchema.nullable(),
-  totalAmount: z.number().positive().nullable(),
+  // Zero is valid (non-fiscal slips, free items) and flagged for review by the parser.
+  totalAmount: z.number().nonnegative().nullable(),
   vatAmount: z.number().nonnegative().optional(),
   currency: z.string().default('EUR'),
 });
