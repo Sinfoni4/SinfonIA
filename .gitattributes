@@ -1,0 +1,9 @@
+# LF in the repository and in every working copy, whatever the local git settings
+# (core.autocrlf on Windows turned files into CRLF, which Prettier reports locally).
+* text=auto eol=lf
+
+# Binary files are never converted.
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.pdf binary
