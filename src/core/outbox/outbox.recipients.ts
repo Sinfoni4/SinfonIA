@@ -1,4 +1,5 @@
-import { chatRecipients } from '../identity/membership.service.js';
+import { AuditService } from '../../data/services/audit.service.js';
+import { chatRecipients, scheduledExportRecipients } from '../identity/membership.service.js';
 
 import { DeliveryError } from './outbox.delivery.js';
 
@@ -82,7 +83,7 @@ export async function whatsappDeliveries(
  * Messages of a suspended or deactivated organization are held (retried later) instead of being
  * delivered or dropped: if it is reactivated in time they go out (MF5).
  */
-async function heldForInactiveOrganization(
+export async function heldForInactiveOrganization(
   prisma: PrismaLike,
   tenantId: string,
 ): Promise<OutboxDelivery[] | null> {
@@ -151,4 +152,70 @@ export async function webhookDeliveries(
             ),
     },
   ];
+}
+
+/**
+ * Records a completed delivery of an export (D5, D5b): who received it, through which channel,
+ * which outbox message, how many rows; never the content. A failure to record does not fail the
+ * delivery, which would send the file again: the outbox keeps the delivered target anyway.
+ */
+export async function auditExportDelivery(
+  prisma: PrismaLike,
+  message: ClaimedOutboxMessage,
+  delivery: { channel: string; recipientUserId?: string; rows: number },
+): Promise<void> {
+  try {
+    await new AuditService(prisma).logEvent({
+      tenantId: message.tenantId,
+      userId: null,
+      eventType: 'EXPORT_DELIVERED',
+      payload: {
+        channel: delivery.channel,
+        ...(delivery.recipientUserId ? { recipientUserId: delivery.recipientUserId } : {}),
+        outboxMessageId: message.id,
+        rows: delivery.rows,
+      },
+    });
+  } catch {
+    // See above: the outbox record of the delivered target remains.
+  }
+}
+
+/** Telegram and WhatsApp deliveries of the scheduled export to the ADMINs who chose it. */
+export async function scheduledExportDeliveries(
+  prisma: PrismaLike,
+  message: ClaimedOutboxMessage,
+  channels: OutboxChannels,
+  send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
+  rows: number,
+): Promise<OutboxDelivery[]> {
+  const held = await heldForInactiveOrganization(prisma, message.tenantId);
+  if (held) return held;
+  const deliveries: OutboxDelivery[] = [];
+  for (const [prefix, channel, notifier, missing] of [
+    [
+      'telegram',
+      'TELEGRAM',
+      channels.telegram,
+      'Bot Telegram non configurato (TELEGRAM_BOT_TOKEN)',
+    ],
+    ['whatsapp', 'WHATSAPP', channels.whatsapp, 'WhatsApp non configurato (WHATSAPP_ACCESS_TOKEN)'],
+  ] as const) {
+    for (const r of await scheduledExportRecipients(prisma, message.tenantId, channel)) {
+      deliveries.push({
+        target: `${prefix}:${r.externalId}`,
+        send: notifier
+          ? async () => {
+              await send(notifier, r.externalId);
+              await auditExportDelivery(prisma, message, {
+                channel: prefix,
+                recipientUserId: r.userId,
+                rows,
+              });
+            }
+          : () => Promise.reject(new DeliveryError(missing, { permanent: false })),
+      });
+    }
+  }
+  return deliveries;
 }

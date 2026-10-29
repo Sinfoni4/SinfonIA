@@ -1,4 +1,8 @@
-import { chatDeliveries, webhookDeliveries } from './outbox.recipients.js';
+import {
+  auditExportDelivery,
+  scheduledExportDeliveries,
+  webhookDeliveries,
+} from './outbox.recipients.js';
 
 import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
@@ -19,8 +23,8 @@ function exportFilename(payload: ExportPayload, createdAt: Date): string {
 }
 
 /**
- * Scheduled practice exports go to every tenant ADMIN linked to Telegram (as a CSV file) and to the
- * tenant webhook, if one is configured.
+ * Scheduled practice exports go, as a CSV file in chat, only to the ADMINs who chose to receive
+ * them (D5b option b), and to the tenant webhook, if one is configured. Every delivery is audited.
  */
 export class PracticeExportHandler implements OutboxEventHandler {
   readonly eventType = PRACTICE_EXPORT_GENERATED;
@@ -42,13 +46,30 @@ export class PracticeExportHandler implements OutboxEventHandler {
     // Telegram rejects empty files ("file must be non-empty"): with no practices, say so in text.
     const hasRows = (payload.csv ?? '').length > 0;
 
+    const rows = payload.practiceCount ?? 0;
+    const webhook = await webhookDeliveries(this.prisma, message, this.channels.webhook, payload);
     return [
-      ...(await chatDeliveries(this.prisma, message.tenantId, this.channels, (telegram, chatId) =>
-        hasRows
-          ? telegram.sendDocument(chatId, document, caption)
-          : telegram.sendMessage(chatId, `${caption}\nNessuna pratica nel periodo.`),
+      ...(await scheduledExportDeliveries(
+        this.prisma,
+        message,
+        this.channels,
+        (notifier, chatId) =>
+          hasRows
+            ? notifier.sendDocument(chatId, document, caption)
+            : notifier.sendMessage(chatId, `${caption}\nNessuna pratica nel periodo.`),
+        rows,
       )),
-      ...(await webhookDeliveries(this.prisma, message, this.channels.webhook, payload)),
+      ...webhook.map((delivery) =>
+        delivery.target === 'webhook'
+          ? {
+              ...delivery,
+              send: async () => {
+                await delivery.send();
+                await auditExportDelivery(this.prisma, message, { channel: 'webhook', rows });
+              },
+            }
+          : delivery,
+      ),
     ];
   }
 }

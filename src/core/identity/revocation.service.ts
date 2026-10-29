@@ -117,6 +117,9 @@ export async function revokeMembership(
         revokedAt: new Date(),
         revokedBy: actor.userId,
         revocationReason: reason?.slice(0, 500) ?? null,
+        // Nothing granted before comes back with a reactivation (D5, D5b).
+        extraPermissions: [],
+        scheduledExportSince: null,
       },
     });
     await new AuditService(tx).logEvent({
@@ -164,6 +167,8 @@ export async function listMembers(prisma: PrismaClient, orgId: string) {
       status: true,
       createdAt: true,
       revokedAt: true,
+      extraPermissions: true,
+      scheduledExportSince: true,
       user: { select: { email: true, status: true } },
     },
   });
@@ -176,5 +181,7 @@ export async function listMembers(prisma: PrismaClient, orgId: string) {
     email: r.user.email.endsWith('@local.invalid') ? null : r.user.email,
     since: r.createdAt,
     revokedAt: r.revokedAt,
+    extraPermissions: r.extraPermissions,
+    receivesScheduledExport: r.scheduledExportSince !== null,
   }));
 }

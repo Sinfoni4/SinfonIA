@@ -114,7 +114,9 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
           const detCommand = parsePracticeCommand(validation.value);
 
           if (detCommand && deps.practiceService) {
-            const detResult = await deps.practiceService.executeCommand(detCommand, auth);
+            const detResult = await deps.practiceService.executeCommand(detCommand, auth, {
+              channel: 'api',
+            });
 
             const latencyMs = Math.round(performance.now() - startTime);
             const trace: AITraceRecord = {

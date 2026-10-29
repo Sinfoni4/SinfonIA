@@ -20,7 +20,7 @@ type Expected = 'tenant' | 'own' | 'denied';
 const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
   'practice.create': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'practice.read': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
-  'practice.export': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
+  'practice.export': { ADMIN: 'tenant', OPERATOR: 'own', MEMBER: 'own' },
   'practice.transition': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'denied' },
   'practice.delete': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'attachment.create': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
@@ -69,5 +69,23 @@ describe('permission matrix', () => {
   // Decisions still open: the expectations above describe today's behaviour for these cases.
   // C2 is decided and covered by tests/mf2b.chat-view.test.ts.
   it.todo('C3: deletion only by ORG_ADMIN, with confirmation, per rules R1-R13 (§3.5)');
-  it.todo('D5: OPERATOR exports the whole organization only with an extra permission (§3.3)');
+  // D5 (approved): an ADMIN can widen the export of an OPERATOR, and nothing else.
+  it('widens only the grantable scopes, only for the allowed roles', () => {
+    const extra = (role: UserRole, extraPermissions: string[]) => ({
+      ...principal(role),
+      extraPermissions,
+    });
+    expect(authorize(extra('OPERATOR', ['practice.export:tenant']), 'practice.export').scope).toBe(
+      'tenant',
+    );
+    expect(authorize(extra('MEMBER', ['practice.export:tenant']), 'practice.export').scope).toBe(
+      'own',
+    );
+    expect(authorize(extra('OPERATOR', ['practice.delete:tenant']), 'practice.delete').scope).toBe(
+      'own',
+    );
+    expect(() => authorize(extra('MEMBER', ['audit.read:tenant']), 'audit.read')).toThrow(
+      /PERMISSION_DENIED/,
+    );
+  });
 });

@@ -1,6 +1,12 @@
 import { poolOf } from '../../data/db/prisma.js';
 
-import { ROLE_PERMISSIONS, type Permission, type PermissionScope } from './permissions.js';
+import {
+  GRANTABLE_TENANT_SCOPES,
+  ROLE_PERMISSIONS,
+  tenantScopeKey,
+  type Permission,
+  type PermissionScope,
+} from './permissions.js';
 
 import type { PrismaClient, UserRole } from '@prisma/client';
 
@@ -9,13 +15,15 @@ export type Principal = {
   tenantId: string;
   userId: string;
   role: UserRole;
+  /** Extra scopes granted by an ORG_ADMIN on the membership (D5), e.g. `practice.export:tenant`. */
+  extraPermissions?: readonly string[];
 };
 
 export type Grant = { principal: Principal; permission: Permission; scope: PermissionScope };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const MEMBERSHIP_SQL = `SELECT m."role" FROM "membership" m
+const MEMBERSHIP_SQL = `SELECT m."role", m."extra_permissions" FROM "membership" m
    JOIN "user" u ON u."id" = m."user_id"
    JOIN "tenant" t ON t."id" = m."org_id"
   WHERE m."user_id" = $1 AND m."org_id" = $2 AND m."status" = 'ACTIVE'
@@ -35,9 +43,14 @@ export function can(role: UserRole, permission: Permission): boolean {
 
 /** Grants the permission with its scope, or throws PermissionDeniedError. */
 export function authorize(principal: Principal, permission: Permission): Grant {
-  const scope = ROLE_PERMISSIONS[principal.role][permission];
-  if (!scope) throw new PermissionDeniedError(permission);
-  return { principal, permission, scope };
+  const base = ROLE_PERMISSIONS[principal.role][permission];
+  if (!base) throw new PermissionDeniedError(permission);
+  // An extra scope widens "own" to the organization only where the catalog allows it for the role.
+  const widened =
+    base === 'own' &&
+    GRANTABLE_TENANT_SCOPES[permission]?.includes(principal.role) === true &&
+    principal.extraPermissions?.includes(tenantScopeKey(permission)) === true;
+  return { principal, permission, scope: widened ? 'tenant' : base };
 }
 
 /**
@@ -73,7 +86,7 @@ export function createPrismaPrincipalResolver(
     ? async (userId: string, tenantId: string, authVersion: number, sessionId?: string) => {
         // One query (unique index on user_id, org_id): membership, statuses, token version and,
         // when present, the session.
-        const { rows } = await pool.query<{ role: UserRole }>(
+        const { rows } = await pool.query<{ role: UserRole; extra_permissions: string[] }>(
           sessionId
             ? {
                 name: 'authz_membership_session',
@@ -89,38 +102,39 @@ export function createPrismaPrincipalResolver(
                 values: [userId, tenantId, authVersion],
               },
         );
-        return rows[0]?.role ?? null;
+        const row = rows[0];
+        return row ? { role: row.role, extraPermissions: row.extra_permissions } : null;
       }
-    : async (userId: string, tenantId: string, authVersion: number, sessionId?: string) =>
-        (
-          await prisma.membership.findFirst({
-            where: {
-              userId,
-              orgId: tenantId,
+    : async (userId: string, tenantId: string, authVersion: number, sessionId?: string) => {
+        const row = await prisma.membership.findFirst({
+          where: {
+            userId,
+            orgId: tenantId,
+            status: 'ACTIVE',
+            user: {
               status: 'ACTIVE',
-              user: {
-                status: 'ACTIVE',
-                authVersion,
-                ...(sessionId
-                  ? {
-                      sessions: {
-                        some: { id: sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
-                      },
-                    }
-                  : {}),
-              },
-              org: { status: 'ACTIVE' },
+              authVersion,
+              ...(sessionId
+                ? {
+                    sessions: {
+                      some: { id: sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
+                    },
+                  }
+                : {}),
             },
-            select: { role: true },
-          })
-        )?.role ?? null;
+            org: { status: 'ACTIVE' },
+          },
+          select: { role: true, extraPermissions: true },
+        });
+        return row ? { role: row.role, extraPermissions: row.extraPermissions } : null;
+      };
 
   return async ({ tenantId, userId, authVersion = 0, sessionId }) => {
     // The role of the ACTIVE membership in the token's organization (MF4); a suspended person or
     // organization, or a revoked membership, gives no access.
     if (!UUID.test(userId) || !UUID.test(tenantId)) return null;
     if (sessionId !== undefined && !UUID.test(sessionId)) return null;
-    const role = await find(userId, tenantId, authVersion, sessionId);
-    return role ? { tenantId, userId, role } : null;
+    const found = await find(userId, tenantId, authVersion, sessionId);
+    return found ? { tenantId, userId, ...found } : null;
   };
 }

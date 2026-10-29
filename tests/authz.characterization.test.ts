@@ -200,7 +200,8 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
       }
     });
 
-    it('exports the tenant for ADMIN and OPERATOR, only own practices for MEMBER', async () => {
+    // D5 (approved): OPERATOR exports its own practices unless an ADMIN grants the organization.
+    it('exports the tenant for ADMIN, only own practices for OPERATOR and MEMBER', async () => {
       const count = async (key: 'admin' | 'operator' | 'member') =>
         (
           await app.inject({
@@ -211,7 +212,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
           })
         ).json<{ data: { count: number } }>().data.count;
       expect(await count('admin')).toBeGreaterThanOrEqual(4);
-      expect(await count('operator')).toBe(await count('admin'));
+      expect(await count('operator')).toBe(1);
       expect(await count('member')).toBe(1);
     });
 

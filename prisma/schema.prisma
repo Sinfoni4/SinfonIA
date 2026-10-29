@@ -432,19 +432,21 @@ enum MembershipStatus {
 
 /// A person's role in one organization: the same person can belong to several.
 model Membership {
-  id               String           @id @default(uuid()) @db.Uuid
-  userId           String           @map("user_id") @db.Uuid
-  orgId            String           @map("org_id") @db.Uuid
-  role             UserRole
-  status           MembershipStatus @default(ACTIVE)
+  id                   String           @id @default(uuid()) @db.Uuid
+  userId               String           @map("user_id") @db.Uuid
+  orgId                String           @map("org_id") @db.Uuid
+  role                 UserRole
+  status               MembershipStatus @default(ACTIVE)
   /// Explicit extra permissions granted by an ORG_ADMIN (e.g. organization-wide export).
-  extraPermissions String[]         @default([]) @map("extra_permissions")
-  invitedBy        String?          @map("invited_by") @db.Uuid
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at")
-  revokedAt        DateTime?        @map("revoked_at")
-  revokedBy        String?          @map("revoked_by") @db.Uuid
-  revocationReason String?          @map("revocation_reason")
+  extraPermissions     String[]         @default([]) @map("extra_permissions")
+  invitedBy            String?          @map("invited_by") @db.Uuid
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at")
+  revokedAt            DateTime?        @map("revoked_at")
+  revokedBy            String?          @map("revoked_by") @db.Uuid
+  revocationReason     String?          @map("revocation_reason")
+  /// Since when this ADMIN chose to receive the scheduled export in chat (D5b option b); null = no.
+  scheduledExportSince DateTime?        @map("scheduled_export_since")
 
   user User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   org  Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)

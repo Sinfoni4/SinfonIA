@@ -25,7 +25,7 @@ export function requireAuthContext(req: FastifyRequest): AuthContext {
 }
 
 export function requirePrincipal(req: FastifyRequest): Principal {
-  return requireAuthContext(req);
+  return { ...requireAuthContext(req), extraPermissions: getRequestContext(req)?.extraPermissions };
 }
 
 /** Grants the permission to the authenticated caller, or throws PermissionDeniedError (403). */

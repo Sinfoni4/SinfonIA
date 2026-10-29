@@ -4,8 +4,8 @@ import type { UserRole } from '@prisma/client';
  * Permission catalog: the only place that says what each role may do.
  *
  * It mirrors the behaviour before the central authorization service
- * (tests/authz.characterization.test.ts). Rules still to be decided are marked:
- * C2 (default view in chat) and C3 (deletion), see docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md.
+ * (tests/authz.characterization.test.ts), with the approved changes C2 (chat view) and D5
+ * (exports). C3 (deletion) is still to be decided, see docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md.
  */
 
 export const PERMISSIONS = [
@@ -49,7 +49,8 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
 
 export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, PermissionScope>>> = {
   ADMIN: { ...STAFF, 'audit.read': 'tenant', 'members.read': 'tenant', 'members.manage': 'tenant' },
-  OPERATOR: STAFF,
+  // D5: an OPERATOR exports its own practices; the organization only with an extra permission.
+  OPERATOR: { ...STAFF, 'practice.export': 'own' },
   MEMBER: {
     'practice.create': 'own',
     'practice.read': 'own',
@@ -61,3 +62,15 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
     'compliance.read': 'own',
   },
 };
+
+/**
+ * Organization-wide scopes an ORG_ADMIN may grant on top of a role (membership.extra_permissions,
+ * stored as `<permission>:tenant`), and to which roles. Nothing else can be widened.
+ */
+export const GRANTABLE_TENANT_SCOPES: Partial<Record<Permission, readonly UserRole[]>> = {
+  'practice.export': ['OPERATOR'],
+};
+
+export function tenantScopeKey(permission: Permission): string {
+  return `${permission}:tenant`;
+}

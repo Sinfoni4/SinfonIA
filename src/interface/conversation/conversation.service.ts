@@ -1,6 +1,7 @@
 import { can } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
+import { MemberAccessError } from '../../core/identity/member-access.service.js';
 import {
   OrganizationChoiceRequiredError,
   type MembershipOption,
@@ -89,6 +90,8 @@ export type ConversationDeps = {
   };
   complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
   handleMessage: (input: string, identity: ConversationIdentity) => Promise<string>;
+  /** Turns the scheduled export in chat on or off for the person (D5b); returns whether it changed. */
+  scheduledExport?: (orgId: string, userId: string, enabled: boolean) => Promise<boolean>;
   /** Defaults to process memory; production passes the database one. */
   memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
@@ -126,6 +129,7 @@ export const TELEGRAM_COMPRESSED_PHOTO_TIP =
   'Foto: Telegram comprime le foto.';
 
 const LINK_COMMAND = /^\/?start\s+(\S+)/i;
+const SCHEDULED_EXPORT_COMMAND = /^(attiva|disattiva)\s+export\s+pianificato$/i;
 const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -403,11 +407,11 @@ export class ConversationService {
             nextState: pendingTransition.nextState,
           },
         };
-        const result = await deps.practiceService.executeCommand(confirmed, {
-          tenantId: tenant.id,
-          userId: dbUser.id,
-          role: dbUser.role,
-        });
+        const result = await deps.practiceService.executeCommand(
+          confirmed,
+          { tenantId: tenant.id, userId: dbUser.id, role: dbUser.role },
+          { channel: this.channel.name },
+        );
         await reply(formatPracticeCommandResult(result));
         return;
       }
@@ -417,6 +421,29 @@ export class ConversationService {
       }
       await reply('Ok, operazione annullata.');
       if (!parsePracticeCommand(trimmed) && !parseComplianceCommand(trimmed)) return;
+    }
+
+    const scheduledExport = SCHEDULED_EXPORT_COMMAND.exec(trimmed);
+    if (scheduledExport && deps.scheduledExport) {
+      const enabled = scheduledExport[1].toLowerCase() === 'attiva';
+      try {
+        const changed = await deps.scheduledExport(tenant.id, dbUser.id, enabled);
+        await reply(
+          enabled
+            ? changed
+              ? "✅ Riceverai qui l'export pianificato delle pratiche dell'azienda.\n" +
+                '⚠️ Il file resterà nella cronologia di questa chat e sul telefono. ' +
+                'Per smettere scrivi «disattiva export pianificato».'
+              : "Ricevi già l'export pianificato."
+            : changed
+              ? "Ok, non riceverai più l'export pianificato."
+              : "Non ricevevi l'export pianificato.",
+        );
+      } catch (err: unknown) {
+        if (!(err instanceof MemberAccessError)) throw err;
+        await reply("🔒 Solo gli amministratori possono ricevere l'export pianificato.");
+      }
+      return;
     }
 
     const complianceCommand = deps.complianceService ? parseComplianceCommand(trimmed) : null;
@@ -435,11 +462,11 @@ export class ConversationService {
     const command = parsePracticeCommand(trimmed);
     if (command) {
       // C2: the caller's own practices by default; the organization only with explicit commands.
-      const result = await deps.practiceService.executeCommand(command, {
-        tenantId: tenant.id,
-        userId: dbUser.id,
-        role: dbUser.role,
-      });
+      const result = await deps.practiceService.executeCommand(
+        command,
+        { tenantId: tenant.id, userId: dbUser.id, role: dbUser.role },
+        { channel: this.channel.name },
+      );
       if (result.type === 'confirm_transition') {
         this.pendingTransitions.set(dbUser.id, {
           tenantId: tenant.id,
