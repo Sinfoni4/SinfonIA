@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { applyRoles, roleNames } from '../scripts/db/roles.js';
 import { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
-import { createPrismaClient } from '../src/data/db/prisma.js';
+import { createPrismaClient, poolOf } from '../src/data/db/prisma.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../src/data/repositories/user.repository.js';
 
@@ -134,6 +134,8 @@ describe.runIf(enabled)('database roles (MF1)', () => {
       expect(moved.status).toBe('VALIDATED');
     } finally {
       await prisma.$disconnect();
+      // The pool is ours (adapter-pg does not end it): no connection left when the database is dropped.
+      await poolOf(prisma)?.end();
     }
   });
 
