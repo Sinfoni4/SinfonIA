@@ -14,7 +14,7 @@ import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 
@@ -61,6 +61,7 @@ describe('e2e ai execute', () => {
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
+      principals: testPrincipals(),
       practiceService,
       interpreterService,
       executorService,
@@ -115,6 +116,7 @@ describe('e2e ai execute', () => {
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
+      principals: testPrincipals(),
       practiceService,
       interpreterService,
       executorService,
@@ -187,6 +189,7 @@ describe('e2e ai execute', () => {
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
+      principals: testPrincipals(),
       practiceService,
       interpreterService,
       executorService,

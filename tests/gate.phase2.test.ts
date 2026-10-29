@@ -15,7 +15,7 @@ import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 
@@ -189,6 +189,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
+      principals: testPrincipals(),
       practiceService,
       interpreterService,
       executorService,
@@ -226,6 +227,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
       const tgResult = await practiceService.executeCommand(tgCommand!, {
         tenantId: tenant.id,
         userId: user.id,
+        role: user.role,
       });
       expect(tgResult.type).toBe('created');
       const tgPractice = (
@@ -252,6 +254,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
       const tgStatusResult = await practiceService.executeCommand(tgStatusCmd!, {
         tenantId: tenant.id,
         userId: user.id,
+        role: user.role,
       });
       expect(tgStatusResult.type).toBe('status');
       if (tgStatusResult.type === 'status') {
@@ -272,6 +275,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
       const tgExportResult = await practiceService.executeCommand(tgExportCmd!, {
         tenantId: tenant.id,
         userId: user.id,
+        role: user.role,
       });
       expect(tgExportResult.type).toBe('export');
       if (tgExportResult.type === 'export') {

@@ -25,14 +25,3 @@ export type AuthConfig = {
   audience: string;
   defaultTtlSeconds: number;
 };
-
-export const AUTH_ROLES = {
-  PRACTICE_READ: ['ADMIN', 'OPERATOR', 'MEMBER'] as const,
-  PRACTICE_CREATE: ['ADMIN', 'OPERATOR', 'MEMBER'] as const,
-  PRACTICE_EXPORT: ['ADMIN', 'OPERATOR', 'MEMBER'] as const,
-  PRACTICE_TRANSITION: ['ADMIN', 'OPERATOR'] as const,
-  AI_EXECUTE: ['ADMIN', 'OPERATOR', 'MEMBER'] as const,
-  AUDIT_READ: ['ADMIN'] as const,
-  COMPLIANCE_READ: ['ADMIN', 'OPERATOR', 'MEMBER'] as const,
-  COMPLIANCE_MANAGE: ['ADMIN', 'OPERATOR'] as const,
-} satisfies Record<string, readonly AuthRole[]>;

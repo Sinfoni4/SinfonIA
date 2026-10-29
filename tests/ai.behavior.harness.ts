@@ -27,7 +27,7 @@ import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
 import { AI_BEHAVIOR_SCENARIOS, type ScenarioCategory } from './ai.behavior.scenarios.js';
-import { authHeaders, TEST_AUTH_SECRET } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_SECRET, testPrincipals } from './helpers/auth.js';
 
 import type { InterpreterOutput } from '../src/ai/interpreter/interpreter.types.js';
 
@@ -326,6 +326,7 @@ async function main(): Promise<void> {
       },
       logger,
       {
+        principals: testPrincipals(),
         practiceService,
         interpreterService: interpreter,
         executorService: executor,

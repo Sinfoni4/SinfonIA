@@ -31,7 +31,7 @@ import { buildServer } from '../src/interface/http/server.js';
 import { TelegramAdapter } from '../src/interface/telegram/telegram.adapter.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 import type { PrismaClient, UserRole } from '@prisma/client';
@@ -118,6 +118,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
       ...TEST_AUTH_ENV,
     });
     app = buildServer(config, createLogger(config), {
+      principals: testPrincipals(prisma),
       practiceService,
       complianceService,
       interpreterService: new InterpreterService(llm),

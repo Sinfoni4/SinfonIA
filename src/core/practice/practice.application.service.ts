@@ -6,6 +6,7 @@ import { AuditService } from '../../data/services/audit.service.js';
 import { defaultStorageService, type StorageService } from '../../data/storage/storage.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
+import { authorize, type Principal } from '../authz/authorization.service.js';
 import { AttachmentRejectedError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
@@ -21,12 +22,18 @@ import type { DetectedFileKind } from '../../ai/ocr/text-extraction.js';
 import type { PracticeAttachmentDTO } from '../../data/repositories/attachment.repository.js';
 import type { PaginatedResult } from '../../data/repositories/practice.repository.js';
 import type { PracticeDTO } from '../../data/types/domain.js';
+import type { Permission } from '../authz/permissions.js';
 import type { PracticeState } from '../types/workflow.types.js';
 import type { PrismaClient } from '@prisma/client';
 
-export type PracticeActor = {
-  tenantId: string;
-  userId: string;
+export type PracticeActor = Principal;
+
+const COMMAND_PERMISSIONS: Record<PracticeCommand['type'], Permission> = {
+  CREATE_PRACTICE: 'practice.create',
+  LIST_PRACTICES: 'practice.read',
+  GET_PRACTICE_STATUS: 'practice.read',
+  DELETE_PRACTICE: 'practice.delete',
+  EXPORT_PRACTICES: 'practice.export',
 };
 
 export type PracticeView = {
@@ -449,6 +456,8 @@ export class PracticeApplicationService {
     command: PracticeCommand,
     actor: PracticeActor,
   ): Promise<PracticeCommandResult> {
+    authorize(actor, COMMAND_PERMISSIONS[command.type]);
+    // Text commands always work on the actor's own practices (chat default view, C2 pending).
     switch (command.type) {
       case 'CREATE_PRACTICE':
         return {

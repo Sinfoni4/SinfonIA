@@ -14,6 +14,7 @@ import { NormalizationValidationError } from '../../../ai/normalization/normaliz
 import { LLMDisabledError } from '../../../ai/providers/disabled.provider.js';
 import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
+import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
 import {
   AttachmentRejectedError,
   ComplianceValidationError,
@@ -28,6 +29,9 @@ export type NormalizedError = { statusCode: number; code: string; message: strin
 export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof AuthError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
+  }
+  if (err instanceof PermissionDeniedError) {
+    return { statusCode: 403, code: 'FORBIDDEN', message: 'Insufficient role for this operation' };
   }
   if (err instanceof ComplianceValidationError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };

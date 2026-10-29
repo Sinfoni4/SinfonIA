@@ -27,7 +27,7 @@ import {
 } from '../src/interface/telegram/compliance.command.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { ContextService } from '../src/ai/context/context.service.js';
 import type {
@@ -228,6 +228,7 @@ describeWithDb('compliance REST API', () => {
     });
     const practiceService = {} as PracticeApplicationService;
     app = buildServer(config, createLogger(config), {
+      principals: testPrincipals(),
       practiceService,
       complianceService: new ComplianceService(prisma),
       interpreterService: new InterpreterService({ complete: vi.fn() }),

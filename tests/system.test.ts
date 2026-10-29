@@ -12,7 +12,7 @@ import { buildServer } from '../src/interface/http/server.js';
 import { runtimeState } from '../src/runtime/runtime.state.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { TEST_AUTH_ENV } from './helpers/auth.js';
+import { TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 
@@ -61,6 +61,7 @@ describe('system bootstrap', () => {
     const decisionEngine = new DecisionEngine();
     const normalizerService = new NormalizerService();
     const app = buildServer(config, logger, {
+      principals: testPrincipals(),
       practiceService,
       interpreterService,
       executorService,

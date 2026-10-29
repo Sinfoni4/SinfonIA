@@ -1,6 +1,6 @@
+import { scopedUserId } from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
-import { AUTH_ROLES } from '../auth/auth.types.js';
-import { requireRole } from '../auth/guards.js';
+import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
@@ -68,9 +68,9 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   const maxAttachmentBytes = deps.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
 
   // POST /practices — Create a new practice
-  app.post('/practices', async (req, reply) => {
+  app.post('/practices', { config: { permission: 'practice.create' } }, async (req, reply) => {
     try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_CREATE);
+      const auth = requirePermission(req, 'practice.create').principal;
       const body = PracticeCreateBodySchema.parse(req.body);
 
       const created = await deps.practiceService.createPractice({
@@ -89,14 +89,14 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   });
 
   // GET /practices — List practices with pagination, filters, and search
-  app.get('/practices', async (req, reply) => {
+  app.get('/practices', { config: { permission: 'practice.read' } }, async (req, reply) => {
     try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_READ);
+      const grant = requirePermission(req, 'practice.read');
+      const auth = grant.principal;
       const query = PracticeListQuerySchema.parse(req.query);
 
-      // Members are strictly scoped to their own practices.
-      // Operators and Admins can query tenant-wide or filter by specific userId.
-      const targetUserId = auth.role === 'MEMBER' ? auth.userId : query.userId;
+      // Own-scoped callers see only their practices; tenant-scoped ones may filter by user.
+      const targetUserId = scopedUserId(grant, query.userId);
 
       const result = await deps.practiceService.listPracticesPaginated({
         tenantId: auth.tenantId,
@@ -117,13 +117,13 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   });
 
   // GET /practices/:id — Get single practice details
-  app.get('/practices/:id', async (req, reply) => {
+  app.get('/practices/:id', { config: { permission: 'practice.read' } }, async (req, reply) => {
     try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_READ);
+      const grant = requirePermission(req, 'practice.read');
+      const auth = grant.principal;
       const params = PracticeIdParamsSchema.parse(req.params);
 
-      // Members are strictly restricted to their own practices.
-      const targetUserId = auth.role === 'MEMBER' ? auth.userId : undefined;
+      const targetUserId = scopedUserId(grant);
 
       const practice = await deps.practiceService.getPractice({
         tenantId: auth.tenantId,
@@ -139,57 +139,70 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   });
 
   // POST /practices/export — Export practices as CSV (with time filter)
-  app.post('/practices/export', async (req, reply) => {
-    try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_EXPORT);
-      const body = PracticeExportBodySchema.parse(req.body ?? {});
+  app.post(
+    '/practices/export',
+    { config: { permission: 'practice.export' } },
+    async (req, reply) => {
+      try {
+        const grant = requirePermission(req, 'practice.export');
+        const auth = grant.principal;
+        const body = PracticeExportBodySchema.parse(req.body ?? {});
 
-      const targetUserId = auth.role === 'MEMBER' ? auth.userId : undefined;
+        const targetUserId = scopedUserId(grant);
 
-      const exported = await deps.practiceService.exportPractices({
-        tenantId: auth.tenantId,
-        userId: targetUserId,
-        filter: body.filter,
-      });
+        const exported = await deps.practiceService.exportPractices({
+          tenantId: auth.tenantId,
+          userId: targetUserId,
+          filter: body.filter,
+        });
 
-      return reply.status(200).send(ok(exported));
-    } catch (err: unknown) {
-      const mapped = mapErrorToHttp(err);
-      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
-    }
-  });
+        return reply.status(200).send(ok(exported));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
 
   // POST /practices/:id/transition — Transition practice lifecycle state
-  app.post('/practices/:id/transition', async (req, reply) => {
-    try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_TRANSITION);
+  app.post(
+    '/practices/:id/transition',
+    { config: { permission: 'practice.transition' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'practice.transition').principal;
 
-      const params = PracticeTransitionParamsSchema.parse(req.params);
-      const body = PracticeTransitionBodySchema.parse(req.body);
+        const params = PracticeTransitionParamsSchema.parse(req.params);
+        const body = PracticeTransitionBodySchema.parse(req.body);
 
-      const updated = await deps.practiceService.transitionPractice({
-        tenantId: auth.tenantId,
-        practiceId: params.id,
-        nextState: body.nextState,
-        userId: auth.userId,
-      });
+        const updated = await deps.practiceService.transitionPractice({
+          tenantId: auth.tenantId,
+          practiceId: params.id,
+          nextState: body.nextState,
+          userId: auth.userId,
+        });
 
-      return reply.status(200).send(ok(updated));
-    } catch (err: unknown) {
-      const mapped = mapErrorToHttp(err);
-      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
-    }
-  });
+        return reply.status(200).send(ok(updated));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
 
   // POST /practices/:id/attachments — Upload an attachment and process OCR.
   // Accepts multipart/form-data (field "file", optional "hint" sent before the file)
   // or JSON with base64 content.
   app.post(
     '/practices/:id/attachments',
-    { bodyLimit: Math.ceil((maxAttachmentBytes * 4) / 3) + BASE64_ENVELOPE_BYTES },
+    {
+      bodyLimit: Math.ceil((maxAttachmentBytes * 4) / 3) + BASE64_ENVELOPE_BYTES,
+      config: { permission: 'attachment.create' },
+    },
     async (req, reply) => {
       try {
-        const auth = requireRole(req, AUTH_ROLES.PRACTICE_CREATE);
+        // Own practices only, whatever the role: the service filters by the uploader.
+        const auth = requirePermission(req, 'attachment.create').principal;
         const params = PracticeAttachmentParamsSchema.parse(req.params);
         const upload = req.isMultipart()
           ? await readMultipartUpload(req)
@@ -211,26 +224,30 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   );
 
   // GET /practices/:id/attachments — List attachments for a practice
-  app.get('/practices/:id/attachments', async (req, reply) => {
-    try {
-      const auth = requireRole(req, AUTH_ROLES.PRACTICE_READ);
-      const params = PracticeAttachmentParamsSchema.parse(req.params);
+  app.get(
+    '/practices/:id/attachments',
+    { config: { permission: 'attachment.read' } },
+    async (req, reply) => {
+      try {
+        const grant = requirePermission(req, 'attachment.read');
+        const auth = grant.principal;
+        const params = PracticeAttachmentParamsSchema.parse(req.params);
 
-      // Members are strictly restricted to their own practices.
-      const targetUserId = auth.role === 'MEMBER' ? auth.userId : undefined;
+        const targetUserId = scopedUserId(grant);
 
-      const attachments = await deps.practiceService.listAttachments({
-        tenantId: auth.tenantId,
-        practiceId: params.id,
-        userId: targetUserId,
-      });
+        const attachments = await deps.practiceService.listAttachments({
+          tenantId: auth.tenantId,
+          practiceId: params.id,
+          userId: targetUserId,
+        });
 
-      return reply.status(200).send(ok(attachments));
-    } catch (err: unknown) {
-      const mapped = mapErrorToHttp(err);
-      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
-    }
-  });
+        return reply.status(200).send(ok(attachments));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
 
   done();
 };

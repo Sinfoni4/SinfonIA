@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { can } from '../../core/authz/authorization.service.js';
 import { InvalidStateTransitionError } from '../../core/errors/workflow.errors.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 
@@ -14,6 +15,7 @@ import {
 } from './executor.types.js';
 
 import type { ExecutorContext, ExecutorInput, ExecutorResult } from './executor.types.js';
+import type { Permission } from '../../core/authz/permissions.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 
 const TransitionPracticeDataSchema = z.object({
@@ -24,6 +26,11 @@ const TransitionPracticeDataSchema = z.object({
 const CreatePracticeDataSchema = z.object({
   artistName: z.string().min(1),
 });
+
+const ACTION_PERMISSIONS: Partial<Record<string, Permission>> = {
+  create_practice: 'practice.create',
+  transition_practice: 'practice.transition',
+};
 
 export class ExecutorService {
   constructor(
@@ -36,6 +43,15 @@ export class ExecutorService {
     try {
       const parsedInput = ExecutorInputSchema.parse(input);
       const parsedCtx = ExecutorContextSchema.parse(ctx);
+
+      // The AI only proposes: an action the requester may not perform is never executed.
+      const permission = ACTION_PERMISSIONS[parsedInput.action];
+      if (parsedCtx.role && permission && !can(parsedCtx.role, permission)) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: `PERMISSION_DENIED: ${permission}` },
+        };
+      }
 
       switch (parsedInput.action) {
         case 'create_practice': {
