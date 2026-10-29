@@ -8,6 +8,7 @@ import { InterpreterService } from '../src/ai/interpreter/interpreter.service.js
 import { NormalizerService } from '../src/ai/normalization/normalizer.service.js';
 import {
   createAzureOpenAIProvider,
+  createMistralProvider,
   createOpenAIProvider,
 } from '../src/ai/providers/openai.provider.js';
 import { pseudonymizeNames } from '../src/ai/security/name-pseudonymizer.js';
@@ -289,6 +290,32 @@ describe('LLM provider configuration', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.openai.com/v1/chat/completions');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
+  });
+
+  it('calls Mistral in JSON mode with a bearer token and reports it in traces', async () => {
+    const fetchMock = stubFetch();
+    const llm = createMistralProvider({ apiKey: 'mistral-key' });
+    const result = await llm.completeDetailed!('prompt');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://api.mistral.ai/v1/chat/completions');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer mistral-key');
+    const body = JSON.parse(init.body as string) as {
+      model: string;
+      response_format: { type: string };
+      temperature: number;
+    };
+    expect(body.model).toBe('mistral-small-latest');
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.temperature).toBe(0);
+    expect(result.provider).toBe('mistral');
+    expect(llm.providerName).toBe('mistral');
+  });
+
+  it('requires the Mistral key when LLM_PROVIDER=mistral', () => {
+    expect(() => loadConfig({ ...baseEnv, LLM_PROVIDER: 'mistral' })).toThrow(/MISTRAL_API_KEY/);
+    const config = loadConfig({ ...baseEnv, LLM_PROVIDER: 'mistral', MISTRAL_API_KEY: 'k' });
+    expect(config.LLM_PROVIDER).toBe('mistral');
+    expect(config.MISTRAL_MODEL).toBe('mistral-small-latest');
   });
 
   it('requires the Azure settings when LLM_PROVIDER=azure', () => {

@@ -28,7 +28,16 @@ export type AzureOpenAIProviderConfig = {
   maxRetries?: number;
 };
 
+export type MistralProviderConfig = {
+  apiKey: string;
+  /** Mistral model, e.g. mistral-small-latest. */
+  model?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+};
+
 const DEFAULT_MODEL = 'gpt-4o-mini';
+export const DEFAULT_MISTRAL_MODEL = 'mistral-small-latest';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RETRIES = 2;
 
@@ -112,7 +121,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
         if (!res.ok) {
           const msg = data?.error?.message ?? res.statusText;
           const err = new OpenAIProviderError(
-            `OpenAI API error: ${res.status} ${msg}`,
+            `${providerName} API error: ${res.status} ${msg}`,
             res.status,
             attempt > 0,
           );
@@ -126,7 +135,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
 
         const text = data?.choices?.[0]?.message?.content?.trim();
         if (text == null || text === '') {
-          throw new OpenAIProviderError('OpenAI returned empty content');
+          throw new OpenAIProviderError(`${providerName} returned empty content`);
         }
 
         return {
@@ -179,7 +188,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMClient {
     completeDetailed,
     mode: 'real',
     model,
-    providerName: 'openai',
+    providerName,
   };
 }
 
@@ -198,5 +207,20 @@ export function createAzureOpenAIProvider(config: AzureOpenAIProviderConfig): LL
     endpointUrl: `${endpoint}/openai/deployments/${encodeURIComponent(config.deployment)}/chat/completions?api-version=${encodeURIComponent(config.apiVersion ?? '2024-10-21')}`,
     authHeaders: { 'api-key': config.apiKey },
     providerName: 'azure-openai',
+  });
+}
+
+/**
+ * Mistral AI (La Plateforme): same chat completions format and JSON mode, served by a European
+ * company from EU infrastructure by default. Data retention terms are in Mistral's DPA.
+ */
+export function createMistralProvider(config: MistralProviderConfig): LLMClient {
+  return createOpenAIProvider({
+    apiKey: config.apiKey,
+    model: config.model ?? DEFAULT_MISTRAL_MODEL,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+    endpointUrl: 'https://api.mistral.ai/v1/chat/completions',
+    providerName: 'mistral',
   });
 }
