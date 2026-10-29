@@ -1,7 +1,9 @@
 # SinfonIA — Fase 1: organizzazioni, identità, autorizzazioni e sicurezza
 
-**Stato**: direzione architetturale approvabile; MF2 e MF0 fase 1 eseguiti e in revisione (PR #9, #10) · **Data**: 29/10/2026 · **Versione**: 7
-**Autorizzato finora**: preparazione documentale; MF2 su un ramo dedicato con C1 (senza C2, C3, D5b); MF0 fase 1 solo su dati sintetici. Non autorizzati: unione delle PR, MF0 fase 2 sullo staging (§10.13), migrazioni, installazioni, interventi su staging, produzione, configurazioni, dipendenze o servizi esterni.
+**Stato**: direzione architetturale approvabile; MF2 e MF0 (fasi 1 e 2) eseguiti · **Data**: 29/10/2026 · **Versione**: 8
+**Autorizzato finora**: preparazione documentale; MF2 su un ramo dedicato con C1 (senza C2, C3, D5b); MF0 fase 1 solo su dati sintetici; MF0 fase 2 sullo staging (A1–A5, §10.13); unione delle PR #9–#12 e riavvio dello staging (29/10/2026). Non autorizzati: migrazioni, installazioni, interventi su staging, produzione, configurazioni, dipendenze o servizi esterni.
+
+Novità della versione 8: esito di MF0 fase 2 sullo staging (§10.13) e stato aggiornato (§16).
 
 Novità della versione 7: esecuzione di MF2 e MF0 fase 1, criterio di prestazioni assoluto con esiti (§11.5), richiesta di approvazione per MF0 fase 2 (§10.13), stato aggiornato (§16).
 
@@ -553,7 +555,7 @@ Da aggiungere ai log: login riusciti e falliti; revoche, sospensioni, cambi di r
 
 ---
 
-## 10. Piano esecutivo MF0 — backup e prova di ripristino — fase 1 eseguita (PR #10), fase 2 non autorizzata
+## 10. Piano esecutivo MF0 — backup e prova di ripristino — fasi 1 e 2 eseguite
 
 ### 10.1 Obiettivo e vincoli
 
@@ -714,7 +716,7 @@ Condizioni: accettazione esplicita del rischio residuo di §10.4; PC non in sosp
 
 Dopo approvazione: orchestratore, regole di sostituzione e verifiche in `scripts/backup/`, test automatici su un database sintetico, procedura in `docs/`. Nessuna nuova dipendenza (libreria `pg` e strumenti PostgreSQL già presenti **[V]**).
 
-### 10.13 Richiesta di approvazione per MF0 fase 2 (staging) — non autorizzata
+### 10.13 Approvazione ed esito di MF0 fase 2 (staging)
 
 **Stato al 29/10/2026**: fase 1 completata su dati sintetici, tutte le verifiche superate ([PR #10](https://github.com/Sinfoni4/SinfonIA/pull/10)). La fase 2 esegue gli stessi script con lo **staging come sorgente**, in sola lettura, con la protezione 2-R. Gli script vengono eseguiti dal ramo `feat/mf0-backup-restore-test` anche se la PR non è ancora unita.
 
@@ -745,6 +747,25 @@ In caso di fallimento, con A5 non ancora concessa, la cartella resta isolata per
 **Limiti già dichiarati**: il ripristino diretto con `pg_restore -d` e i file reali non vengono provati; ruoli e privilegi non fanno parte di `pg_dump`. Tutti da provare in MF11 su un ambiente cifrato.
 
 **Durata stimata**: circa 1 ora, comprese le verifiche preliminari e la cancellazione.
+
+**Esito della fase 2 (29/10/2026, approvazioni A1–A5 concesse, condizioni P1–P5 verificate)**: **superata**.
+
+| Verifica | Esito |
+| :--- | :--- |
+| V1 righe | le 40 righe delle 16 tabelle del dump coincidono una per una con lo staging (impronte nella stessa istantanea) |
+| V2 conteggi | identici per ogni tabella |
+| V3 schema | 134 colonne, 42 vincoli, 54 indici, 7 trigger, 38 funzioni, 2 estensioni: identici |
+| V4 relazioni | 0 righe orfane |
+| V5 audit | il trigger di immutabilità rifiuta la modifica sulla copia |
+| V6 tabelle invariate | storico delle migrazioni identico |
+| Anonimizzazione | 99 valori sostituiti, nessuno presente nella copia; 2 valori JSON con sole enumerazioni lasciati identici per regola |
+| V7 lettura applicativa | la pratica della copia viene letta dai servizi dell'app |
+| V8 allegati sintetici | 6 file ripristinati identici (allegati reali esclusi) |
+| V9 staging | nessuna scrittura durante la prova |
+| V10 disco | nessun file temporaneo dei programmi PostgreSQL |
+
+Tempi: impronte 0,2 s, dump cifrato 0,4 s (54.851 byte), ripristino 0,6 s. **Cancellazione (A5)** verificata alle 15:29: cluster arrestato e porta libera, cartella cancellata per intero, nessun residuo nella cartella temporanea, nessun dump di crash. Conservati solo il rapporto (conteggi ed esiti) e l'elenco degli artefatti cancellati. Restano da provare in MF11, su un ambiente cifrato: ripristino diretto dei valori reali, file reali, ruoli e privilegi.
+
 
 ---
 
@@ -969,7 +990,7 @@ Il primo pilota richiede MF0–MF8, MF10, MF11 e MF13; MF2b e MF9 possono seguir
 
 - **MF2 eseguito** su `feat/mf2-authorization` con C1 e le ottimizzazioni misurate (§11.5): [PR #9](https://github.com/Sinfoni4/SinfonIA/pull/9), CI verde, **non unita**.
 - **MF0 fase 1 eseguita su dati sintetici** in un cluster isolato poi cancellato: tutte le verifiche superate, [PR #10](https://github.com/Sinfoni4/SinfonIA/pull/10), **non unita**. Nessun dump, copia, database o rapporto con dati reali è stato creato.
-- **MF0 fase 2 non eseguita**: approvazioni richieste in §10.13.
+- **MF0 fase 2 eseguita e superata** sullo staging in sola lettura, copia cancellata e verificata (§10.13).
 - Nessuna modifica a schema, dati, configurazioni, dipendenze, staging, PC o servizi esterni. Sul database di test (dati sintetici) sono state aggiunte righe per le misure di prestazioni.
 - Ogni attività futura richiede una **propria approvazione esplicita** (§14); MF0 e MF2 sono autorizzati separatamente.
 
