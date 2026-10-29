@@ -16,7 +16,7 @@ import { TenantRepository } from '../src/data/repositories/tenant.repository.js'
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -172,6 +172,7 @@ describeWithDb('persistent AI traces (Step 3)', () => {
 
     const practiceService = {} as PracticeApplicationService;
     const app = buildServer(config, createLogger(config), {
+      principals: testPrincipals(),
       practiceService,
       tracer: new AITracer(200, { store: repo }),
       interpreterService: new InterpreterService({ complete: vi.fn() }),

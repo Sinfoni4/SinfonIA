@@ -17,7 +17,7 @@ import { issueAuthToken, verifyAuthToken } from '../src/interface/http/auth/toke
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_CONFIG, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_CONFIG, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 
@@ -40,6 +40,7 @@ function buildTestApp(prisma: ReturnType<typeof createPrismaClient>, llm: LLMCli
   const practiceService = new PracticeApplicationService(prisma);
 
   return buildServer(config, logger, {
+    principals: testPrincipals(prisma),
     practiceService,
     interpreterService: new InterpreterService(llm),
     executorService: new ExecutorService({ practiceService }),
@@ -138,6 +139,10 @@ describe('auth http', () => {
         email: 'auth-a@test.local',
         role: 'OPERATOR',
       });
+      const memberA = await userRepo.createUser(tenantA.id, {
+        email: 'auth-a-member@test.local',
+        role: 'MEMBER',
+      });
       const userB = await userRepo.createUser(tenantB.id, {
         email: 'auth-b@test.local',
         role: 'OPERATOR',
@@ -152,17 +157,27 @@ describe('auth http', () => {
         url: '/auth/whoami',
         headers: authHeaders(tenantA.id, userA.id, 'ADMIN'),
       });
+      // C1: the role comes from the database (OPERATOR), not from the token (ADMIN).
       expect(whoami.statusCode).toBe(200);
       expect(whoami.json()).toMatchObject({
         subject: userA.id,
         tenantId: tenantA.id,
-        role: 'ADMIN',
+        role: 'OPERATOR',
       });
 
+      // A user that does not exist in the token tenant is rejected.
+      const unknownUser = await app.inject({
+        method: 'GET',
+        url: '/auth/whoami',
+        headers: authHeaders(tenantA.id, userB.id, 'ADMIN'),
+      });
+      expect(unknownUser.statusCode).toBe(401);
+
+      // C1: a member whose token claims ADMIN is still a member.
       const member = await app.inject({
         method: 'POST',
         url: `/practices/${practiceA.id}/transition`,
-        headers: authHeaders(tenantA.id, userA.id, 'MEMBER'),
+        headers: authHeaders(tenantA.id, memberA.id, 'ADMIN'),
         payload: { nextState: 'VALIDATED' },
       });
       expect(member.statusCode).toBe(403);
@@ -214,7 +229,7 @@ describe('auth http', () => {
         const memberAiTransition = await aiApp.inject({
           method: 'POST',
           url: '/ai/execute',
-          headers: authHeaders(tenantA.id, userA.id, 'MEMBER'),
+          headers: authHeaders(tenantA.id, memberA.id, 'OPERATOR'),
           payload: { input: `valida la pratica ${practiceForAi.id}` },
         });
         expect(memberAiTransition.statusCode).toBe(403);

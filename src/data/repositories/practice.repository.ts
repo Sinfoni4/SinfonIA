@@ -25,7 +25,7 @@ export type PaginatedResult<T> = {
   totalPages: number;
 };
 
-function toPracticeDTO(row: {
+type PracticeRow = {
   id: string;
   tenantId: string;
   userId: string;
@@ -34,7 +34,9 @@ function toPracticeDTO(row: {
   payload: unknown;
   createdAt: Date;
   updatedAt: Date;
-}): PracticeDTO {
+};
+
+function toPracticeDTO(row: PracticeRow): PracticeDTO {
   return {
     id: row.id,
     tenantId: row.tenantId,
@@ -225,15 +227,34 @@ export class PracticeRepository {
           : {}),
       };
 
-      const [rows, total] = await Promise.all([
-        this.prisma.practice.findMany({
-          where,
-          skip,
-          take: limit,
-          orderBy: { [sortField]: sortOrder },
-        }),
-        this.prisma.practice.count({ where }),
-      ]);
+      // Rows and total in one query (one connection instead of two in parallel): under concurrent
+      // load the second connection made requests wait for the pool.
+      const conditions: Prisma.Sql[] = [Prisma.sql`"tenant_id" = ${tenantId}::uuid`];
+      if (filter?.userId) conditions.push(Prisma.sql`"user_id" = ${filter.userId}::uuid`);
+      if (filter?.status) {
+        conditions.push(Prisma.sql`"status" = ${filter.status}::"PracticeStatus"`);
+      }
+      if (search) {
+        const byName = Prisma.sql`("payload"->>'name') ILIKE ${`%${search}%`}`;
+        conditions.push(isUuid ? Prisma.sql`("id" = ${search}::uuid OR ${byName})` : byName);
+      }
+      const orderColumn = Prisma.raw(sortField === 'updatedAt' ? '"updated_at"' : '"created_at"');
+      const orderDirection = Prisma.raw(sortOrder === 'asc' ? 'ASC' : 'DESC');
+      const rows = await this.prisma.$queryRaw<Array<PracticeRow & { total: bigint }>>`
+        SELECT "id", "tenant_id" AS "tenantId", "user_id" AS "userId", "status", "version",
+               "payload", "created_at" AS "createdAt", "updated_at" AS "updatedAt",
+               count(*) OVER () AS "total"
+        FROM "practice"
+        WHERE ${Prisma.join(conditions, ' AND ')}
+        ORDER BY ${orderColumn} ${orderDirection}
+        OFFSET ${skip} LIMIT ${limit}`;
+      // A page past the end has no rows to carry the total: count separately (rare).
+      const total =
+        rows.length > 0
+          ? Number(rows[0].total)
+          : skip > 0
+            ? await this.prisma.practice.count({ where })
+            : 0;
 
       return {
         items: rows.map(toPracticeDTO),

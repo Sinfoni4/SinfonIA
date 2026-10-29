@@ -21,7 +21,7 @@ import { LocalStorageService } from '../src/data/storage/storage.service.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { ContextService } from '../src/ai/context/context.service.js';
 import type { PrismaClient } from '@prisma/client';
@@ -430,6 +430,7 @@ describe('Phase 3B: Document AI, OCR & Multimodal Attachments', () => {
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -499,6 +500,7 @@ describe('Phase 3B: Document AI, OCR & Multimodal Attachments', () => {
       const normalizerService = new NormalizerService();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,

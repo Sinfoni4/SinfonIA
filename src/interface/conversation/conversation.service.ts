@@ -1,3 +1,4 @@
+import { can } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
 import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
@@ -109,7 +110,7 @@ function isGreeting(text: string): boolean {
 }
 
 export function onboardingMessage(role: UserRole): string {
-  if (role === 'ADMIN' || role === 'OPERATOR') {
+  if (can(role, 'practice.transition')) {
     return `👋 Ciao! Ti aiuto a gestire le pratiche.
 
 Puoi:
@@ -316,9 +317,11 @@ export class ConversationService {
 
     const command = parsePracticeCommand(trimmed);
     if (command) {
+      // C2 pending: in chat every command works on the caller's own practices.
       const result = await deps.practiceService.executeCommand(command, {
         tenantId: tenant.id,
         userId: dbUser.id,
+        role: dbUser.role,
       });
       await reply(formatPracticeCommandResult(result));
       return;

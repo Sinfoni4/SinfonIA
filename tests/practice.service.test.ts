@@ -76,7 +76,7 @@ describe('practice application service', () => {
         email: 'commands@test.local',
         role: 'OPERATOR',
       });
-      const actor = { tenantId: tenant.id, userId: user.id };
+      const actor = { tenantId: tenant.id, userId: user.id, role: user.role };
       const service = new PracticeApplicationService(prisma);
 
       const created = await service.executeCommand(

@@ -16,7 +16,7 @@ import { loadConfig } from '../src/config/config.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { ContextService } from '../src/ai/context/context.service.js';
 import type { PracticeApplicationService } from '../src/core/practice/practice.application.service.js';
@@ -285,6 +285,7 @@ describe('Step 3C: Prompt Injection Defense, Data Delimitation & PII Minimizatio
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -379,6 +380,7 @@ describe('Step 3C: Prompt Injection Defense, Data Delimitation & PII Minimizatio
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,

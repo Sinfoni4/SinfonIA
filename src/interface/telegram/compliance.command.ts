@@ -1,3 +1,4 @@
+import { authorize, can, scopedUserId } from '../../core/authz/authorization.service.js';
 import {
   formatItalianDate,
   parseIsoDate,
@@ -70,16 +71,17 @@ export async function executeComplianceCommand(
   }
 
   if (command.type === 'LIST_DEADLINES') {
+    const userId = scopedUserId(authorize(ctx, 'compliance.read'));
     const deadlines = await ctx.complianceService.listDeadlines({
       tenantId: ctx.tenantId,
       status: 'OPEN',
       limit: LIST_LIMIT,
-      ...(ctx.role === 'MEMBER' ? { userId: ctx.userId } : {}),
+      ...(userId ? { userId } : {}),
     });
     return formatDeadlineList(deadlines);
   }
 
-  if (ctx.role === 'MEMBER') {
+  if (!can(ctx.role, 'compliance.manage')) {
     return 'ℹ️ Le scadenze le gestiscono un operatore o un amministratore della tua cooperativa.';
   }
 
