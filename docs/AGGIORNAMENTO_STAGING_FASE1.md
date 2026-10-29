@@ -6,12 +6,12 @@ Lo staging gira sul PC: database `sinfonia_staging` nel cluster PostgreSQL sulla
 
 ## 0. Prerequisiti
 
-| # | Passo | Chi |
-| :-: | :--- | :--- |
+|  #  | Passo                                                                                                                                                                                                                                                                                          | Chi          |
+| :-: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------- |
 | 0.1 | Unione in `main`, in quest'ordine: #13 (MF1), #14 (MF3), #15 (MF4), #16 (MF5), #17 (MF2b), #19 (Mistral), #18 (documenti), più la PR di questi script. #15–#17 vanno prima ribasate su `main` («Edit» → base `main`). L'unione di tutti i rami è già stata provata in locale: 425 test passati | proprietario |
-| 0.2 | Chiave del backup: 32 byte casuali, conservati **fuori dal repository** (es. gestore di password). Senza la chiave il backup non si ripristina. Comando per crearla: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` | proprietario |
-| 0.3 | Cartella dei backup fuori dal repository, possibilmente su un altro disco | proprietario |
-| 0.4 | Password nuove per i ruoli `sinfonia_owner`, `sinfonia_app`, `sinfonia_backup`, conservate fuori dal repository | proprietario |
+| 0.2 | Chiave del backup: 32 byte casuali, conservati **fuori dal repository** (es. gestore di password). Senza la chiave il backup non si ripristina. Comando per crearla: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`                                             | proprietario |
+| 0.3 | Cartella dei backup fuori dal repository, possibilmente su un altro disco                                                                                                                                                                                                                      | proprietario |
+| 0.4 | Password nuove per i ruoli `sinfonia_owner`, `sinfonia_app`, `sinfonia_backup`, conservate fuori dal repository                                                                                                                                                                                | proprietario |
 
 ## 1. Backup cifrato e prova di ripristino
 
@@ -70,9 +70,9 @@ Configurazione dell'applicazione di staging:
 
 ## 5. Cosa può fare Claude e cosa resta al proprietario
 
-| Attività | Chi |
-| :--- | :--- |
-| Unione delle PR | proprietario: l'unione da parte di Claude è bloccata dalle regole di permesso |
-| Creazione e custodia di chiave e password | proprietario: Claude non inserisce credenziali |
-| Arresto e riavvio del processo di staging | Claude, solo con permesso esplicito ogni volta |
+| Attività                                           | Chi                                                                                     |
+| :------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| Unione delle PR                                    | proprietario: l'unione da parte di Claude è bloccata dalle regole di permesso           |
+| Creazione e custodia di chiave e password          | proprietario: Claude non inserisce credenziali                                          |
+| Arresto e riavvio del processo di staging          | Claude, solo con permesso esplicito ogni volta                                          |
 | Backup, prova di ripristino, migrazioni, verifiche | Claude, con le variabili fornite dal proprietario nell'ambiente, oppure il proprietario |
