@@ -14,7 +14,7 @@ import { loadConfig } from '../src/config/config.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
 import type {
@@ -89,6 +89,7 @@ describe('Phase 3A: Explicit LLM Mode, AI Tracing & Advanced Context Retrieval',
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -142,6 +143,7 @@ describe('Phase 3A: Explicit LLM Mode, AI Tracing & Advanced Context Retrieval',
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -270,6 +272,7 @@ describe('Phase 3A: Explicit LLM Mode, AI Tracing & Advanced Context Retrieval',
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,

@@ -13,7 +13,7 @@ import { type PracticeApplicationService } from '../src/core/practice/practice.a
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 describe('Phase 3D Gate: Final Validation, Golden Set & Production Readiness', () => {
   const tenantId = '11111111-1111-4111-8111-111111111111';
@@ -42,6 +42,7 @@ describe('Phase 3D Gate: Final Validation, Golden Set & Production Readiness', (
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -100,6 +101,7 @@ describe('Phase 3D Gate: Final Validation, Golden Set & Production Readiness', (
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -178,6 +180,7 @@ describe('Phase 3D Gate: Final Validation, Golden Set & Production Readiness', (
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,
@@ -248,6 +251,7 @@ describe('Phase 3D Gate: Final Validation, Golden Set & Production Readiness', (
       const tracer = new AITracer();
 
       const app = buildServer(baseConfig, logger, {
+        principals: testPrincipals(),
         practiceService: mockPracticeService,
         interpreterService,
         executorService,

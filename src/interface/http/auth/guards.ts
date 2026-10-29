@@ -1,8 +1,14 @@
+import {
+  authorize,
+  type Grant,
+  type Principal,
+} from '../../../core/authz/authorization.service.js';
 import { getRequestContext } from '../middleware/request-context.js';
 
 import { AuthError } from './auth.errors.js';
 
-import type { AuthContext, AuthRole } from './auth.types.js';
+import type { AuthContext } from './auth.types.js';
+import type { Permission } from '../../../core/authz/permissions.js';
 import type { FastifyRequest } from 'fastify';
 
 export function requireAuthContext(req: FastifyRequest): AuthContext {
@@ -18,10 +24,11 @@ export function requireAuthContext(req: FastifyRequest): AuthContext {
   };
 }
 
-export function requireRole(req: FastifyRequest, allowedRoles: readonly AuthRole[]): AuthContext {
-  const ctx = requireAuthContext(req);
-  if (!allowedRoles.includes(ctx.role)) {
-    throw new AuthError('Insufficient role for this operation', 'FORBIDDEN', 403);
-  }
-  return ctx;
+export function requirePrincipal(req: FastifyRequest): Principal {
+  return requireAuthContext(req);
+}
+
+/** Grants the permission to the authenticated caller, or throws PermissionDeniedError (403). */
+export function requirePermission(req: FastifyRequest, permission: Permission): Grant {
+  return authorize(requirePrincipal(req), permission);
 }

@@ -22,7 +22,7 @@ import { buildServer } from '../src/interface/http/server.js';
 import { formatAttachmentResult } from '../src/interface/telegram/attachment.formatter.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { ContextService } from '../src/ai/context/context.service.js';
 import type {
@@ -399,6 +399,7 @@ describe('Attachments: HTTP upload (multipart and base64)', () => {
 
   function buildApp(practiceService: PracticeApplicationService) {
     return buildServer(config, createLogger(config), {
+      principals: testPrincipals(),
       practiceService,
       interpreterService: new InterpreterService({ complete: vi.fn() }),
       executorService: new ExecutorService({ practiceService }),

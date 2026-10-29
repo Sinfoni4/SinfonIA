@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 
 import { runtimeState } from '../../runtime/runtime.state.js';
 
-import { createAuthHook } from './auth/auth.hook.js';
+import { createAuthHook, PUBLIC_PATHS } from './auth/auth.hook.js';
 import { AuthService } from './auth/auth.service.js';
 import { requireAuthContext } from './auth/guards.js';
 import { buildRateLimitOptions, createTenantLimiter } from './middleware/rate-limit.js';
@@ -22,12 +22,23 @@ import type { InterpreterService } from '../../ai/interpreter/interpreter.servic
 import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
 import type { AITracer } from '../../ai/tracing/ai.tracer.js';
 import type { AppConfig } from '../../config/config.js';
+import type { PrincipalResolver } from '../../core/authz/authorization.service.js';
+import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
 
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /** Permission the route needs; "authenticated" = any signed-in user. Checked at startup. */
+    permission?: Permission | 'authenticated';
+  }
+}
+
 export type ServerDeps = {
   practiceService: PracticeApplicationService;
+  /** Loads the caller's current role from the database (see createPrismaPrincipalResolver). */
+  principals: PrincipalResolver;
   // Optional so that tests and tools can build the server without the compliance module.
   complianceService?: ComplianceService;
   // Present only when the WhatsApp channel is configured.
@@ -57,7 +68,14 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     audience: config.AUTH_AUDIENCE,
     defaultTtlSeconds: config.AUTH_TTL_SECONDS,
   });
-  app.addHook('onRequest', createAuthHook(authService));
+  app.addHook('onRequest', createAuthHook(authService, deps.principals));
+
+  // Every authenticated route must declare the permission it needs: a route without one does
+  // not start, so none can be added without going through the authorization service.
+  app.addHook('onRoute', (route) => {
+    if (PUBLIC_PATHS.has(route.url) || route.config?.permission) return;
+    throw new Error(`Route ${route.method.toString()} ${route.url} declares no permission`);
+  });
 
   // Security headers, per-user/per-tenant request limits (stricter on the AI endpoint).
   const limits = {
@@ -93,7 +111,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     });
   });
 
-  app.get('/auth/whoami', (req) => {
+  app.get('/auth/whoami', { config: { permission: 'authenticated' } }, (req) => {
     const auth = requireAuthContext(req);
     return {
       subject: auth.userId,

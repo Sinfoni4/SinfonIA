@@ -16,7 +16,7 @@ import { loadConfig } from '../src/config/config.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { ContextService } from '../src/ai/context/context.service.js';
 import type { InterpreterContext } from '../src/ai/interpreter/interpreter.types.js';
@@ -43,6 +43,7 @@ describe('HTTP protections', () => {
       .mockResolvedValue({ items: [], total: 0, page: 1, limit: 20, totalPages: 0 }),
   } as unknown as PracticeApplicationService;
   const app = buildServer(config, createLogger(config), {
+    principals: testPrincipals(),
     practiceService,
     interpreterService: new InterpreterService({ complete: vi.fn() }),
     executorService: new ExecutorService({ practiceService }),

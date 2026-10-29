@@ -11,6 +11,7 @@ import {
   validateResolvedCommand,
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
+import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
@@ -206,6 +207,7 @@ async function main() {
   const tracer = new AITracer(200, { store: aiTraceRepository, log: logger });
 
   const app = buildServer(config, logger, {
+    principals: createPrismaPrincipalResolver(prisma),
     practiceService,
     complianceService,
     tracer,

@@ -12,6 +12,8 @@ export type ExecutorInput = z.infer<typeof ExecutorInputSchema>;
 export const ExecutorContextSchema = z.object({
   tenantId: z.string().uuid(),
   userId: z.string().uuid().nullable(),
+  // Role of the requester: when present, the executor refuses actions the role may not perform.
+  role: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']).optional(),
 });
 
 export type ExecutorContext = z.infer<typeof ExecutorContextSchema>;

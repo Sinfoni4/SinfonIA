@@ -23,7 +23,7 @@ import { WhatsAppApiError, WhatsAppClient } from '../src/interface/whatsapp/what
 import { toWhatsAppDeliveryError } from '../src/interface/whatsapp/whatsapp.notifier.js';
 import { createLogger } from '../src/shared/logger.js';
 
-import { authHeaders, TEST_AUTH_ENV } from './helpers/auth.js';
+import { authHeaders, TEST_AUTH_ENV, testPrincipals } from './helpers/auth.js';
 
 import type { ContextService } from '../src/ai/context/context.service.js';
 import type { ChatNotifier } from '../src/core/outbox/outbox.delivery.js';
@@ -124,6 +124,7 @@ describe('WhatsApp webhook routes', () => {
   const createPractice = vi.fn().mockResolvedValue({ id: 'p1', name: 'Prova' });
   const practiceService = { createPractice } as unknown as PracticeApplicationService;
   const app = buildServer(config, createLogger(config), {
+    principals: testPrincipals(),
     practiceService,
     whatsappWebhook: { verifyToken: VERIFY_TOKEN, appSecret: APP_SECRET, onPayload },
     interpreterService: new InterpreterService({ complete: vi.fn() }),
@@ -413,7 +414,7 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
     await channel.receive(webhook(textMessage('l3', phone, 'lista pratiche')));
     expect(deps.practiceService.executeCommand).toHaveBeenCalledWith(
       { type: 'LIST_PRACTICES', payload: {} },
-      { tenantId, userId: identity!.userId },
+      { tenantId, userId: identity!.userId, role: 'MEMBER' },
     );
   });
 

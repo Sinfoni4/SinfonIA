@@ -1,4 +1,5 @@
 import { enforceIdPriority } from '../../ai/validation/pre-execution.validator.js';
+import { can } from '../../core/authz/authorization.service.js';
 import {
   InMemoryConversationMemory,
   type ConversationMemory,
@@ -69,7 +70,7 @@ export class TelegramAdapter {
     const interpreted: InterpreterOutput = await this.deps.interpreter.interpret(input, ctx);
     const normalized = enforceIdPriority(this.deps.normalizer.normalize(interpreted));
 
-    const canAdvance = role === 'ADMIN' || role === 'OPERATOR';
+    const canAdvance = can(role, 'practice.transition');
     if (normalized.action === 'transition_practice' && !canAdvance) {
       if (normalized.nextState === 'VALIDATED') {
         throw new Error('PERMISSION_DENIED:VALIDATED');
@@ -93,7 +94,7 @@ export class TelegramAdapter {
       this.deps.validateResolvedCommand(command, context.practices);
     }
 
-    const execCtx: ExecutorContext = { tenantId, userId: execUserId };
+    const execCtx: ExecutorContext = { tenantId, userId: execUserId, role };
     const result = await this.deps.executor.execute(command, execCtx);
 
     const maybeId =
