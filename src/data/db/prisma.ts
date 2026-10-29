@@ -13,7 +13,19 @@ export function createPrismaClient(databaseUrl: string) {
   const pool = new Pool({ connectionString: databaseUrl, options: '-c TimeZone=UTC' });
   const adapter = new PrismaPg(pool);
 
-  return new PrismaClient({
+  const client = new PrismaClient({
     adapter,
   });
+  pools.set(client, pool);
+  return client;
+}
+
+const pools = new WeakMap<object, Pool>();
+
+/**
+ * The pg pool behind a client made by createPrismaClient, for the few hot queries that run on
+ * every request (same connections and settings; no separate configuration).
+ */
+export function poolOf(client: object): Pool | undefined {
+  return pools.get(client);
 }
