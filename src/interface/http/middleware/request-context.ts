@@ -32,6 +32,19 @@ export function getRequestContext(req: FastifyRequest): RequestContext | null {
   return (req as FastifyRequest & { [CONTEXT_KEY]?: RequestContext })[CONTEXT_KEY] ?? null;
 }
 
+/** Identity from a verified token, before its role is loaded (used by the rate limiter). */
+export function attachTokenIdentity(
+  req: FastifyRequest,
+  identity: { tenantId: string; userId: string },
+): void {
+  const ctx = getRequestContext(req);
+  if (!ctx) {
+    throw new Error('Request context must be created before authentication');
+  }
+  ctx.tenantId = identity.tenantId;
+  ctx.userId = identity.userId;
+}
+
 export function attachAuthenticatedContext(req: FastifyRequest, auth: AuthContext): void {
   const ctx = getRequestContext(req);
   if (!ctx) {
