@@ -68,10 +68,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     audience: config.AUTH_AUDIENCE,
     defaultTtlSeconds: config.AUTH_TTL_SECONDS,
   });
-  const authHook = createAuthHook(authService, deps.principals);
-  app.addHook('onRequest', authHook.onRequest);
-  // Registered before the other preHandlers: the role is known before any of them runs.
-  app.addHook('preHandler', authHook.preHandler);
+  app.addHook('onRequest', createAuthHook(authService, deps.principals));
 
   // Every authenticated route must declare the permission it needs: a route without one does
   // not start, so none can be added without going through the authorization service.
