@@ -26,6 +26,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
+    "storage:orphans": "tsx scripts/storage/report-orphans.ts",
     "postinstall": "prisma generate",
     "db:diag": "tsx src/devtools/runDbDiagnostics.ts",
     "db:explain": "tsx scripts/explain-queries.ts",
