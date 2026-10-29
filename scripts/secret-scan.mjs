@@ -1,17 +1,12 @@
 #!/usr/bin/env node
 /* global console */
+import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
 const root = process.cwd();
-const ignoredDirectories = new Set([
-  '.git',
-  'coverage',
-  'dist',
-  'node_modules',
-  'reports',
-]);
+const ignoredDirectories = new Set(['.git', 'coverage', 'dist', 'node_modules', 'reports']);
 const ignoredFiles = new Set(['package-lock.json']);
 const ignoredFilePatterns = [/^\.env(?!.*\.example$)/];
 
@@ -61,9 +56,39 @@ async function collectFiles(directory, relativeDirectory = '') {
   return files;
 }
 
+/**
+ * Files that git could commit: tracked, or new and not excluded by .gitignore. The scan protects
+ * the repository, so ignored folders (.runtime, ocr-samples, .env files...) are left out without a
+ * list to keep in sync. Without git, falls back to walking the folders.
+ */
+function committableFiles() {
+  try {
+    const output = execFileSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    return output
+      .split('\0')
+      .filter(Boolean)
+      .filter((file) => {
+        const name = path.basename(file);
+        return (
+          !ignoredFiles.has(name) && !ignoredFilePatterns.some((pattern) => pattern.test(name))
+        );
+      });
+  } catch {
+    return null;
+  }
+}
+
 const findings = [];
 
-for (const relativePath of await collectFiles(root)) {
+for (const relativePath of committableFiles() ?? (await collectFiles(root))) {
   let contents;
   try {
     contents = await readFile(path.join(root, relativePath), 'utf8');
