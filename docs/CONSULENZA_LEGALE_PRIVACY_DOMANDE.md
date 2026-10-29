@@ -34,7 +34,7 @@ SinfonIA è una piattaforma per le cooperative e per le piccole aziende. Aiuta a
 | Fornitore | Ruolo | Dati che riceve | Dove |
 | :--- | :--- | :--- | :--- |
 | Hosting e database (da scegliere per la produzione) | infrastruttura | tutti | UE (requisito) |
-| OpenAI (oppure Azure OpenAI con regione UE) | interpretazione dei messaggi in linguaggio naturale | testo dei messaggi. Nomi, codici fiscali, IBAN, email e telefoni sono sostituiti da segnaposto prima dell'invio, ma il riconoscimento dei nomi è euristico | USA (OpenAI) oppure UE (Azure) |
+| Fornitore AI, uno a scelta: OpenAI, Azure OpenAI con regione UE, oppure Mistral AI (società francese) | interpretazione dei messaggi in linguaggio naturale | testo dei messaggi. Nomi, codici fiscali, IBAN, email e telefoni sono sostituiti da segnaposto prima dell'invio, ma il riconoscimento dei nomi è euristico | USA (OpenAI); UE (Azure, Mistral) |
 | Telegram | canale di chat | messaggi, file e allegati scambiati in chat | fuori UE **[da verificare]** |
 | Meta (WhatsApp Business) | canale di chat | come sopra | **[da verificare]** |
 | Fornitore email (non ancora scelto: SMTP Aruba, Brevo o altri) | codici di accesso, inviti, avvisi di sicurezza | indirizzo email e testo dell'avviso | Italia o UE |
@@ -61,7 +61,10 @@ Avete un modello da proporre?
 **A3. Sub-responsabili.**
 Quali verifiche e quali contratti servono con ciascun fornitore della tabella? Ci interessano soprattutto:
 - **trasferimenti fuori UE**: OpenAI, Telegram, Meta. Bastano le clausole contrattuali standard o il quadro UE-USA per la privacy dei dati? Serve una valutazione d'impatto del trasferimento?
-- **OpenAI**: per rendere accettabile l'invio di testo dopo la sostituzione dei dati personali, basta il DPA standard? Oppure conviene passare ad Azure OpenAI in regione UE prima del pilota?
+- **Fornitore AI**: la piattaforma può usare in alternativa OpenAI, Azure OpenAI in regione UE o Mistral AI.
+  - Con OpenAI, per rendere accettabile l'invio di testo dopo la sostituzione dei dati personali, basta il DPA standard?
+  - Quale dei tre consigliate per il pilota?
+  - Per Mistral vanno verificate nel suo DPA la durata di conservazione delle richieste, la possibilità di conservazione zero ed eventuali trasferimenti temporanei fuori UE.
 
 **A4. Canali di chat.**
 Quando un utente riceve un file nella propria chat Telegram o WhatsApp, quel file esce dal nostro controllo: resta nella cronologia del servizio e sul telefono. Chi ne risponde? Cosa va scritto nell'informativa e nelle condizioni d'uso?
@@ -174,7 +177,7 @@ Come responsabile dobbiamo avvisare il titolare «senza ingiustificato ritardo»
 ## 4. Cosa ci serve come risultato
 
 1. Conferma o correzione dei ruoli (A1) e un modello di DPA (A2).
-2. Elenco dei contratti e delle verifiche per ogni fornitore (A3), con indicazione su OpenAI rispetto ad Azure OpenAI in UE.
+2. Elenco dei contratti e delle verifiche per ogni fornitore (A3), con indicazione sul fornitore AI da preferire tra OpenAI, Azure OpenAI in UE e Mistral AI.
 3. Durate di conservazione approvate o corrette (sezione C), con la motivazione da riportare nell'informativa.
 4. Indicazioni sulle regole di cancellazione (sezione D), così da approvare le regole R1–R13 del piano.
 5. Indicazioni sulle informative e sulla necessità di una valutazione d'impatto (A5, A6).
