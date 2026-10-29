@@ -55,11 +55,33 @@ const ConfigSchema = z
     OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
     // Shared secret for signing webhook deliveries; webhooks are not sent without it.
     OUTBOX_WEBHOOK_SECRET: z.string().min(32).optional(),
+    // WhatsApp Business Cloud API: the channel is on only when all four values are set.
+    WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
+    WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
+    WHATSAPP_APP_SECRET: z.string().min(1).optional(),
+    WHATSAPP_VERIFY_TOKEN: z.string().min(16).optional(),
+    WHATSAPP_API_VERSION: z.string().min(2).default('v21.0'),
   })
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',
     path: ['S3_BUCKET'],
-  });
+  })
+  .refine(
+    (c) => {
+      const set = [
+        c.WHATSAPP_ACCESS_TOKEN,
+        c.WHATSAPP_PHONE_NUMBER_ID,
+        c.WHATSAPP_APP_SECRET,
+        c.WHATSAPP_VERIFY_TOKEN,
+      ].filter(Boolean).length;
+      return set === 0 || set === 4;
+    },
+    {
+      message:
+        'WhatsApp needs WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN together',
+      path: ['WHATSAPP_ACCESS_TOKEN'],
+    },
+  );
 
 export type AppConfig = z.infer<typeof ConfigSchema>;
 

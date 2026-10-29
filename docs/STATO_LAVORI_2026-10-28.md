@@ -67,7 +67,8 @@ Non eseguito: `npm run ai:eval:nightly` (chiamate a pagamento al modello OpenAI 
 | Allegati e OCR | 🟢 OCR reale in-process su foto e PDF, upload multipart, limiti di formato e dimensione (aggiornato 28/10/2026; prima: 🔴 nessun OCR reale) |
 | Evaluation harness | 🟡 Infrastruttura presente, in CI usa un LLM simulato |
 | Scadenzario e promemoria (DURC, sicurezza, bio, visite, patentini) | 🟢 API, comandi Telegram e promemoria a 30/15/7/1 giorni e alla scadenza (Step 6, 29/10/2026) |
-| WhatsApp, Odoo, connettori PA, telemetria, dashboard | 🔵 Non iniziati |
+| Canale WhatsApp | 🟡 Webhook, collegamento, conversazione con parità rispetto a Telegram e notifiche pronti (Step 7); mancano template Meta e prova con un numero reale |
+| Odoo, connettori PA, telemetria, dashboard | 🔵 Non iniziati |
 
 ### 4.2 Interventi P1 (prossimi)
 
@@ -124,21 +125,21 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 
 | Previsto | Stato reale |
 | :--- | :--- |
-| `outbox.dispatcher.ts` con retry esponenziale, dead-letter, consegna su Telegram/WhatsApp/webhook | ✅ Telegram e webhook (Step 5, 28/10/2026); WhatsApp con lo Step 7 |
+| `outbox.dispatcher.ts` con retry esponenziale, dead-letter, consegna su Telegram/WhatsApp/webhook | ✅ Telegram e webhook (Step 5, 28/10/2026); WhatsApp (Step 7, 29/10/2026) |
 | Modello `compliance_deadline` e `src/core/compliance/` | ✅ Step 6 |
 | Job `CHECK_COMPLIANCE_DEADLINES` (avvisi a 30/15/7/1 giorni) | ✅ Step 6, più un avviso il giorno della scadenza |
 | Notifiche push all'utente | ✅ Su Telegram agli amministratori e al socio interessato, e sul webhook del tenant |
 | `tests/compliance.scheduler.test.ts` | ✅ Step 6 |
 
-### 5.4 Fase 3D (Pilastro 3) — WhatsApp Business: **non iniziata**
+### 5.4 Fase 3D (Pilastro 3) — WhatsApp Business: **in sviluppo** (Step 7; prima: non iniziata)
 
 | Previsto | Stato reale |
 | :--- | :--- |
-| `src/interface/whatsapp/`, webhook Meta `GET`/`POST /webhooks/whatsapp` | ⚫ Assenti |
-| Tabella `whatsapp_identity` + collegamento con codice invito | ⚫ Assenti (il binding Telegram è un modello riutilizzabile) |
-| Parità di comportamento con Telegram e REST | ⚫ Favorita dall'architettura: tutto passa da `PracticeApplicationService` e dall'interprete |
-| Template interattivi con pulsanti | ⚫ Assenti |
-| `tests/whatsapp.adapter.test.ts` | ⚫ Assente |
+| `src/interface/whatsapp/`, webhook Meta `GET`/`POST /webhooks/whatsapp` | ✅ Step 7, con verifica della firma |
+| Tabella `whatsapp_identity` + collegamento con codice invito | ✅ Step 7 |
+| Parità di comportamento con Telegram e REST | ✅ Logica di conversazione comune, verificata da un test di parità |
+| Template interattivi con pulsanti | ⏳ Richiedono l'account Meta Business verificato e l'approvazione dei template |
+| `tests/whatsapp.adapter.test.ts` | ✅ Step 7 |
 
 ### 5.5 Lavoro realizzato ma non previsto dal piano
 
@@ -356,6 +357,19 @@ Da fare: un server di staging vero (oggi la prova dipende da un PC acceso).
 - Template interattivi Meta con pulsanti («Approva pratica», «Visualizza dettagli», «Invia documento»).
 - Canale WhatsApp nel dispatcher outbox, per ricevere anche le notifiche di scadenza.
 - **Accettazione**: `tests/whatsapp.adapter.test.ts` con webhook simulato (testo, immagine, documento, firma non valida rifiutata); test di parità con Telegram.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Logica di conversazione comune | ✅ | Estratta da Telegram in `src/interface/conversation/conversation.service.ts` (collegamento con invito, identità, allegati con scelta della pratica, comandi su pratiche e scadenze, interprete AI). Telegram e WhatsApp sono adattatori sottili: i test esistenti del bot Telegram passano invariati |
+| Webhook Meta | ✅ | `GET /webhooks/whatsapp` (verifica con `WHATSAPP_VERIFY_TOKEN`) e `POST` con firma `X-Hub-Signature-256` verificata sul corpo grezzo, in tempo costante; firma non valida → 401. Risposta 200 immediata, elaborazione dopo; messaggi ripetuti da Meta ignorati; messaggi dello stesso numero elaborati in ordine. Il parser del corpo grezzo vale solo per queste rotte |
+| `whatsapp_identity` | ✅ | Migrazione `20261029120000_step7_whatsapp_identity`: telefono → utente → tenant, collegamento scrivendo `start <codice invito>`, stesso trigger di coerenza tenant delle altre tabelle |
+| Testo, foto, documenti | ✅ | Media scaricati dalla Cloud API solo dopo la scelta della pratica, poi OCR come per Telegram; per le foto (compresse anche da WhatsApp) il bot suggerisce di inviarle come «Documento». Altri tipi (audio, posizione…) ricevono una spiegazione |
+| Canale nel dispatcher | ✅ | Export e promemoria arrivano anche su WhatsApp agli ADMIN e al socio interessato (`whatsapp:<telefono>`). Errori Meta mappati: limiti di frequenza e 5xx ritentati, numeri non validi definitivi |
+| Configurazione | ✅ | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` (tutti o nessuno), `WHATSAPP_API_VERSION` (default `v21.0`). Senza configurazione il canale resta spento |
+| Test | ✅ | `tests/whatsapp.adapter.test.ts` (17 test): webhook simulato con testo, immagine, documento e firma non valida rifiutata; handshake; client Cloud API; mappatura errori; collegamento con invito e duplicati su database; promemoria su WhatsApp; **test di parità**: la stessa conversazione su Telegram e WhatsApp produce risposte identiche. Suite completa 262/262 |
+| Template Meta e pulsanti interattivi | ⏳ | Fuori dalle 24 ore dall'ultimo messaggio dell'utente Meta accetta solo **template approvati**: oggi un promemoria in quel caso fallisce in modo definitivo con il motivo esplicito («serve un template approvato da Meta»). Template e pulsanti («Approva pratica», «Visualizza dettagli», «Invia documento») richiedono l'account Meta Business verificato e l'approvazione dei modelli |
+| Prova con un numero reale | ⏳ | Richiede la verifica Meta Business, il numero WhatsApp e un URL HTTPS pubblico per il webhook |
 
 #### Step 8 — Scalabilità e igiene (3 g) · P2
 - Export in streaming o paginato invece del caricamento completo in memoria.

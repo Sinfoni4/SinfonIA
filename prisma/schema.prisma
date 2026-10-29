@@ -36,6 +36,7 @@ model Tenant {
   attachments         PracticeAttachment[]
   complianceDeadlines ComplianceDeadline[]
   complianceReminders ComplianceReminder[]
+  whatsappIdentities  WhatsappIdentity[]
 
   @@map("tenant")
 }
@@ -84,6 +85,7 @@ model User {
   practices           Practice[]
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
+  whatsappIdentity    WhatsappIdentity?
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -304,4 +306,20 @@ model ComplianceReminder {
   @@unique([deadlineId, thresholdDays])
   @@index([tenantId])
   @@map("compliance_reminder")
+}
+
+model WhatsappIdentity {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
+  // Digits only, international format without "+" (as the WhatsApp Cloud API sends it).
+  phoneNumber String   @map("phone_number")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneNumber])
+  @@index([phoneNumber])
+  @@map("whatsapp_identity")
 }

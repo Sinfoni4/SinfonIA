@@ -1,6 +1,12 @@
 import { DeliveryError } from './outbox.delivery.js';
 
-import type { OutboxDelivery, TelegramNotifier, WebhookNotifier } from './outbox.delivery.js';
+import type {
+  ChatNotifier,
+  OutboxChannels,
+  OutboxDelivery,
+  TelegramNotifier,
+  WebhookNotifier,
+} from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
 
@@ -39,6 +45,66 @@ export async function telegramDeliveries(
             }),
           ),
   }));
+}
+
+/** Deliveries through a chat channel; when the channel is not configured they are retried. */
+function chatTargets(
+  prefix: string,
+  ids: string[],
+  notifier: ChatNotifier | undefined,
+  send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
+  missing: string,
+): OutboxDelivery[] {
+  return [...new Set(ids)].map((chatId) => ({
+    target: `${prefix}:${chatId}`,
+    send: notifier
+      ? () => send(notifier, chatId)
+      : () => Promise.reject(new DeliveryError(missing, { permanent: false })),
+  }));
+}
+
+/**
+ * WhatsApp numbers of the tenant ADMINs plus the given extra users, as `whatsapp:<phone>` targets.
+ */
+export async function whatsappDeliveries(
+  prisma: PrismaLike,
+  tenantId: string,
+  whatsapp: ChatNotifier | undefined,
+  send: (notifier: ChatNotifier, phone: string) => Promise<void>,
+  extraUserIds: string[] = [],
+): Promise<OutboxDelivery[]> {
+  const identities = await prisma.whatsappIdentity.findMany({
+    where: {
+      tenantId,
+      OR: [
+        { user: { role: 'ADMIN' } },
+        ...(extraUserIds.length ? [{ userId: { in: extraUserIds } }] : []),
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { phoneNumber: true },
+  });
+  return chatTargets(
+    'whatsapp',
+    identities.map((i) => i.phoneNumber),
+    whatsapp,
+    send,
+    'WhatsApp non configurato (WHATSAPP_ACCESS_TOKEN)',
+  );
+}
+
+/** Telegram and WhatsApp deliveries of the same content to the same recipients. */
+export async function chatDeliveries(
+  prisma: PrismaLike,
+  tenantId: string,
+  channels: OutboxChannels,
+  send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
+  extraUserIds: string[] = [],
+): Promise<OutboxDelivery[]> {
+  return [
+    ...(await telegramDeliveries(prisma, tenantId, channels.telegram, send, extraUserIds)),
+    ...(await whatsappDeliveries(prisma, tenantId, channels.whatsapp, send, extraUserIds)),
+  ];
 }
 
 /** The tenant webhook, when one is configured, as the `webhook` target. */

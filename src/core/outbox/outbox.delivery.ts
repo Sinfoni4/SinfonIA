@@ -36,10 +36,13 @@ export type OutboxDocument = {
   mimeType: string;
 };
 
-export interface TelegramNotifier {
+/** A chat channel (Telegram, WhatsApp): `chatId` is the Telegram chat or the phone number. */
+export interface ChatNotifier {
   sendDocument(chatId: string, document: OutboxDocument, caption: string): Promise<void>;
   sendMessage(chatId: string, text: string): Promise<void>;
 }
+
+export type TelegramNotifier = ChatNotifier;
 
 export type WebhookEvent = {
   id: string;
@@ -52,3 +55,10 @@ export type WebhookEvent = {
 export interface WebhookNotifier {
   post(url: string, event: WebhookEvent): Promise<void>;
 }
+
+/** Delivery channels available in this process; a missing one is not configured. */
+export type OutboxChannels = {
+  telegram?: ChatNotifier;
+  whatsapp?: ChatNotifier;
+  webhook?: WebhookNotifier;
+};

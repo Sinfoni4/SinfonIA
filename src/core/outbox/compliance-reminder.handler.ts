@@ -1,14 +1,9 @@
 import { formatReminderMessage } from '../compliance/compliance.messages.js';
 import { COMPLIANCE_DEADLINE_REMINDER } from '../compliance/compliance.service.js';
 
-import { telegramDeliveries, webhookDeliveries } from './outbox.recipients.js';
+import { chatDeliveries, webhookDeliveries } from './outbox.recipients.js';
 
-import type {
-  OutboxDelivery,
-  OutboxEventHandler,
-  TelegramNotifier,
-  WebhookNotifier,
-} from './outbox.delivery.js';
+import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
 import type { ComplianceReminderPayload } from '../compliance/compliance.service.js';
@@ -22,7 +17,7 @@ export class ComplianceReminderHandler implements OutboxEventHandler {
 
   constructor(
     private readonly prisma: PrismaLike,
-    private readonly channels: { telegram?: TelegramNotifier; webhook?: WebhookNotifier },
+    private readonly channels: OutboxChannels,
   ) {}
 
   async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
@@ -30,10 +25,10 @@ export class ComplianceReminderHandler implements OutboxEventHandler {
     const text = formatReminderMessage(payload);
 
     return [
-      ...(await telegramDeliveries(
+      ...(await chatDeliveries(
         this.prisma,
         message.tenantId,
-        this.channels.telegram,
+        this.channels,
         (telegram, chatId) => telegram.sendMessage(chatId, text),
         payload.userId ? [payload.userId] : [],
       )),

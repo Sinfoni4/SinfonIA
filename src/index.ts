@@ -28,6 +28,9 @@ import { TelegramClient } from './interface/telegram/telegram.client.js';
 import { formatTelegramResponse } from './interface/telegram/telegram.formatter.js';
 import { createTelegramNotifier } from './interface/telegram/telegram.notifier.js';
 import { createWebhookNotifier } from './interface/webhook/webhook.notifier.js';
+import { WhatsAppChannel } from './interface/whatsapp/whatsapp.channel.js';
+import { WhatsAppClient } from './interface/whatsapp/whatsapp.client.js';
+import { createWhatsAppNotifier } from './interface/whatsapp/whatsapp.notifier.js';
 import { validateDatabaseConfig } from './runtime/runtime.db.config.js';
 import { forceDatabaseConnect } from './runtime/runtime.db.connect.js';
 import { checkDatabaseHealth } from './runtime/runtime.db.health.js';
@@ -42,6 +45,7 @@ import { createLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
 
 import type { LLMClient } from './ai/interpreter/interpreter.service.js';
+import type { ConversationIdentity } from './interface/conversation/conversation.service.js';
 
 export let runtimeMode: 'HEALTHY' | 'DEGRADED' | 'CIRCUIT_OPEN' = 'HEALTHY';
 let httpServer: ReturnType<typeof buildServer> | null = null;
@@ -168,9 +172,54 @@ TEST 5 — /devstate health metrics
   const normalizerService = new NormalizerService();
   const complianceService = new ComplianceService(prisma);
 
+  // Natural-language messages from any chat channel go through the same AI pipeline.
+  const chatAdapter = new TelegramAdapter({
+    interpreter: interpreterService,
+    normalizer: normalizerService,
+    decisionEngine,
+    validateBeforeDecision,
+    validateResolvedCommand,
+    executor: executorService,
+    contextService,
+    formatResponse: formatTelegramResponse,
+  });
+  const conversationDeps = {
+    prisma,
+    practiceService,
+    complianceService,
+    handleMessage: (input: string, identity: ConversationIdentity) =>
+      chatAdapter.handleMessage(input, identity),
+    log: logger,
+  };
+
+  const whatsappClient =
+    config.WHATSAPP_ACCESS_TOKEN && config.WHATSAPP_PHONE_NUMBER_ID
+      ? new WhatsAppClient({
+          accessToken: config.WHATSAPP_ACCESS_TOKEN,
+          phoneNumberId: config.WHATSAPP_PHONE_NUMBER_ID,
+          apiVersion: config.WHATSAPP_API_VERSION,
+        })
+      : null;
+  const whatsappChannel = whatsappClient
+    ? new WhatsAppChannel(whatsappClient, conversationDeps, logger)
+    : null;
+  logger.info(
+    { enabled: Boolean(whatsappChannel) },
+    whatsappChannel ? 'WhatsApp channel enabled' : 'WhatsApp channel disabled (WHATSAPP_* not set)',
+  );
+
   const app = buildServer(config, logger, {
     practiceService,
     complianceService,
+    ...(whatsappChannel && config.WHATSAPP_APP_SECRET && config.WHATSAPP_VERIFY_TOKEN
+      ? {
+          whatsappWebhook: {
+            verifyToken: config.WHATSAPP_VERIFY_TOKEN,
+            appSecret: config.WHATSAPP_APP_SECRET,
+            onPayload: (payload: unknown) => whatsappChannel.receive(payload),
+          },
+        }
+      : {}),
     interpreterService,
     executorService,
     contextService,
@@ -182,24 +231,7 @@ TEST 5 — /devstate health metrics
   console.log('🚀 TELEGRAM BOOTSTRAP START');
   const tgToken = process.env.TELEGRAM_BOT_TOKEN;
   if (tgToken && tgToken.trim().length > 0) {
-    const adapter = new TelegramAdapter({
-      interpreter: interpreterService,
-      normalizer: normalizerService,
-      decisionEngine,
-      validateBeforeDecision,
-      validateResolvedCommand,
-      executor: executorService,
-      contextService,
-      formatResponse: formatTelegramResponse,
-    });
-
-    const bot = new TelegramBotService({
-      prisma,
-      practiceService,
-      complianceService,
-      handleMessage: (input, identity) => adapter.handleMessage(input, identity),
-      log: logger,
-    });
+    const bot = new TelegramBotService(conversationDeps);
     bot.start(tgToken);
   } else {
     logger.info('Telegram bot disabled (TELEGRAM_BOT_TOKEN not set)');
@@ -239,6 +271,7 @@ TEST 5 — /devstate health metrics
           }),
         }
       : {}),
+    ...(whatsappClient ? { whatsapp: createWhatsAppNotifier(whatsappClient) } : {}),
   };
   const dispatcher = new OutboxDispatcher(prisma, {
     maxAttempts: config.OUTBOX_MAX_ATTEMPTS,

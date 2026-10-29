@@ -364,6 +364,7 @@ export async function runHarness(args: {
       SCHEDULER_INTERVAL_MS: 60_000,
       OUTBOX_DISPATCH_INTERVAL_MS: 5_000,
       OUTBOX_MAX_ATTEMPTS: 8,
+      WHATSAPP_API_VERSION: 'v21.0',
     },
     logger,
     {

@@ -5,7 +5,8 @@ import { attachAuthenticatedContext } from '../middleware/request-context.js';
 import type { AuthService } from './auth.service.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-const PUBLIC_PATHS = new Set(['/healthz', '/readyz']);
+// The WhatsApp webhook authenticates Meta's requests by signature, not by JWT.
+const PUBLIC_PATHS = new Set(['/healthz', '/readyz', '/webhooks/whatsapp']);
 
 export function createAuthHook(authService: AuthService) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
