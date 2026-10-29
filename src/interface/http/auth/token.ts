@@ -18,6 +18,8 @@ const ClaimsSchema = z.object({
   exp: z.number().int().positive(),
   iss: z.string().min(1),
   aud: z.string().min(1),
+  sid: z.string().uuid().optional(),
+  ver: z.number().int().nonnegative().optional(),
 });
 
 function base64UrlEncode(value: string | Buffer): string {
@@ -33,7 +35,14 @@ function sign(header: string, payload: string, secret: string): string {
 }
 
 export function issueAuthToken(
-  input: { tenantId: string; userId: string; role: AuthClaims['role']; ttlSeconds?: number },
+  input: {
+    tenantId: string;
+    userId: string;
+    role: AuthClaims['role'];
+    ttlSeconds?: number;
+    sessionId?: string;
+    authVersion?: number;
+  },
   config: AuthConfig,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): string {
@@ -53,6 +62,8 @@ export function issueAuthToken(
       exp,
       iss: config.issuer,
       aud: config.audience,
+      ...(input.sessionId ? { sid: input.sessionId } : {}),
+      ...(input.authVersion !== undefined ? { ver: input.authVersion } : {}),
     }),
   );
   const signature = sign(header, payload, config.secret);

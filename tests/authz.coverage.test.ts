@@ -60,6 +60,7 @@ function build(prisma: PrismaClient, routes: RouteOptions[]): ReturnType<typeof 
   const llm = { complete: () => Promise.reject(new Error('no LLM in this test')) };
   const app = buildServer(cfg, createLogger(cfg), {
     principals: testPrincipals(prisma),
+    prisma,
     practiceService,
     complianceService: new ComplianceService(prisma),
     interpreterService: new InterpreterService(llm),
@@ -176,6 +177,7 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
     expect(withId.map((r) => `${String(r.method)} ${r.url}`).sort()).toEqual([
       'GET /practices/:id',
       'GET /practices/:id/attachments',
+      'GET /practices/:id/attachments/:attachmentId/download',
       'POST /compliance/deadlines/:id/close',
       'POST /practices/:id/attachments',
       'POST /practices/:id/transition',
@@ -192,7 +194,7 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       const id = route.url.startsWith('/compliance') ? ids.deadline : ids.practice;
       const res = await app.inject({
         method: String(route.method) as 'GET' | 'POST',
-        url: route.url.replace(':id', id),
+        url: route.url.replace(':id', id).replace(':attachmentId', randomUUID()),
         headers: authHeaders(other.tenantId, other.adminId, 'ADMIN'),
         ...(route.method === 'POST' ? { payload: payloads[route.url] ?? {} } : {}),
       });

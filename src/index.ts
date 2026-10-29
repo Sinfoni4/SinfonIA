@@ -208,6 +208,7 @@ async function main() {
 
   const app = buildServer(config, logger, {
     principals: createPrismaPrincipalResolver(prisma),
+    prisma,
     practiceService,
     complianceService,
     tracer,
