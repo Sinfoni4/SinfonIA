@@ -54,28 +54,44 @@ export type PrincipalResolver = (identity: {
 }) => Promise<Principal | null>;
 
 export function createPrismaPrincipalResolver(
-  prisma: Pick<PrismaClient, 'user'>,
+  prisma: Pick<PrismaClient, 'membership'>,
 ): PrincipalResolver {
   // Runs on every request: a prepared statement on the client's own pg pool when available
   // (no ORM overhead), the same query through Prisma otherwise.
   const pool = poolOf(prisma);
   const find = pool
-    ? async (userId: string) => {
-        const { rows } = await pool.query<{ role: UserRole; tenant_id: string }>({
-          name: 'authz_principal_by_id',
-          text: 'SELECT "role", "tenant_id" FROM "user" WHERE "id" = $1',
-          values: [userId],
+    ? async (userId: string, tenantId: string) => {
+        // Unique index (user_id, org_id): one lookup, as before MF4.
+        const { rows } = await pool.query<{ role: UserRole }>({
+          name: 'authz_membership',
+          text: `SELECT m."role" FROM "membership" m
+                   JOIN "user" u ON u."id" = m."user_id"
+                   JOIN "tenant" t ON t."id" = m."org_id"
+                  WHERE m."user_id" = $1 AND m."org_id" = $2 AND m."status" = 'ACTIVE'
+                    AND u."status" = 'ACTIVE' AND t."status" = 'ACTIVE'`,
+          values: [userId, tenantId],
         });
-        return rows[0] ? { role: rows[0].role, tenantId: rows[0].tenant_id } : null;
+        return rows[0]?.role ?? null;
       }
-    : (userId: string) =>
-        prisma.user.findUnique({ where: { id: userId }, select: { role: true, tenantId: true } });
+    : async (userId: string, tenantId: string) =>
+        (
+          await prisma.membership.findFirst({
+            where: {
+              userId,
+              orgId: tenantId,
+              status: 'ACTIVE',
+              user: { status: 'ACTIVE' },
+              org: { status: 'ACTIVE' },
+            },
+            select: { role: true },
+          })
+        )?.role ?? null;
 
   return async ({ tenantId, userId }) => {
-    // Primary-key lookup, tenant checked here: about half the cost of a two-column query under
-    // load, with the same result (benchmarked for MF2).
-    if (!UUID.test(userId)) return null;
-    const user = await find(userId);
-    return user && user.tenantId === tenantId ? { tenantId, userId, role: user.role } : null;
+    // The role of the ACTIVE membership in the token's organization (MF4); a suspended person or
+    // organization, or a revoked membership, gives no access.
+    if (!UUID.test(userId) || !UUID.test(tenantId)) return null;
+    const role = await find(userId, tenantId);
+    return role ? { tenantId, userId, role } : null;
   };
 }
