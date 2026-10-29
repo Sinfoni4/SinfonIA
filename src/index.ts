@@ -13,6 +13,8 @@ import {
 import { loadConfig } from './config/config.js';
 import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
+import { SimulatedEmailSender } from './core/email/email.sender.js';
+import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
@@ -212,6 +214,10 @@ async function main() {
   const app = buildServer(config, logger, {
     principals: createPrismaPrincipalResolver(prisma),
     prisma,
+    // Email login (MF6): only where enabled, never in production until a provider exists (D11).
+    ...(config.AUTH_EMAIL_LOGIN
+      ? { login: new LoginService(prisma, new SimulatedEmailSender(), config.AUTH_SECRET, logger) }
+      : {}),
     practiceService,
     complianceService,
     tracer,

@@ -34,6 +34,12 @@ const ConfigSchema = z
     AUTH_ISSUER: z.string().min(1).default('sinfonia'),
     AUTH_AUDIENCE: z.string().min(1).default('sinfonia-api'),
     AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(3600),
+    // Email login (MF6): off until an email provider is chosen (D11); emails are simulated.
+    AUTH_EMAIL_LOGIN: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
     // Maximum size of a single practice attachment (default 10 MB).
     ATTACHMENT_MAX_BYTES: z.coerce
       .number()
@@ -72,6 +78,8 @@ const ConfigSchema = z
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(120),
     RATE_LIMIT_AI_PER_MINUTE: z.coerce.number().int().min(1).default(20),
     RATE_LIMIT_TENANT_PER_MINUTE: z.coerce.number().int().min(1).default(600),
+    // Login, token and invitation requests per address and minute (MF6).
+    RATE_LIMIT_AUTH_PER_MINUTE: z.coerce.number().int().min(1).default(10),
     // AI traces older than this are deleted (they hold no prompt text, only metadata).
     AI_TRACE_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
   })
@@ -85,6 +93,11 @@ const ConfigSchema = z
       path: ['LLM_PROVIDER'],
     },
   )
+  .refine((c) => !(c.AUTH_EMAIL_LOGIN && c.NODE_ENV === 'production'), {
+    // The login codes would go nowhere: no email provider is configured yet (D11).
+    message: 'AUTH_EMAIL_LOGIN needs a real email provider, not available yet',
+    path: ['AUTH_EMAIL_LOGIN'],
+  })
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',
     path: ['S3_BUCKET'],

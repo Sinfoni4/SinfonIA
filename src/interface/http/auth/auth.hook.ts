@@ -9,7 +9,18 @@ import type { PrincipalResolver } from '../../../core/authz/authorization.servic
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 // The WhatsApp webhook authenticates Meta's requests by signature, not by JWT.
-export const PUBLIC_PATHS = new Set(['/healthz', '/readyz', '/webhooks/whatsapp']);
+export const PUBLIC_PATHS = new Set([
+  '/healthz',
+  '/readyz',
+  '/webhooks/whatsapp',
+  // Email login (MF6): the caller has no token yet; registered only when enabled.
+  '/auth/login/start',
+  '/auth/login/verify',
+  '/auth/token',
+  '/auth/logout',
+  '/auth/invitations/start',
+  '/auth/invitations/accept',
+]);
 
 export function createAuthHook(authService: AuthService, principals: PrincipalResolver) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {

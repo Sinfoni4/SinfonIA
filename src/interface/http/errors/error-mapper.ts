@@ -15,6 +15,7 @@ import { LLMDisabledError } from '../../../ai/providers/disabled.provider.js';
 import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
+import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
 import {
@@ -35,7 +36,12 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof PermissionDeniedError) {
     return { statusCode: 403, code: 'FORBIDDEN', message: 'Insufficient role for this operation' };
   }
-  if (err instanceof LastAdminError || err instanceof MemberAccessError) {
+  if (
+    err instanceof LastAdminError ||
+    err instanceof MemberAccessError ||
+    err instanceof LoginError ||
+    err instanceof InvitationError
+  ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
   if (err instanceof ComplianceValidationError) {
