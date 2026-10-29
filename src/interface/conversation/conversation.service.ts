@@ -5,7 +5,11 @@ import {
   OrganizationChoiceRequiredError,
   type MembershipOption,
 } from '../../core/identity/membership.service.js';
-import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
+import {
+  parsePracticeCommand,
+  type ChatTransition,
+  type PracticeCommand,
+} from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
 import { errorLabel } from '../../shared/errors.js';
 import {
@@ -105,6 +109,17 @@ type Reply = (text: string) => Promise<unknown>;
 // Most recent practices considered when choosing where a received file goes.
 const ATTACHMENT_PRACTICE_LOOKUP_LIMIT = 20;
 
+// A transition of someone else's practice waits this long for the person's confirmation (C2).
+const TRANSITION_CONFIRMATION_MS = 5 * 60_000;
+const CONFIRMATION = /^(s[iì]|conferm[ao])[.!]?$/i;
+
+type PendingTransition = {
+  tenantId: string;
+  practiceId: string;
+  nextState: ChatTransition;
+  expiresAt: number;
+};
+
 // Telegram compresses photos to 1280 px, which hurts OCR on small print (found in staging).
 export const TELEGRAM_COMPRESSED_PHOTO_TIP =
   '\n\n💡 Per una lettura migliore invia il documento come File (📎 → File) invece che come ' +
@@ -167,6 +182,8 @@ Prova a scrivere:
 export class ConversationService {
   // Files received while the user still has to choose the target practice.
   private readonly pendingAttachments = new PendingAttachmentStore<InboundFile>();
+  // Transitions of practices of others waiting for «sì», by person (C2).
+  private readonly pendingTransitions = new Map<string, PendingTransition>();
   private readonly memory: ConversationMemory;
 
   constructor(
@@ -370,6 +387,38 @@ export class ConversationService {
       }
     }
 
+    // Any message answers a pending confirmation: «sì» executes it, anything else cancels it.
+    const pendingTransition = this.pendingTransitions.get(dbUser.id);
+    if (pendingTransition) {
+      this.pendingTransitions.delete(dbUser.id);
+      if (
+        pendingTransition.tenantId === tenant.id &&
+        pendingTransition.expiresAt > Date.now() &&
+        CONFIRMATION.test(trimmed)
+      ) {
+        const confirmed: PracticeCommand = {
+          type: 'CONFIRM_TRANSITION',
+          payload: {
+            practiceId: pendingTransition.practiceId,
+            nextState: pendingTransition.nextState,
+          },
+        };
+        const result = await deps.practiceService.executeCommand(confirmed, {
+          tenantId: tenant.id,
+          userId: dbUser.id,
+          role: dbUser.role,
+        });
+        await reply(formatPracticeCommandResult(result));
+        return;
+      }
+      if (CONFIRMATION.test(trimmed)) {
+        await reply('⌛ La richiesta è scaduta: ripeti il comando.');
+        return;
+      }
+      await reply('Ok, operazione annullata.');
+      if (!parsePracticeCommand(trimmed) && !parseComplianceCommand(trimmed)) return;
+    }
+
     const complianceCommand = deps.complianceService ? parseComplianceCommand(trimmed) : null;
     if (complianceCommand && deps.complianceService) {
       await reply(
@@ -385,12 +434,20 @@ export class ConversationService {
 
     const command = parsePracticeCommand(trimmed);
     if (command) {
-      // C2 pending: in chat every command works on the caller's own practices.
+      // C2: the caller's own practices by default; the organization only with explicit commands.
       const result = await deps.practiceService.executeCommand(command, {
         tenantId: tenant.id,
         userId: dbUser.id,
         role: dbUser.role,
       });
+      if (result.type === 'confirm_transition') {
+        this.pendingTransitions.set(dbUser.id, {
+          tenantId: tenant.id,
+          practiceId: result.practice.id,
+          nextState: result.nextState,
+          expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
+        });
+      }
       await reply(formatPracticeCommandResult(result));
       return;
     }
