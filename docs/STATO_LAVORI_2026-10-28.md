@@ -16,6 +16,7 @@
 - Rispetto al piano della Fase 3: 3A completa, 3B parziale (manca l'OCR reale), 3C e 3D non iniziate (§5).
 - Il cronoprogramma per step (§6) porta a chiudere la Fase 3 in 36 giornate lavorative: gate finale il 22/12/2026, metà gennaio 2027 con margine.
 - **Aggiornamento 28/10/2026 — Step 4 completato nello sviluppo**: OCR reale, storage S3/MinIO e conferma della pratica su Telegram implementati e testati (§6.3, Step 4). Resta la prova su documenti reali.
+- **Aggiornamento 29/10/2026 — Fase 3 chiusa nello sviluppo**: tutti gli step (0–8) sono uniti in `main` (PR #6, #7, #8) e il gate finale è superato (§6.3, «Gate finale Fase 3»). Restano due prove sul campo, rimandate su richiesta: OCR su documenti reali e WhatsApp con il numero di test Meta.
 
 ---
 
@@ -98,6 +99,8 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 
 **Sintesi**: la 3A è completa, la 3B è a metà (manca il motore OCR reale), la 3C e la 3D non sono iniziate. Sono stati fatti lavori non previsti dal piano (§5.5).
 
+**Aggiornamento 29/10/2026**: dopo gli step 1–8 tutte le voci sono ✅, tranne quelle che dipendono da prove sul campo o da Meta (⏳). Le tabelle sotto riportano lo stato aggiornato.
+
 ### 5.1 Fase 3A — LLM esplicito, tracing e contesto: **completata**
 
 | Previsto | Stato reale |
@@ -107,19 +110,19 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 | Paginazione, ordinamento e ricerca su `ContextService` | ✅ Presenti, con il limite applicato nella query al database |
 | Deliverable: lint pulito, `tests/ai.phase3a.test.ts` | ✅ |
 
-### 5.2 Fase 3B (Pilastro 1) — Document AI e OCR: **parziale**
+### 5.2 Fase 3B (Pilastro 1) — Document AI e OCR: **completata in sviluppo** (Step 4; prima: parziale)
 
 | Previsto | Stato reale |
 | :--- | :--- |
 | Tabella `practice_attachment` con i campi previsti | ✅ Fatta (con in più lo stato `PROCESSING`) |
-| Storage locale + S3/MinIO | 🟡 Solo storage locale |
-| Ricezione `photo`/`document` su Telegram | ✅ Funziona; il file viene associato all'ultima pratica senza conferma |
-| Upload multipart e binario su `POST /practices/:id/attachments` | 🟡 Solo JSON con contenuto base64, fino a circa 750 KB |
-| Motore OCR: tipo documento ed estrazione di P.IVA, data, numero, imponibile, aliquote, totale, righe | 🔴 Classificazione ed estrazione funzionano solo su file già testuali. Nessun OCR né modello vision: foto e PDF reali non producono dati |
-| Tipi: fattura, DDT, scontrino, certificato | 🟡 Fattura, DDT, scontrino, generico; **certificato assente** |
+| Storage locale + S3/MinIO | ✅ Adapter S3/MinIO con chiavi per tenant (Step 4) |
+| Ricezione `photo`/`document` su Telegram | ✅ Con conferma della pratica quando ce n'è più di una (Step 4) |
+| Upload multipart e binario su `POST /practices/:id/attachments` | ✅ Multipart, formato dai magic bytes, limite configurabile (Step 4) |
+| Motore OCR: tipo documento ed estrazione di P.IVA, data, numero, imponibile, aliquote, totale, righe | ✅ Tesseract in-process con seconda lettura per le foto deboli, PDF digitali e scansionati (Step 4). ⏳ Accuratezza su foto reali da misurare |
+| Tipi: fattura, DDT, scontrino, certificato | ✅ Anche certificato, con categoria e scadenza (Step 4) |
 | Schemi Zod `InvoiceOcrSchema`, `DeliveryNoteOcrSchema` | ✅ Presenti, più `ReceiptOcrSchema` |
 | Arricchimento del `payload` della pratica | ✅ Funziona quando l'estrazione produce dati |
-| Test su immagini e PDF campione | 🔴 I test usano solo testo semplice |
+| Test su immagini e PDF campione | ✅ Fixture con foto rumorose e PDF, serie di PDF sintetici, scontrino reale trascritto (Step 4) |
 
 ### 5.3 Fase 3C (Pilastro 2) — Push e scadenzario: **completata in sviluppo** (Step 5 e 6; prima: non iniziata)
 
@@ -131,7 +134,7 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 | Notifiche push all'utente | ✅ Su Telegram agli amministratori e al socio interessato, e sul webhook del tenant |
 | `tests/compliance.scheduler.test.ts` | ✅ Step 6 |
 
-### 5.4 Fase 3D (Pilastro 3) — WhatsApp Business: **in sviluppo** (Step 7; prima: non iniziata)
+### 5.4 Fase 3D (Pilastro 3) — WhatsApp Business: **completata in sviluppo** (Step 7; prima: non iniziata). ⏳ Prova con il numero di test Meta
 
 | Previsto | Stato reale |
 | :--- | :--- |
@@ -147,9 +150,9 @@ I commit etichettati "phase3c" e "phase3d" hanno realizzato attività diverse da
 
 | Attività | Stato |
 | :--- | :--- |
-| Sicurezza prompt: delimitazione `<user_input>`, escaping, `PromptGuard` a pattern | 🟡 Attiva; pattern limitati e prevalentemente in inglese |
-| Minimizzazione PII: CF, IBAN, carte, email, telefono | 🟡 Attiva; nomi e cognomi non mascherati |
-| Evaluation harness + golden set di 19 scenari | 🟡 In CI usa un LLM simulato; esecuzione con modello reale non schedulata |
+| Sicurezza prompt: delimitazione `<user_input>`, escaping, `PromptGuard` a pattern | ✅ Pattern in italiano e controllo su testo offuscato (Step 1) |
+| Minimizzazione PII: CF, IBAN, carte, email, telefono | ✅ Anche nomi e cognomi, pseudonimizzati (Step 1) |
+| Evaluation harness + golden set di 19 scenari | ✅ 61 scenari, modello reale con gate e job notturno (Step 2) |
 | Correzioni P0 post-audit (lock, export, CI, documentazione) | ✅ Completate (§2) |
 
 ---
@@ -434,6 +437,18 @@ Da fare: un server di staging vero (oggi la prova dipende da un PC acceso).
 #### Gate finale Fase 3 (1 g)
 - Esecuzione completa: CI, eval notturno reale, test di carico leggero, aggiornamento di report e cronoprogramma.
 - **Accettazione**: tutte le righe delle tabelle §5.1–§5.5 in stato ✅.
+**Esito al 29/10/2026: superato**
+
+| Verifica | Risultato |
+| :--- | :--- |
+| Unione in `main` | PR #6 (OCR), #7 (WhatsApp), #8 (step 1, 3, 8, 2) unite in ordine; rami cancellati |
+| CI su `main` | ✅ Verde sul commit di unione `803162b` (secret scan, migrazioni, typecheck, lint, formato, 321 test, build, audit) |
+| Valutazione AI col modello reale | ✅ gpt-4o-mini, 61/61 scenari: success 100%, esecuzioni sbagliate 0%, ambiguità 100%, injection 100%, fughe 0, costo 0,014 $. Eseguita in locale: il job notturno partirà quando sarà aggiunto il secret `OPENAI_API_KEY` su GitHub |
+| Test di carico leggero | ✅ API su PostgreSQL locale, 5 tenant, 5.750 richieste senza errori: creazione pratiche 100 req/s (p95 280 ms), elenco paginato 215 req/s (p95 152 ms), dettaglio 301 req/s (p95 139 ms), export 174 req/s. **Isolamento sotto carico**: 500/500 richieste verso pratiche di un altro tenant respinte con 404. **Limite per utente**: su 150 richieste rapide 120 accettate e 30 respinte con 429. Misure su un PC di sviluppo, indicative |
+| Staging | ✅ Migrazioni degli step 3, 7 e 8 applicate; app con il codice di `main` riavviata con il bot Telegram reale |
+| Tabelle §5 | ✅ Aggiornate; restano ⏳ solo le prove sul campo |
+
+**Rimandate su richiesta**: prova OCR su documenti reali (Step 4) e prova WhatsApp con il numero di test Meta (Step 7).
 
 ### 6.4 Rischi principali
 
@@ -453,7 +468,10 @@ Restano invariate rispetto al [cronoprogramma evolutivo](CRONOPROGRAMMA_EVOLUTIV
 
 ## 7. Operazioni in sospeso
 
-### 7.1 Pubblicazione su GitHub — rimandata
+### 7.1 Pubblicazione su GitHub — risolta
+
+Aggiornamento 29/10/2026: i permessi sono stati sistemati e tutto il lavoro è pubblicato e unito in `main` (PR #1–#8). Le note seguenti restano come storico.
+
 
 - Il push di `fix/p0-audit-remediation` su `Sinfoni4/SinfonIA` è stato rifiutato con **HTTP 403**: l'account autenticato `Flv72S` ha solo permesso di lettura. Non risultano inviti da collaboratore in attesa.
 - Il 28/10/2026 il repository è stato ricreato vuoto (pubblico); l'account `Flv72S` risulta ancora con permesso READ.
@@ -462,5 +480,4 @@ Restano invariate rispetto al [cronoprogramma evolutivo](CRONOPROGRAMMA_EVOLUTIV
 
 ### 7.2 Altro
 
-- Il branch `fix/p0-audit-remediation` non è ancora stato unito a `main` locale.
 - I file `.env` e `.env.test` locali contengono chiavi reali (OpenAI, Telegram). Sono esclusi da Git, ma gli harness `npm run ai:test*` le usano per chiamare OpenAI.
