@@ -49,6 +49,31 @@ export function isWithinExportFilter(
   return createdAt.getFullYear() === filter.value;
 }
 
+/**
+ * The creation-date range of a filter, as [from, to), in the server's local time like
+ * isWithinExportFilter, so the database can do the filtering.
+ */
+export function exportFilterRange(
+  filter: PracticeExportFilter,
+  now: Date = new Date(),
+): { from?: Date; to?: Date } {
+  switch (filter.type) {
+    case 'today': {
+      const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return { from, to: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) };
+    }
+    case 'month':
+      return {
+        from: new Date(now.getFullYear(), now.getMonth(), 1),
+        to: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+      };
+    case 'year':
+      return { from: new Date(filter.value, 0, 1), to: new Date(filter.value + 1, 0, 1) };
+    default:
+      return {};
+  }
+}
+
 export function exportFilterTitle(filter: PracticeExportFilter): string {
   switch (filter.type) {
     case 'today':

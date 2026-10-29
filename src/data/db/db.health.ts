@@ -1,5 +1,6 @@
 import { runtimeState } from '../../runtime/runtime.state.js';
 import { errorLabel } from '../../shared/errors.js';
+import { log } from '../../shared/log.js';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -15,12 +16,10 @@ export async function checkDatabaseConnection(
     await prisma.$queryRaw`SELECT 1`;
     const latencyMs = Date.now() - start;
     runtimeState.setDatabaseReachable(true);
-    console.log('✅ Database reachable');
     return { ok: true, latencyMs };
   } catch (err) {
     runtimeState.setDatabaseReachable(false);
-    console.error('❌ Database NOT reachable');
-    console.error(errorLabel(err));
+    log.error({ error: errorLabel(err) }, 'Database not reachable');
     return { ok: false, latencyMs: null };
   }
 }

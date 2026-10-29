@@ -13,9 +13,6 @@ export function mapTelegramErrorToMessage(err: unknown): string {
 
   // Prisma connection failure (code P1001)
   if (msg.includes('P1001') || msg.includes("Can't reach database")) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🧯 DB OFFLINE fallback triggered');
-    }
     return '⚠️ Il database non è disponibile al momento.\nRiprova tra qualche minuto.';
   }
 

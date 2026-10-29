@@ -9,7 +9,7 @@ import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { AttachmentRejectedError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
-import { escapeCsvField, exportFilterTitle, isWithinExportFilter } from './practice.export.js';
+import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
 import { readPracticePayload } from './practice.payload.js';
 
 import type { PracticeCommand } from './practice.commands.js';
@@ -60,8 +60,12 @@ export type PracticeExportResult = {
   filter: PracticeExportFilter;
   title: string;
   csv: string;
-  practices: PracticeView[];
+  /** Number of exported practices. */
+  count: number;
 };
+
+// Practices read per query during an export.
+const EXPORT_BATCH_SIZE = 1000;
 
 export type PracticeCommandResult =
   | { type: 'created'; practice: PracticeView }
@@ -402,29 +406,42 @@ export class PracticeApplicationService {
     return this.attachmentRepository.listAttachmentsByPractice(input.tenantId, input.practiceId);
   }
 
+  /**
+   * CSV export of a tenant's (or a user's) practices. Read from the database in batches with the
+   * date filter applied in the query, and without payloads, so memory does not grow with the
+   * number or size of the practices (10,000 practices are covered by a test).
+   */
   async exportPractices(input: {
     tenantId: string;
     userId?: string;
     filter: PracticeExportFilter;
   }): Promise<PracticeExportResult> {
-    const all = await this.listPractices({
-      tenantId: input.tenantId,
-      userId: input.userId,
-    });
-    const practices = all.filter((practice) =>
-      isWithinExportFilter(practice.createdAt, input.filter),
-    );
+    requireDatabase();
+    const range = exportFilterRange(input.filter);
+    const lines: string[] = [];
+    let after: { createdAt: Date; id: string } | undefined;
 
-    const csvRows = practices.map(
-      (practice) =>
-        `${escapeCsvField(practice.name)},${escapeCsvField(practice.createdAt.toISOString())}`,
-    );
+    for (;;) {
+      const batch = await this.repository.findExportBatch(input.tenantId, {
+        userId: input.userId,
+        ...range,
+        ...(after ? { after } : {}),
+        take: EXPORT_BATCH_SIZE,
+      });
+      for (const row of batch) {
+        const name = row.name?.trim() || `Pratica ${row.id.slice(0, 8)}`;
+        lines.push(`${escapeCsvField(name)},${escapeCsvField(row.createdAt.toISOString())}`);
+      }
+      if (batch.length < EXPORT_BATCH_SIZE) break;
+      const last = batch[batch.length - 1];
+      after = { createdAt: last.createdAt, id: last.id };
+    }
 
     return {
       filter: input.filter,
       title: exportFilterTitle(input.filter),
-      csv: practices.length === 0 ? '' : `Nome,Data Creazione\n${csvRows.join('\n')}\n`,
-      practices,
+      csv: lines.length === 0 ? '' : `Nome,Data Creazione\n${lines.join('\n')}\n`,
+      count: lines.length,
     };
   }
 

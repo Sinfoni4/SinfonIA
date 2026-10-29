@@ -1,3 +1,5 @@
+import { log } from '../shared/log.js';
+
 import type { Server } from 'http';
 
 const MAX_RETRIES = process.env.NODE_ENV === 'production' ? 2 : 10;
@@ -10,7 +12,6 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
   const startTime = Date.now();
 
   while (attempt <= MAX_RETRIES) {
-    console.log('PORT CHECK — attempting bind', port);
     server.removeAllListeners('error');
     server.removeAllListeners('listening');
 
@@ -18,7 +19,6 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
       await new Promise<void>((resolve, reject) => {
         const onError = (err: unknown) => {
           const error = err instanceof Error ? err : new Error(String(err));
-          console.log('PORT CHECK — error event', (error as { code?: string }).code);
           server.off('error', onError);
           server.off('listening', onListening);
           reject(error);
@@ -26,17 +26,14 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
         const onListening = () => {
           server.off('error', onError);
           server.off('listening', onListening);
-          console.log('PORT CHECK — listening event fired');
           resolve();
         };
 
         server.once('error', onError);
         server.once('listening', onListening);
-        console.log('PORT CHECK — listen() called');
         server.listen(port, '0.0.0.0');
       });
 
-      console.log(`🌐 HTTP server bound on port ${port}`);
       return;
     } catch (err: unknown) {
       const code = (err as { code?: string } | null)?.code;
@@ -47,7 +44,7 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
       attempt++;
 
       if (attempt > MAX_RETRIES) {
-        console.error('💥 Port still busy after retries.');
+        log.error({ port }, 'Port still busy after retries');
         if (IS_PRODUCTION) {
           throw err;
         }
@@ -57,11 +54,11 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
       }
 
       const delay = BASE_DELAY_MS * Math.max(1, attempt);
-      console.warn(`⏳ Port ${port} busy — retry ${attempt}/${MAX_RETRIES} in ${delay}ms`);
+      log.warn({ port, attempt, maxRetries: MAX_RETRIES, delayMs: delay }, 'Port busy, retrying');
 
       const elapsed = Date.now() - startTime;
       if (!IS_PRODUCTION && elapsed > DEV_MAX_TOTAL_WAIT_MS) {
-        console.warn('⚠️ HTTP bind postponed — runtime continues without HTTP');
+        log.warn('HTTP bind postponed: runtime continues without HTTP');
         setTimeout(() => {
           void listenWithRetry(server, port).catch(() => {});
         }, 3000);

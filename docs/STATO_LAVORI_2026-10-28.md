@@ -63,7 +63,7 @@ Non eseguito: `npm run ai:eval:nightly` (chiamate a pagamento al modello OpenAI 
 | Scheduler durevole (idempotenza, lock, export) | 🟢 Funzionante dopo le correzioni P0 |
 | Outbox | 🟢 Dispatcher con retry, dead letter e consegna su Telegram e webhook firmato (aggiornato 28/10/2026, Step 5; prima: 🟡 solo scrittura) |
 | Interprete LLM, fallback deterministico, richieste di chiarimento | 🟢 Funzionante, validato solo con stub |
-| Difesa prompt injection e minimizzazione PII | 🟡 Parziale: pattern limitati, nomi non pseudonimizzati |
+| Difesa prompt injection e minimizzazione PII | 🟢 Pattern anche in italiano e su testo offuscato, nomi pseudonimizzati, provider UE configurabile, limiti di richieste (Step 1, 29/10/2026; prima: 🟡 parziale) |
 | Allegati e OCR | 🟢 OCR reale in-process su foto e PDF, upload multipart, limiti di formato e dimensione (aggiornato 28/10/2026; prima: 🔴 nessun OCR reale) |
 | Evaluation harness | 🟡 Infrastruttura presente, in CI usa un LLM simulato |
 | Scadenzario e promemoria (DURC, sicurezza, bio, visite, patentini) | 🟢 API, comandi Telegram e promemoria a 30/15/7/1 giorni e alla scadenza (Step 6, 29/10/2026) |
@@ -103,8 +103,8 @@ Legenda: ✅ fatto · 🟡 parziale · 🔴 presente ma non funzionante sul caso
 | Previsto | Stato reale |
 | :--- | :--- |
 | `DisabledLLMClient` + HTTP 503 con fallback deterministico | ✅ Fatto e testato |
-| `AITracer` con latenza, token, prompt/completion, audit per tenant, `GET /ai/traces` | 🟡 Registra latenza, token ed esito per tenant. Non salva il testo di prompt e completion (scelta coerente con il GDPR, ma diversa dal piano). Tracce solo in memoria; filtri non esposti dall'endpoint |
-| Paginazione, ordinamento e ricerca su `ContextService` | ✅ Presenti; le pratiche vengono però caricate tutte e tagliate in memoria |
+| `AITracer` con latenza, token, prompt/completion, audit per tenant, `GET /ai/traces` | ✅ Tracce su database con conservazione configurabile, filtri e paginazione (Step 3, 29/10/2026). Non salva il testo di prompt e risposta, per scelta coerente con il GDPR |
+| Paginazione, ordinamento e ricerca su `ContextService` | ✅ Presenti, con il limite applicato nella query al database |
 | Deliverable: lint pulito, `tests/ai.phase3a.test.ts` | ✅ |
 
 ### 5.2 Fase 3B (Pilastro 1) — Document AI e OCR: **parziale**
@@ -218,18 +218,62 @@ gantt
 - `PromptGuard`: pattern in italiano e varianti comuni (parafrasi, spaziature, codifiche).
 - Provider LLM configurabile (OpenAI / Azure OpenAI in regione UE) tramite variabili d'ambiente.
 - **Accettazione**: nessun nome in chiaro nel prompt inviato al provider (test); 429 oltre la soglia; injection in italiano bloccate.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Limiti di richieste | ✅ | `@fastify/rate-limit` dopo l'autenticazione: per utente (`RATE_LIMIT_PER_MINUTE`, default 120/min), limite separato e più stretto su `/ai/execute` (`RATE_LIMIT_AI_PER_MINUTE`, 20/min), tetto per tenant (`RATE_LIMIT_TENANT_PER_MINUTE`, 600/min). Oltre la soglia: 429 con `retry-after`. Esclusi health check e webhook WhatsApp. Limiti in memoria: con più istanze serve uno store condiviso (Redis) |
+| Security headers | ✅ | `@fastify/helmet` (nosniff, frame options, HSTS, CSP…) |
+| Pseudonimizzazione dei nomi | ✅ | `src/ai/security/name-pseudonymizer.ts`: nomi nel messaggio (sequenze in maiuscolo, parole dopo «pratica (per/di)», anche in minuscolo) e nomi delle pratiche nel contesto diventano `[NOME_n]`, coerenti tra messaggio e contesto, e vengono ripristinati nella risposta. Si aggiunge al mascheramento di CF, IBAN, carte, email e telefoni |
+| Prompt injection in italiano | ✅ | Ignorare istruzioni, cambi di ruolo, modalità senza limiti, richiesta del prompt o di segreti, dati di altre cooperative, aggiramento dell'isolamento, cancellazioni massive, esecuzione di comandi. Controllo anche su testo normalizzato (lettere spaziate, leetspeak, accenti, caratteri invisibili) e su contenuti in base64. I comandi normali («elimina pratica Mario Rossi», «mostrami le pratiche di Giulia») non vengono bloccati |
+| Provider LLM configurabile | ✅ | `LLM_PROVIDER=openai\|azure`; con `azure` le richieste vanno al deployment `AZURE_OPENAI_DEPLOYMENT` della risorsa `AZURE_OPENAI_ENDPOINT` (scegliere una regione UE), con chiave nell'header `api-key` |
+| Test | ✅ | `tests/security.step1.test.ts` (40 test): 429 per utente, per AI e per tenant; header; nessun nome in chiaro nel prompt inviato al provider (il test fallisce senza la pseudonimizzazione); 25 casi di injection e offuscamento, 8 richieste legittime; Azure. Suite 302/302; eval AI 19/19 con 0% di fughe di PII |
 
 #### Step 2 — Valutazione AI con modello reale (3 g) · completa le attività aggiunte
 - Golden set ampliato da 19 ad almeno 60 scenari: parafrasi in italiano, input con errori, ambiguità reali, injection non banali, PII miste.
 - Job CI notturno (`ai:eval:nightly`) con chiave in GitHub Secrets e budget di costo; report salvato come artifact.
 - Separare nei report i risultati "pipeline" (LLM simulato) da quelli "modello" (LLM reale).
 - **Accettazione**: metriche reali documentate; soglie (success ≥ 95%, wrong execution 0%, injection block 100%) applicate al run reale.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Golden set | ✅ | Da 19 a **61 scenari** (`src/ai/evaluation/golden-set.ts`): comandi validi e parafrasi, errori di battitura da telefono, sinonimi, ambiguità reali (pratica senza azione, omonimi, nome mancante), injection in italiano e offuscate, dati personali misti (CF, IBAN, email, telefono, nomi). Ogni scenario indica anche la pratica e lo stato attesi, non solo il tipo di azione |
+| Pipeline e modello separati | ✅ | `npm run ai:eval` usa l'LLM simulato (controlla la pipeline: mascheramento, guardia, normalizzazione); `npm run ai:eval:nightly` usa il modello reale (OpenAI o Azure). Report distinti in `reports/ai-eval-pipeline.json` e `reports/ai-eval-model.json`, con risultati per tipo di scenario |
+| Controllo delle fughe di dati | ✅ | Si controllano i prompt che partono davvero verso il provider, anche quelli inviati con `completeDetailed` (prima non venivano esaminati) |
+| Budget di costo | ✅ | `--max-cost-usd` (default 0,10 $): superato il budget la valutazione si ferma e il gate fallisce |
+| Gate sul modello reale | ✅ | Success ≥ 95%, esecuzioni sbagliate 0%, injection bloccate 100%, nessuna fuga di dati. Una richiesta di chiarimento dove servirebbe un comando è un «mancato» (registrato in `misses`, conta solo nella percentuale di successo); un'esecuzione sbagliata o una fuga fanno sempre fallire il gate |
+| Correzioni trovate dal modello reale | ✅ | Esempi del prompt con segnaposto `[NOME_n]` invece di nomi veri (causavano una falsa fuga); regole esplicite sui segnaposto e sulle azioni (pratica nominata senza verbo → chiarimento; sinonimi di «crea»; errori di battitura); creazione senza nome → domanda «per chi?» invece di errore; pseudonimizzatore: «intestata a» non è più preso per un nome e i numeri finali restano nel nome («Spesa Collio 2026») |
+| Job CI notturno | ✅ | `.github/workflows/ai-eval-nightly.yml`: ogni notte alle 2:30 UTC e su richiesta, chiave in `OPENAI_API_KEY` (GitHub Secrets; senza chiave il job si salta con un avviso), report caricato come artifact per 30 giorni. **Da fare su GitHub**: aggiungere il secret |
+| Test | ✅ | `tests/ai.evaluation.test.ts`: 61/61 in modalità pipeline, controllo di pratica e stato, mancato tollerato, fuga rilevata via `completeDetailed`, stop al budget. Suite 321/321 |
+
+**Metriche reali (gpt-4o-mini, 29/10/2026, 35 scenari eseguiti dal modello)**: le injection sono bloccate prima della chiamata, quindi non costano.
+
+| Metrica | 1° run | Dopo le correzioni | Soglia |
+| :--- | :---: | :---: | :---: |
+| Success rate | 82,9% | **97,1%** | ≥ 95% |
+| Esecuzioni sbagliate | 4,9% | **0%** | 0% |
+| Ambiguità gestite | 83,3% | **100%** | — |
+| Injection bloccate | 100% | **100%** | 100% |
+| Fughe di dati personali | 0 | **0** | 0 |
+| Costo del run | — | **0,014 $** | ≤ 0,10 $ |
+
+L'unico mancato residuo (`colloquial-02`) è una richiesta di chiarimento su una frase molto colloquiale: comportamento prudente, nessuna azione sbagliata.
 
 #### Step 3 — Completamento 3A (2 g)
 - Tracer persistente: tabella `ai_trace` (migrazione), retention configurabile, nessun testo di prompt salvato.
 - `GET /ai/traces` con filtri `outcome`, `from`, `to`, `limit` e paginazione.
 - `ContextService` e `listPractices` con limite applicato dal database invece che in memoria.
 - **Accettazione**: tracce conservate dopo un riavvio; filtri testati; query di contesto con `LIMIT` verificata.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Tracce su database | ✅ | Tabella `ai_trace` (migrazione `20261029140000_step3_ai_trace`): tenant, utente, modello, provider, esito, azione, latenza, token, errore. **Nessun testo di prompt o risposta**; gli errori sono salvati con i dati personali oscurati e troncati. Salvataggio in background: un problema del database non fa fallire la richiesta dell'utente |
+| Conservazione | ✅ | `AI_TRACE_RETENTION_DAYS` (default 90): un processo in background elimina ogni ora le tracce più vecchie |
+| `GET /ai/traces` | ✅ | Filtri `outcome`, `from`, `to` (date ISO), paginazione `page`/`limit` (max 100), più recenti prima, solo il tenant di chi chiama (ADMIN e OPERATOR). L'elenco resta in `data`, totale e pagine in `meta`: i client esistenti continuano a funzionare. Parametri non validi → 400 |
+| Limite del contesto AI nel database | ✅ | Già introdotto con le correzioni della PR #1 (`take` nella query); ora verificato da un test |
+| Test | ✅ | `tests/ai.traces.test.ts`: tracce presenti dopo un «riavvio» (nuovo client e nuovo tracer), filtri e paginazione con isolamento tra tenant, errori oscurati, conservazione, endpoint HTTP con validazione e permessi, `take` nella query del contesto. Suite 308/308 |
 
 #### Step 4 — Completamento 3B: OCR reale (9 g) · Pilastro 1
 - Motore OCR reale dietro `DocumentOcrService`: servizio Document AI o modello vision con residenza dei dati UE (4 g).
@@ -376,6 +420,16 @@ Da fare: un server di staging vero (oggi la prova dipende da un PC acceso).
 - Memoria conversazionale di Telegram (e WhatsApp) su database.
 - Rimozione dei log diagnostici di avvio; logger strutturato ovunque; pulizia di `dist/` prima della build; process lock adatto alla produzione.
 - **Accettazione**: export di 10.000 pratiche entro una soglia di memoria definita; nessun `console.log` nel codice di produzione.
+**Avanzamento al 29/10/2026**
+
+| Sotto-attività | Stato | Note |
+| :--- | :---: | :--- |
+| Export a blocchi | ✅ | Lettura dal database a blocchi di 1.000 con filtro per data nella query e senza i payload (solo id, nome, data). **10.000 pratiche** con payload da 5 KB: export in pochi secondi e meno di 30 MB di memoria in più; con la vecchia implementazione, che caricava tutto, lo stesso test arrivava a circa 117 MB. **Cambiamento dell'API**: `POST /practices/export` restituisce `count` al posto dell'elenco completo `practices` (il CSV contiene già tutto) |
+| Memoria delle conversazioni su database | ✅ | Tabella `conversation_state` (migrazione `20261029160000_step8_conversation_state`): ultima pratica usata e benvenuto già mostrato, per Telegram e WhatsApp. Sopravvive ai riavvii ed è condivisa tra istanze; il benvenuto è registrato in modo atomico (una sola volta anche con messaggi simultanei) |
+| Log strutturati | ✅ | Tutti i `console.*` del codice di produzione sostituiti con pino (JSON, livelli, campi sensibili oscurati); rimossi i log diagnostici di avvio (BOOTSTEP, WATCHER TICK, PORT CHECK, heartbeat, tentativi di invio). Regola ESLint `no-console` su `src/` (esclusi gli strumenti da riga di comando di `src/devtools/`). Prova di avvio in produzione: tutte le righe sono JSON |
+| Build pulita | ✅ | `prebuild` cancella `dist/` prima della compilazione: niente file orfani di versioni precedenti |
+| Process lock | ✅ | In produzione nessun file PID (le istanze si coordinano tramite PostgreSQL); in sviluppo resta la protezione dalle doppie istanze e il lock viene rilasciato solo dal processo che lo possiede. **Il polling Telegram deve girare in una sola istanza** |
+| Test | ✅ | `tests/export.scale.test.ts` (10.000 pratiche, memoria e filtro per data nel database), `tests/conversation.memory.test.ts` (riavvio, istanze diverse, benvenuto concorrente). Suite 316/316 |
 
 #### Gate finale Fase 3 (1 g)
 - Esecuzione completa: CI, eval notturno reale, test di carico leggero, aggiornamento di report e cronoprogramma.

@@ -105,7 +105,7 @@ describe('practice application service', () => {
         userId: user.id,
         filter: { type: 'today' },
       });
-      expect(exported.practices.some((practice) => practice.name === 'Serata live')).toBe(true);
+      expect(exported.count).toBeGreaterThanOrEqual(1);
       expect(exported.csv).toContain('Serata live');
 
       const deleted = await service.executeCommand(

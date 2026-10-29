@@ -21,7 +21,7 @@ export function formatPracticeCommandResult(result: PracticeCommandResult): stri
       return `🗑️ Pratica eliminata: ${result.practice.name}`;
 
     case 'export': {
-      if (result.result.practices.length === 0) {
+      if (result.result.count === 0) {
         return '📄 Nessuna pratica da esportare';
       }
 

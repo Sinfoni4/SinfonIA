@@ -43,7 +43,7 @@ export class ExportPracticesTask implements SchedulerTaskHandler {
       payload: {
         title: exported.title,
         csv: exported.csv,
-        practiceCount: exported.practices.length,
+        practiceCount: exported.count,
         filter: exported.filter,
         generatedAt: now.toISOString(),
       },
@@ -51,7 +51,7 @@ export class ExportPracticesTask implements SchedulerTaskHandler {
 
     return {
       title: exported.title,
-      practiceCount: exported.practices.length,
+      practiceCount: exported.count,
       filter: exported.filter,
     };
   }

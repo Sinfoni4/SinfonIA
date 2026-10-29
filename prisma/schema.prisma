@@ -37,6 +37,8 @@ model Tenant {
   complianceDeadlines ComplianceDeadline[]
   complianceReminders ComplianceReminder[]
   whatsappIdentities  WhatsappIdentity[]
+  aiTraces            AiTrace[]
+  conversationStates  ConversationState[]
 
   @@map("tenant")
 }
@@ -86,6 +88,7 @@ model User {
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
   whatsappIdentity    WhatsappIdentity?
+  conversationState   ConversationState?
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -322,4 +325,44 @@ model WhatsappIdentity {
   @@unique([tenantId, phoneNumber])
   @@index([phoneNumber])
   @@map("whatsapp_identity")
+}
+
+/// AI request trace: metadata only, never prompt or completion text.
+model AiTrace {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  userId           String?  @map("user_id") @db.Uuid
+  requestId        String   @map("request_id")
+  model            String
+  provider         String
+  outcome          String
+  action           String?
+  latencyMs        Int      @map("latency_ms")
+  promptTokens     Int?     @map("prompt_tokens")
+  completionTokens Int?     @map("completion_tokens")
+  totalTokens      Int?     @map("total_tokens")
+  error            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, outcome, createdAt])
+  @@index([createdAt])
+  @@map("ai_trace")
+}
+
+/// Conversation memory of a chat user (Telegram, WhatsApp).
+model ConversationState {
+  userId         String    @id @map("user_id") @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  lastPracticeId String?   @map("last_practice_id") @db.Uuid
+  onboardedAt    DateTime? @map("onboarded_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("conversation_state")
 }

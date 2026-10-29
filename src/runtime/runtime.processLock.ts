@@ -1,74 +1,62 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-function getProjectRoot() {
-  // The dev server (nodemon) is expected to run from project root.
-  return process.cwd();
-}
+import { log } from '../shared/log.js';
+
+/**
+ * Development guard against two copies of SinfonIA started from the same folder (e.g. a hot
+ * reload racing a previous process). A PID file in .runtime/ blocks the second start.
+ *
+ * In production there is no PID file: instances coordinate through PostgreSQL (advisory locks
+ * for the scheduler, SKIP LOCKED claims for the outbox), so several replicas can run. The one
+ * exception is Telegram polling, which must run in a single instance.
+ */
 
 function getPidFilePath() {
-  const projectRoot = getProjectRoot();
-  return path.join(projectRoot, '.runtime', 'dev.pid');
+  return path.join(process.cwd(), '.runtime', 'dev.pid');
 }
 
+const isProduction = () => process.env.NODE_ENV === 'production';
+
 export function acquireProcessLock(): void {
+  if (isProduction()) {
+    log.info('Process lock disabled in production: instances coordinate through the database');
+    return;
+  }
   try {
     const pidFile = getPidFilePath();
-    const dir = path.dirname(pidFile);
-
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-    } catch {
-      // ignore
-    }
+    fs.mkdirSync(path.dirname(pidFile), { recursive: true });
 
     if (fs.existsSync(pidFile)) {
-      const raw = fs.readFileSync(pidFile, 'utf8');
-      const existingPid = Number(raw.trim());
-
-      if (Number.isFinite(existingPid) && existingPid > 0) {
+      const existingPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+      if (Number.isFinite(existingPid) && existingPid > 0 && existingPid !== process.pid) {
         try {
           process.kill(existingPid, 0);
-          console.log(
-            `🧱 Existing SinfonIA process detected (PID ${existingPid}) — aborting start`,
-          );
+          log.warn({ pid: existingPid }, 'Another SinfonIA process is running here: not starting');
           process.exit(0);
         } catch {
-          // process not running; stale pid file
-          try {
-            fs.unlinkSync(pidFile);
-          } catch {
-            // ignore
-          }
-        }
-      } else {
-        try {
-          fs.unlinkSync(pidFile);
-        } catch {
-          // ignore
+          // Not running: stale PID file, taken over below.
         }
       }
     }
 
     fs.writeFileSync(pidFile, String(process.pid), 'utf8');
-    console.log(`🔒 Process lock acquired (PID ${process.pid})`);
-  } catch {
-    // Never throw: lock is a dev-only safety net.
+    log.debug({ pid: process.pid }, 'Process lock acquired');
+  } catch (err: unknown) {
+    // A development convenience: never prevents the start.
+    log.debug({ error: err instanceof Error ? err.name : 'Error' }, 'Process lock unavailable');
   }
 }
 
 export function releaseProcessLock(): void {
+  if (isProduction()) return;
   try {
     const pidFile = getPidFilePath();
-    if (fs.existsSync(pidFile)) {
-      try {
-        fs.unlinkSync(pidFile);
-      } catch {
-        // ignore
-      }
+    // Only our own lock: never remove the file of another running process.
+    if (fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) {
+      fs.unlinkSync(pidFile);
     }
-    console.log('🔓 Process lock released');
   } catch {
-    // Never throw
+    // Never throw during shutdown.
   }
 }

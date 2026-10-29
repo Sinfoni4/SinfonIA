@@ -1,12 +1,11 @@
-import 'dotenv/config';
-
 import { ContextService } from './ai/context/context.service.js';
 import { DecisionEngine } from './ai/decision/decision.engine.js';
 import { ExecutorService } from './ai/execution/executor.service.js';
 import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
 import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
-import { createOpenAIProvider } from './ai/providers/openai.provider.js';
+import { createAzureOpenAIProvider, createOpenAIProvider } from './ai/providers/openai.provider.js';
+import { AITracer } from './ai/tracing/ai.tracer.js';
 import {
   validateBeforeDecision,
   validateResolvedCommand,
@@ -19,8 +18,9 @@ import { PracticeExportHandler } from './core/outbox/practice-export.handler.js'
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
+import { AiTraceRepository } from './data/repositories/ai-trace.repository.js';
 import { createStorageService } from './data/storage/storage.factory.js';
-import { printRuntimeTestGuide } from './dev/dev.tests.js';
+import { PrismaConversationMemory } from './interface/conversation/conversation.memory.js';
 import { buildServer } from './interface/http/server.js';
 import { TelegramAdapter } from './interface/telegram/telegram.adapter.js';
 import { TelegramBotService } from './interface/telegram/telegram.bot.js';
@@ -41,10 +41,12 @@ import { acquireProcessLock } from './runtime/runtime.processLock.js';
 import { runtimeState } from './runtime/runtime.state.js';
 import { startBackgroundWorkers } from './runtime/runtime.workers.js';
 import { errorLabel } from './shared/errors.js';
+import { log } from './shared/log.js';
 import { createLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
 
 import type { LLMClient } from './ai/interpreter/interpreter.service.js';
+import type { AppConfig } from './config/config.js';
 import type { ConversationIdentity } from './interface/conversation/conversation.service.js';
 
 export let runtimeMode: 'HEALTHY' | 'DEGRADED' | 'CIRCUIT_OPEN' = 'HEALTHY';
@@ -54,10 +56,9 @@ let prismaClient: ReturnType<typeof createPrismaClient> | null = null;
 export async function shutdownHttpServer() {
   if (!httpServer) return;
 
-  console.log('🛑 Closing HTTP server...');
   await httpServer.close();
   httpServer = null;
-  console.log('✅ HTTP server closed');
+  log.info('HTTP server closed');
 }
 
 export async function disconnectPrismaClient() {
@@ -69,19 +70,33 @@ export async function disconnectPrismaClient() {
   }
 }
 
-function assertEnv() {
-  if (!process.env.TELEGRAM_BOT_TOKEN) {
-    console.warn('⚠️ TELEGRAM_BOT_TOKEN not set → bot disabled');
-  } else {
-    console.log('✅ TELEGRAM_BOT_TOKEN detected');
+function createLLMClient(
+  config: Pick<
+    AppConfig,
+    | 'OPENAI_API_KEY'
+    | 'ENABLE_LLM'
+    | 'OPENAI_MODEL'
+    | 'LLM_PROVIDER'
+    | 'AZURE_OPENAI_ENDPOINT'
+    | 'AZURE_OPENAI_API_KEY'
+    | 'AZURE_OPENAI_DEPLOYMENT'
+    | 'AZURE_OPENAI_API_VERSION'
+  >,
+): LLMClient {
+  if (
+    config.ENABLE_LLM &&
+    config.LLM_PROVIDER === 'azure' &&
+    config.AZURE_OPENAI_ENDPOINT &&
+    config.AZURE_OPENAI_API_KEY &&
+    config.AZURE_OPENAI_DEPLOYMENT
+  ) {
+    return createAzureOpenAIProvider({
+      endpoint: config.AZURE_OPENAI_ENDPOINT,
+      apiKey: config.AZURE_OPENAI_API_KEY,
+      deployment: config.AZURE_OPENAI_DEPLOYMENT,
+      apiVersion: config.AZURE_OPENAI_API_VERSION,
+    });
   }
-}
-
-function createLLMClient(config: {
-  OPENAI_API_KEY?: string;
-  ENABLE_LLM?: boolean;
-  OPENAI_MODEL?: string;
-}): LLMClient {
   if (config.ENABLE_LLM && config.OPENAI_API_KEY) {
     return createOpenAIProvider({
       apiKey: config.OPENAI_API_KEY,
@@ -91,22 +106,11 @@ function createLLMClient(config: {
   return createDisabledLLMClient('LLM is disabled via ENABLE_LLM=false or missing OPENAI_API_KEY');
 }
 
-function getRuntimeSnapshot() {
-  return runtimeState.snapshot();
-}
-
 // Composition root: wires layers together.
 async function main() {
-  console.log('BOOTSTEP 1 — main() entered');
   acquireProcessLock();
   installLifecycleHooks();
-  console.log('🌱 ENV loaded — DATABASE_URL present:', !!process.env.DATABASE_URL);
   assertProjectRoot();
-  assertEnv();
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('🔁 Dev mode active — hot reload enabled');
-  }
 
   const config = loadConfig();
   const logger = createLogger(config);
@@ -118,7 +122,6 @@ async function main() {
   // DB initialization is explicit (`npm run db:setup`) and never runs at app startup.
   const dbConfig = validateDatabaseConfig();
 
-  console.log('🔌 DB CONNECT — attempting initial connection');
   const connect = await forceDatabaseConnect(prisma);
 
   const health = await checkDatabaseHealth(prisma);
@@ -130,32 +133,17 @@ async function main() {
     runtimeMode = 'DEGRADED';
     runtimeState.setMode('DEGRADED');
     if (process.env.NODE_ENV === 'production') {
-      console.error('💥 Cannot start: database unreachable (production safety)');
+      logger.fatal('Cannot start: database unreachable (production safety)');
       process.exit(1);
     }
-    console.warn('⚠️ Database offline — starting in DEGRADED DEV MODE');
+    logger.warn('Database offline: starting in degraded development mode');
   } else {
     runtimeMode = 'HEALTHY';
     runtimeState.setMode('HEALTHY');
     logger.info('Database connection established');
   }
 
-  console.log('BOOTSTEP 2 — DB health completed');
-  console.log('BOOTSTEP 3 — runtime initialized');
-  console.log('RUNTIME SNAPSHOT', getRuntimeSnapshot());
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`🧭 Runtime mode: ${runtimeMode}`);
-    printRuntimeTestGuide();
-    console.log(`
-=========== PHASE 5 TEST GUIDE ===========
-TEST 1 — Healthy baseline
-TEST 2 — Slow DB (simulate delay)
-TEST 3 — DB shutdown → circuit opens
-TEST 4 — DB restart → auto recovery
-TEST 5 — /devstate health metrics
-`);
-  }
+  logger.info({ runtime: runtimeState.snapshot() }, 'Runtime initialized');
 
   const llm = createLLMClient(config);
   const interpreterService = new InterpreterService({
@@ -172,8 +160,12 @@ TEST 5 — /devstate health metrics
   const normalizerService = new NormalizerService();
   const complianceService = new ComplianceService(prisma);
 
+  // Conversation memory (last practice, welcome shown) is kept in the database.
+  const conversationMemory = new PrismaConversationMemory(prisma);
+
   // Natural-language messages from any chat channel go through the same AI pipeline.
   const chatAdapter = new TelegramAdapter({
+    memory: conversationMemory,
     interpreter: interpreterService,
     normalizer: normalizerService,
     decisionEngine,
@@ -185,6 +177,7 @@ TEST 5 — /devstate health metrics
   });
   const conversationDeps = {
     prisma,
+    memory: conversationMemory,
     practiceService,
     complianceService,
     handleMessage: (input: string, identity: ConversationIdentity) =>
@@ -208,9 +201,14 @@ TEST 5 — /devstate health metrics
     whatsappChannel ? 'WhatsApp channel enabled' : 'WhatsApp channel disabled (WHATSAPP_* not set)',
   );
 
+  // AI traces are kept in memory and persisted, so they survive restarts.
+  const aiTraceRepository = new AiTraceRepository(prisma);
+  const tracer = new AITracer(200, { store: aiTraceRepository, log: logger });
+
   const app = buildServer(config, logger, {
     practiceService,
     complianceService,
+    tracer,
     ...(whatsappChannel && config.WHATSAPP_APP_SECRET && config.WHATSAPP_VERIFY_TOKEN
       ? {
           whatsappWebhook: {
@@ -228,7 +226,6 @@ TEST 5 — /devstate health metrics
   });
   httpServer = app;
 
-  console.log('🚀 TELEGRAM BOOTSTRAP START');
   const tgToken = process.env.TELEGRAM_BOT_TOKEN;
   if (tgToken && tgToken.trim().length > 0) {
     const bot = new TelegramBotService(conversationDeps);
@@ -236,16 +233,12 @@ TEST 5 — /devstate health metrics
   } else {
     logger.info('Telegram bot disabled (TELEGRAM_BOT_TOKEN not set)');
   }
-  console.log('✅ TELEGRAM BOOTSTRAP COMPLETE');
 
-  console.log('⚠️ HTTP bind async started');
   // HTTP transport is optional during hot-reload/degraded runtime.
   void (async () => {
     await app.ready();
-    console.log('BOOTSTEP 4 — starting HTTP bind');
     await listenWithRetry(app.server, config.PORT);
-    console.log('BOOTSTEP 5 — HTTP bind success');
-    logger.info('HTTP server listening');
+    logger.info({ port: config.PORT }, 'HTTP server listening');
   })().catch((err) => {
     logger.error({ error: errorLabel(err) }, 'HTTP bind failed (async)');
   });
@@ -289,6 +282,15 @@ TEST 5 — /devstate health metrics
         run: () => schedulerService.tick(),
       },
       {
+        name: 'ai-trace-retention',
+        intervalMs: 60 * 60_000,
+        run: async () => ({
+          deleted: await aiTraceRepository.deleteOlderThan(
+            new Date(Date.now() - config.AI_TRACE_RETENTION_DAYS * 86_400_000),
+          ),
+        }),
+      },
+      {
         name: 'outbox',
         intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
         run: () => dispatcher.dispatchOnce(),
@@ -296,13 +298,10 @@ TEST 5 — /devstate health metrics
     ],
     logger,
   );
-
-  console.log('BOOTSTEP 6 — starting Telegram bootstrap');
-  console.log('BOOTSTEP 7 — Telegram bootstrap completed');
 }
 
 main().catch((err: unknown) => {
   // Fail fast. In enterprise environments, a partial boot is worse than a crash.
-  console.error(errorLabel(err));
+  log.fatal({ error: errorLabel(err) }, 'SinfonIA failed to start');
   process.exitCode = 1;
 });

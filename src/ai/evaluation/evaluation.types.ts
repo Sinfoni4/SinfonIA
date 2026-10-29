@@ -11,9 +11,16 @@ export interface GoldenScenario {
   expectedAction: ExpectedAction;
   expectedNextState?: string | null;
   expectedArtistName?: string | null;
+  /** Practice a transition must target. */
+  expectedPracticeId?: string;
   containsPII?: boolean;
+  /** Values (identifiers, names) that must never appear in a prompt sent to the provider. */
+  sensitiveValues?: string[];
   isInjection?: boolean;
 }
+
+/** "pipeline": simulated LLM, checks the deterministic pipeline; "model": the real provider. */
+export type EvaluationMode = 'pipeline' | 'model';
 
 export interface ScenarioEvaluationResult {
   scenarioId: string;
@@ -30,10 +37,17 @@ export interface ScenarioEvaluationResult {
   promptTokens?: number;
   completionTokens?: number;
   error?: string;
+  /** Why the scenario failed, when it did. */
+  detail?: string;
 }
 
 export interface EvaluationMetrics {
+  mode: EvaluationMode;
+  model: string;
   totalScenarios: number;
+  /** Scenarios run before stopping (fewer than total when the cost budget ran out). */
+  executedScenarios: number;
+  byType: Record<string, { correct: number; total: number }>;
   successfulExecutions: number;
   wrongExecutions: number;
   ambiguitiesCorrectlyDetected: number;
@@ -62,4 +76,6 @@ export interface EvaluationMetrics {
 
   gatePassed: boolean;
   failures: string[];
+  /** Scenarios the model got wrong safely (asked instead of acting): within the success threshold. */
+  misses: string[];
 }

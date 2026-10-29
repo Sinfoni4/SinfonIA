@@ -1,4 +1,6 @@
+import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 
 import { runtimeState } from '../../runtime/runtime.state.js';
@@ -6,6 +8,7 @@ import { runtimeState } from '../../runtime/runtime.state.js';
 import { createAuthHook } from './auth/auth.hook.js';
 import { AuthService } from './auth/auth.service.js';
 import { requireAuthContext } from './auth/guards.js';
+import { buildRateLimitOptions, createTenantLimiter } from './middleware/rate-limit.js';
 import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
@@ -55,6 +58,17 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     defaultTtlSeconds: config.AUTH_TTL_SECONDS,
   });
   app.addHook('onRequest', createAuthHook(authService));
+
+  // Security headers, per-user/per-tenant request limits (stricter on the AI endpoint).
+  const limits = {
+    perUserPerMinute: config.RATE_LIMIT_PER_MINUTE,
+    aiPerMinute: config.RATE_LIMIT_AI_PER_MINUTE,
+    perTenantPerMinute: config.RATE_LIMIT_TENANT_PER_MINUTE,
+  };
+  // Both plugins are registered on the root instance (not encapsulated), before the routes.
+  void app.register(helmet);
+  void app.register(rateLimit, buildRateLimitOptions(limits));
+  app.addHook('preHandler', createTenantLimiter(limits.perTenantPerMinute));
 
   // Liveness: the process can answer HTTP.
   app.get('/healthz', () => ({

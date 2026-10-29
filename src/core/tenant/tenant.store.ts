@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { requireTenantId } from '../../data/guard/tenant.js';
+import { log } from '../../shared/log.js';
 
 import { TenantNotFoundError, TenantNotLinkedError } from './tenant.errors.js';
 
@@ -64,7 +65,7 @@ export function toTenantConfig(dto: TenantDTO): Tenant {
     if (parsed.success) {
       tasks = parsed.data;
     } else {
-      console.warn(`⚠️ Invalid scheduler tasks for tenant=${dto.id}; using defaults`);
+      log.warn({ tenantId: dto.id }, 'Invalid scheduler tasks: using defaults');
     }
   }
 

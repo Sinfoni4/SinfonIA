@@ -1,4 +1,5 @@
 import { errorLabel } from '../../shared/errors.js';
+import { log } from '../../shared/log.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 // A Bot API call that never answers must not block its caller (e.g. the outbox dispatcher).
@@ -263,7 +264,7 @@ export class TelegramClient {
         if (event !== 'error') {
           await this.emit('error', toError(error));
         } else {
-          console.error('Telegram listener error', errorLabel(toError(error)));
+          log.error({ error: errorLabel(toError(error)) }, 'Telegram listener error');
         }
       }
     }

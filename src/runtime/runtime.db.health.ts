@@ -1,4 +1,5 @@
 import { describeError } from '../shared/errors.js';
+import { log } from '../shared/log.js';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -10,7 +11,7 @@ export async function checkDatabaseHealth(prisma: PrismaClient) {
 
     const latency = Date.now() - started;
 
-    console.log(`💓 DB HEALTH OK (${latency}ms)`);
+    log.debug({ latencyMs: latency }, 'Database health check passed');
 
     return {
       healthy: true,
@@ -18,7 +19,10 @@ export async function checkDatabaseHealth(prisma: PrismaClient) {
     };
   } catch (error: unknown) {
     const details = describeError(error);
-    console.error('💔 DB HEALTH FAILED:', details);
+    log.error(
+      { error: details.name ?? 'Error', code: details.code },
+      'Database health check failed',
+    );
 
     return {
       healthy: false,

@@ -45,7 +45,7 @@ type PaginatedPracticeData = {
 
 type ExportPracticeData = {
   csv: string;
-  practices: unknown[];
+  count: number;
 };
 
 describe('practice HTTP API (Phase 2B)', () => {
@@ -180,7 +180,7 @@ describe('practice HTTP API (Phase 2B)', () => {
       expect(exportJson.success).toBe(true);
       expect(exportJson.data.csv).toContain('Tour Europeo 2026');
       expect(exportJson.data.csv).toContain('Mostra Fotografica');
-      expect(exportJson.data.practices).toHaveLength(2);
+      expect(exportJson.data.count).toBe(2);
     } finally {
       await app.close();
       await prisma.$disconnect();

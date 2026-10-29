@@ -14,15 +14,3 @@ export function getRuntimeAwarenessMessage(): string | null {
       return null;
   }
 }
-
-if (process.env.NODE_ENV !== 'production') {
-  setInterval(() => {
-    console.log(
-      '💓 Runtime heartbeat',
-      JSON.stringify({
-        runtime: runtimeState.getMode(),
-        telegram: 'alive',
-      }),
-    );
-  }, 30000);
-}

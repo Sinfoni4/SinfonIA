@@ -16,7 +16,7 @@ SinfonIA adotta il principio di minimizzazione dei dati prima di qualsiasi inter
    - **Indirizzi Email**: sostituiti con `[EMAIL_1]`.
    - **Numeri di Telefono / Cellulari**: sostituiti con `[PHONE_1]`.
 
-   > **Limite attuale (verificato il 28/10/2026)**: nomi e cognomi **non** sono riconosciuti dal minimizzatore. Il nome indicato nell'input (es. "crea pratica per Mario Rossi") e i nomi delle pratiche del tenant inclusi nel contesto del prompt (`interpreter.prompt.ts`) vengono inviati al provider LLM **in chiaro**. Prima dell'uso con dati reali serve la pseudonimizzazione dei nomi oppure una base giuridica e un accordo di trattamento (DPA) che copra questo invio.
+   > **Nomi e cognomi (aggiornato il 29/10/2026)**: i nomi indicati nell'input (es. "crea pratica per Mario Rossi") e i nomi delle pratiche inclusi nel contesto del prompt vengono sostituiti con segnaposto coerenti (`[NOME_1]`…) da `src/ai/security/name-pseudonymizer.ts` e ripristinati localmente nella risposta. Il riconoscimento è euristico (sequenze in maiuscolo, parole dopo «pratica per/di», nomi delle pratiche note): un nome scritto in forme insolite può ancora sfuggire, quindi resta consigliato un DPA con il provider. Prima: i nomi arrivavano al provider in chiaro.
 2. **Ripristino Bidirezionale Locale (Unmasking)**:
    La corrispondenza tra token sintetico e dato reale (`piiMap`) è mantenuta **esclusivamente in memoria locale volatile** nel processo dell'applicazione. Una volta ricevuta la risposta strutturata dal provider LLM, il servizio SinfonIA ripristina i valori originali per consentire la corretta esecuzione aziendale: per le categorie mascherate sopra elencate il fornitore AI non riceve il valore in chiaro.
 3. **Redazione nei Log Persistenti**:
@@ -57,7 +57,7 @@ Quando un pattern malevolo viene rilevato:
 
 ### 3.1 Localizzazione Geografica dei Dati (Data Residency UE)
 Per conformità alle normative europee sul trasferimento internazionale dei dati (Capo V GDPR):
-- **Stato attuale dell'implementazione**: l'unico provider presente nel codice è `src/ai/providers/openai.provider.ts`, che invia le richieste all'endpoint pubblico `https://api.openai.com`. Non è ancora possibile configurare un endpoint Azure OpenAI o un altro provider con residenza dei dati nell'UE; le opzioni seguenti sono **obiettivi di configurazione**, non funzionalità già disponibili.
+- **Stato attuale dell'implementazione (29/10/2026)**: `LLM_PROVIDER=openai` (default, endpoint pubblico `https://api.openai.com`) oppure `LLM_PROVIDER=azure` con `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY` e `AZURE_OPENAI_DEPLOYMENT`: con una risorsa Azure OpenAI in una regione UE i prompt restano nello Spazio Economico Europeo.
 - **Provider API Target**:
   - **Azure OpenAI Service**: distribuzione configurabile su regioni europee (es. *West Europe - Netherlands*, *North Europe - Ireland*, *Switzerland North*). I dati rimangono all'interno dei confini dello Spazio Economico Europeo (SEE).
   - **OpenAI Enterprise / Zero Data Retention (ZDR)**: per impostazione predefinita con le API a pagamento, OpenAI non utilizza i dati inviati tramite API per addestrare i propri modelli (`data-sharing: false`) e supporta la cancellazione automatica della cronologia temporanea.
@@ -75,5 +75,5 @@ Per conformità alle normative europee sul trasferimento internazionale dei dati
 | **Jailbreak (DAN / Developer Mode)** | `PromptGuard` pattern scanner | Blocco preventivo dei pattern noti, esito `SECURITY_REJECTED`, zero mutazioni |
 | **Tentativo Evasione Delimitatore** | `escapePromptData` (escaping `</user_input>`) | Impossibilità di evadere dal blocco dati utente |
 | **Estrazione Cross-Tenant** | Scoping tenant obbligatorio su DB + filtro contesto | I dati di altri tenant non sono fisicamente presenti nel contesto |
-| **Fuga di PII / Dati Personali** | Mascheramento sintetico pre-egress `maskPII` | CF, IBAN, carte, email e telefoni arrivano al provider come token; **nomi e cognomi arrivano in chiaro** |
+| **Fuga di PII / Dati Personali** | Mascheramento sintetico pre-egress `maskPII` | CF, IBAN, carte, email, telefoni e nomi arrivano al provider come token (nomi riconosciuti in modo euristico) |
 | **Manomissione Output AI** | Validazione post-generazione Zod `schemaVersion: 1` | Output non conforme rigettato o riparato deterministicamente |

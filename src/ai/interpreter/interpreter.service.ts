@@ -1,4 +1,5 @@
 import { LLMDisabledError } from '../providers/disabled.provider.js';
+import { pseudonymizeNames } from '../security/name-pseudonymizer.js';
 import { maskPII, unmaskObjectPII } from '../security/pii-minimizer.js';
 import { checkPromptInjection } from '../security/prompt-guard.js';
 
@@ -129,8 +130,13 @@ export class InterpreterService {
       };
     }
 
-    const { maskedText, piiMap } = maskPII(inputText);
-    const prompt = buildInterpreterPrompt(maskedText, context);
+    // Identifiers (tax codes, IBANs, contacts) and personal names never reach the provider in
+    // clear: they are replaced with placeholders and restored in the answer.
+    const { maskedText: piiMaskedText, piiMap: identifierMap } = maskPII(inputText);
+    const names = pseudonymizeNames(piiMaskedText, context);
+    const maskedText = names.text;
+    const piiMap = new Map([...identifierMap, ...names.map]);
+    const prompt = buildInterpreterPrompt(maskedText, names.context ?? context);
 
     let raw: string;
     let model = this.getModelName();
@@ -196,6 +202,26 @@ export class InterpreterService {
     let output = validation.data;
     if (piiMap.size > 0) {
       output = unmaskObjectPII(output, piiMap);
+    }
+
+    // A creation without a name cannot be executed: ask for the name instead of failing later in
+    // normalization ("crea una pratica", found by the real-model evaluation).
+    if (output.action === 'create_practice' && !output.artistName?.trim()) {
+      output = {
+        schemaVersion: CURRENT_INTERPRETER_SCHEMA_VERSION,
+        action: 'clarification_required',
+        confidence: output.confidence,
+        filters: output.filters,
+        artistName: null,
+        nextState: null,
+        clarification: {
+          question:
+            'Per chi devo creare la pratica? Indica il nome (es. "crea pratica per Mario Rossi").',
+          reason: 'MISSING_NAME',
+          candidatePracticeIds: [],
+          options: [],
+        },
+      };
     }
 
     // Confidence threshold evaluation: if confidence is below threshold, generate CLARIFICATION_REQUIRED

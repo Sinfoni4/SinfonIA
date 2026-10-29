@@ -1,5 +1,6 @@
 import { defaultDocumentOcrService } from '../ai/ocr/document-ocr.service.js';
 import { stopTelegramPollingForRestart } from '../interface/telegram/telegram.bot.js';
+import { log } from '../shared/log.js';
 
 import { releaseProcessLock } from './runtime.processLock.js';
 import { stopBackgroundWorkers } from './runtime.workers.js';
@@ -10,7 +11,7 @@ export async function gracefulShutdown(reason: string) {
   if (shuttingDown) return;
   shuttingDown = true;
 
-  console.log(`🛑 Graceful shutdown started: ${reason}`);
+  log.info({ reason }, 'Graceful shutdown started');
 
   try {
     await stopBackgroundWorkers();
@@ -51,5 +52,5 @@ export async function gracefulShutdown(reason: string) {
   }
 
   await new Promise((r) => setTimeout(r, 150));
-  console.log('✅ Graceful shutdown completed');
+  log.info('Graceful shutdown completed');
 }

@@ -1,18 +1,17 @@
 import { describeError } from '../shared/errors.js';
+import { log } from '../shared/log.js';
 
 import type { PrismaClient } from '@prisma/client';
 
 export async function forceDatabaseConnect(prisma: PrismaClient) {
   try {
-    console.log('🔌 DB CONNECT — attempting initial connection');
-
     await prisma.$connect();
 
-    console.log('✅ DB CONNECT — success');
+    log.info('Database connected');
     return { ok: true };
   } catch (error: unknown) {
     const details = describeError(error);
-    console.error('❌ DB CONNECT FAILED:', details.message);
+    log.error({ error: details.name ?? 'Error', code: details.code }, 'Database connection failed');
 
     return {
       ok: false,
