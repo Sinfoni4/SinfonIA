@@ -11,6 +11,9 @@ export function createPrismaClient(databaseUrl: string) {
   // the columns are timestamptz: on a server whose TimeZone is not UTC (e.g. Europe/Berlin)
   // PostgreSQL would read them as local time and store every timestamp shifted by the offset.
   const pool = new Pool({ connectionString: databaseUrl, options: '-c TimeZone=UTC' });
+  // An idle connection closed by the server (restart, admin termination) is discarded by the pool
+  // and the next query opens a new one; without a listener the error would stop the process.
+  pool.on('error', () => undefined);
   const adapter = new PrismaPg(pool);
 
   const client = new PrismaClient({
