@@ -24,12 +24,14 @@ const ConfigSchema = z
       .default('false')
       .transform((v) => v === 'true' || v === '1'),
     OPENAI_MODEL: z.string().optional().default('gpt-4o-mini'),
-    // LLM provider: OpenAI, or Azure OpenAI with a resource in an EU region (data residency).
-    LLM_PROVIDER: z.enum(['openai', 'azure']).default('openai'),
+    // LLM provider: OpenAI, Azure OpenAI with a resource in an EU region, or Mistral (EU).
+    LLM_PROVIDER: z.enum(['openai', 'azure', 'mistral']).default('openai'),
     AZURE_OPENAI_ENDPOINT: z.url().optional(),
     AZURE_OPENAI_API_KEY: z.string().min(1).optional(),
     AZURE_OPENAI_DEPLOYMENT: z.string().min(1).optional(),
     AZURE_OPENAI_API_VERSION: z.string().min(1).default('2024-10-21'),
+    MISTRAL_API_KEY: z.string().min(1).optional(),
+    MISTRAL_MODEL: z.string().min(1).default('mistral-small-latest'),
     AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
     AUTH_ISSUER: z.string().min(1).default('sinfonia'),
     AUTH_AUDIENCE: z.string().min(1).default('sinfonia-api'),
@@ -85,6 +87,10 @@ const ConfigSchema = z
       path: ['LLM_PROVIDER'],
     },
   )
+  .refine((c) => c.LLM_PROVIDER !== 'mistral' || Boolean(c.MISTRAL_API_KEY), {
+    message: 'LLM_PROVIDER=mistral needs MISTRAL_API_KEY',
+    path: ['LLM_PROVIDER'],
+  })
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',
     path: ['S3_BUCKET'],
