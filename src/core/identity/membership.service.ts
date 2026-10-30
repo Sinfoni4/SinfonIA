@@ -139,19 +139,6 @@ export async function scheduledExportRecipients(
   return rows.filter((r) => !seen.has(r.externalId) && seen.add(r.externalId));
 }
 
-/** First active ADMIN of an organization (scheduled tasks run on its behalf), or null. */
-export async function firstActiveAdmin(
-  prisma: PrismaLike,
-  tenantId: string,
-): Promise<string | null> {
-  const row = await prisma.membership.findFirst({
-    where: { ...activeMembership(tenantId), role: 'ADMIN', user: { status: 'ACTIVE' } },
-    orderBy: { createdAt: 'asc' },
-    select: { userId: true },
-  });
-  return row?.userId ?? null;
-}
-
 /**
  * Adds a person to an organization through a legacy invite code. A revoked or suspended
  * membership is never reactivated this way: returns false.

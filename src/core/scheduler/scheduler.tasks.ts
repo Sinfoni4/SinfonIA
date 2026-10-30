@@ -2,6 +2,7 @@ import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { normalizeExportFilter } from '../practice/practice.export.js';
 
 import type { PrismaLike } from '../../data/types/prisma.js';
+import type { SystemActor } from '../authz/authorization.service.js';
 import type { ComplianceService } from '../compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../practice/practice.application.service.js';
 import type { SchedulerTaskType, Tenant } from '../tenant/tenant.store.js';
@@ -11,6 +12,8 @@ export type SchedulerTaskContext = {
   /** Task payload with dynamic placeholders already resolved. */
   payload: Record<string, unknown>;
   now: Date;
+  /** Who runs the task: the system identity of this organization, never a member. */
+  actor: SystemActor;
 };
 
 /** A task type the scheduler can run. New task types are added by registering a handler. */

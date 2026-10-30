@@ -5,6 +5,7 @@ import {
   setTenantScope,
 } from '../../../core/identity/member-access.service.js';
 import {
+  changeMemberRole,
   listMembers,
   reactivateMembership,
   revokeMembership,
@@ -21,6 +22,7 @@ export type MembersRoutesDeps = { prisma: PrismaClient; login?: LoginService };
 
 const MemberParamsSchema = z.object({ userId: z.string().uuid() });
 const RevokeBodySchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
+const RoleBodySchema = z.object({ role: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']) });
 const PermissionBodySchema = z.object({
   permission: z.enum(['practice.export']),
   granted: z.boolean(),
@@ -73,6 +75,26 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
         const { userId } = MemberParamsSchema.parse(req.params);
         await reactivateMembership(deps.prisma, auth.tenantId, userId, { userId: auth.userId });
         return reply.send(ok({ userId, status: 'ACTIVE' }));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  // Role of a member, effective at the next request; never the last active ADMIN.
+  app.post(
+    '/members/:userId/role',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        const { userId } = MemberParamsSchema.parse(req.params);
+        const { role } = RoleBodySchema.parse(req.body);
+        const { changed } = await changeMemberRole(deps.prisma, auth.tenantId, userId, role, {
+          userId: auth.userId,
+        });
+        return reply.send(ok({ userId, role, changed }));
       } catch (err: unknown) {
         const mapped = mapErrorToHttp(err);
         return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

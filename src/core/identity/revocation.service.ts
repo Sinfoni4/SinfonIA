@@ -1,9 +1,10 @@
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { can } from '../authz/authorization.service.js';
 
 import type { PrismaTx } from '../../data/types/prisma.js';
-import type { PrismaClient, UserStatus } from '@prisma/client';
+import type { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 
 /**
  * Revocation (MF5): every change takes effect at the next request, because the principal is read
@@ -22,6 +23,18 @@ export class LastAdminError extends Error {
 }
 
 type Actor = { userId: string | null };
+
+/**
+ * Locks the active administrators of an organization: two administrators revoking or demoting
+ * each other at the same time cannot leave it without one. Returns their ids.
+ */
+async function lockActiveAdmins(tx: PrismaTx, orgId: string): Promise<string[]> {
+  const admins = await tx.$queryRaw<{ user_id: string }[]>`
+    SELECT "user_id" FROM "membership"
+     WHERE "org_id" = ${orgId}::uuid AND "role" = 'ADMIN' AND "status" = 'ACTIVE'
+       FOR UPDATE`;
+  return admins.map((a) => a.user_id);
+}
 
 async function auditEverywhere(
   tx: PrismaTx,
@@ -103,13 +116,8 @@ export async function revokeMembership(
     });
     if (!membership) throw new NotFoundError('Membership not found');
     if (membership.status === 'REVOKED') return;
-    // Locks the active administrators: two administrators revoking each other at the same time
-    // cannot leave the organization without one.
-    const admins = await tx.$queryRaw<{ user_id: string }[]>`
-      SELECT "user_id" FROM "membership"
-       WHERE "org_id" = ${orgId}::uuid AND "role" = 'ADMIN' AND "status" = 'ACTIVE'
-         FOR UPDATE`;
-    if (admins.length === 1 && admins[0].user_id === userId) throw new LastAdminError();
+    const admins = await lockActiveAdmins(tx, orgId);
+    if (admins.length === 1 && admins[0] === userId) throw new LastAdminError();
     await tx.membership.update({
       where: { userId_orgId: { userId, orgId } },
       data: {
@@ -128,6 +136,49 @@ export async function revokeMembership(
       eventType: 'MEMBERSHIP_REVOKED',
       payload: { targetUserId: userId },
     });
+  });
+}
+
+/**
+ * Changes the role of an active member, effective at the next request. The last active ADMIN
+ * cannot lose the role. A new role starts clean: extra permissions are withdrawn, and the
+ * scheduled export stops for whoever is no longer an ADMIN.
+ */
+export async function changeMemberRole(
+  prisma: PrismaClient,
+  orgId: string,
+  userId: string,
+  role: UserRole,
+  actor: Actor,
+): Promise<{ changed: boolean }> {
+  return withTransaction(prisma, async (tx) => {
+    const membership = await tx.membership.findFirst({
+      where: { userId, orgId, status: 'ACTIVE' },
+      select: { role: true },
+    });
+    if (!membership) throw new NotFoundError('Membership not found');
+    const previous = membership.role;
+    if (previous === role) return { changed: false };
+    const admins = await lockActiveAdmins(tx, orgId);
+    if (admins.length === 1 && admins[0] === userId) throw new LastAdminError();
+    await tx.membership.update({
+      where: { userId_orgId: { userId, orgId } },
+      data: {
+        role,
+        extraPermissions: [],
+        // Only those who can manage members receive the scheduled export (D5b).
+        ...(can(role, 'members.manage') ? {} : { scheduledExportSince: null }),
+      },
+    });
+    // Legacy column (until the contract step M3): kept equal in the person's legacy organization.
+    await tx.user.updateMany({ where: { id: userId, tenantId: orgId }, data: { role } });
+    await new AuditService(tx).logEvent({
+      tenantId: orgId,
+      userId: actor.userId,
+      eventType: 'MEMBER_ROLE_CHANGED',
+      payload: { targetUserId: userId, from: previous, to: role },
+    });
+    return { changed: true };
   });
 }
 
