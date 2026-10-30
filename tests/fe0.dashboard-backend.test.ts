@@ -170,6 +170,25 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
     expect((await post('/auth/logout-all', {})).statusCode).toBe(401);
   });
 
+  it('tells the dashboard who is logged in and where they can work (B9)', async () => {
+    const me = await app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: authHeaders(orgId, memberId, 'MEMBER'),
+    });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toEqual({
+      success: true,
+      data: {
+        userId: memberId,
+        email: memberEmail,
+        organizations: [expect.objectContaining({ orgId, role: 'MEMBER' })],
+        current: { orgId, role: 'MEMBER' },
+      },
+    });
+    expect((await app.inject({ method: 'GET', url: '/auth/me' })).statusCode).toBe(401);
+  });
+
   it('lists invitations with their state, without tokens, to administrators (B3)', async () => {
     const admin = authHeaders(orgId, adminId, 'ADMIN');
     const created = await post(

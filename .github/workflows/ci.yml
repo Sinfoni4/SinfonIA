@@ -44,6 +44,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Web dashboard (web/): its own packages; browsers for end-to-end tests are not needed here.
+      - name: Install web dependencies
+        run: npm run web:install
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
       - name: Secret scan
         run: npm run secret:scan
 
@@ -62,6 +68,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Typecheck web
+        run: npm run web:typecheck
+
       - name: Lint
         run: npm run lint
 
@@ -75,8 +84,17 @@ jobs:
           # Superuser only for the role test, which creates and drops its own database.
           DB_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/sinfonia
 
+      - name: Test web
+        run: npm run web:test
+
       - name: Build
         run: npm run build
 
+      - name: Build web
+        run: npm run web:build
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit web production dependencies
+        run: npm audit --prefix web --omit=dev --audit-level=high

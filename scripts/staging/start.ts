@@ -20,6 +20,7 @@ const DATA_DIR = '.runtime/pgdata_test';
 const DATABASE = 'sinfonia_staging';
 const APP_ROLE = 'sinfonia_staging_app';
 const STORAGE_DIR = path.resolve('.runtime/storage-staging');
+const WEB_DIST = path.resolve('web/dist');
 const PORT = Number(process.env.STAGING_PORT ?? 3110);
 const checkOnly = process.argv.includes('--check');
 
@@ -103,6 +104,8 @@ async function main() {
       ...process.env,
       DATABASE_URL: appUrl.toString(),
       STORAGE_LOCAL_DIR: STORAGE_DIR,
+      // The dashboard, when built (npm run web:build), is served under /app.
+      ...(existsSync(WEB_DIST) ? { WEB_DIST_DIR: WEB_DIST } : {}),
       PORT: String(PORT),
       SCHEDULER_INTERVAL_MS: process.env.SCHEDULER_INTERVAL_MS ?? '15000',
       OUTBOX_DISPATCH_INTERVAL_MS: process.env.OUTBOX_DISPATCH_INTERVAL_MS ?? '3000',

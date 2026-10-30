@@ -483,6 +483,31 @@ export class LoginService {
     }));
   }
 
+  /**
+   * Who the person is and where they can work (B9): what the dashboard shows after a reload,
+   * when only the access token is in memory. Placeholder emails of chat accounts are hidden.
+   */
+  async profile(userId: string): Promise<{
+    userId: string;
+    email: string | null;
+    organizations: Array<{ orgId: string; name: string; role: UserRole }>;
+  }> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true },
+    });
+    const memberships = await this.prisma.membership.findMany({
+      where: { userId, status: 'ACTIVE', org: { status: 'ACTIVE' } },
+      orderBy: { createdAt: 'asc' },
+      select: { orgId: true, role: true, org: { select: { name: true } } },
+    });
+    return {
+      userId,
+      email: PLACEHOLDER_EMAIL.test(user.email) ? null : user.email,
+      organizations: memberships.map((m) => ({ orgId: m.orgId, name: m.org.name, role: m.role })),
+    };
+  }
+
   /** «Esci da tutti i dispositivi»: every session and token of the person ends (MF5). */
   async logoutEverywhere(userId: string): Promise<void> {
     await revokeAllSessions(this.prisma, userId, { userId });

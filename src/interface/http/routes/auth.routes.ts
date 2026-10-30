@@ -119,6 +119,18 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
       return undefined;
     }),
   );
+  // The person and the organizations they can switch to, plus the current one (B9).
+  app.get('/auth/me', { config: { permission: 'authenticated' } }, async (req, reply) => {
+    try {
+      const auth = requireAuthContext(req);
+      const profile = await deps.login.profile(auth.userId);
+      return reply.send(ok({ ...profile, current: { orgId: auth.tenantId, role: auth.role } }));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
   // Not public: the person is authenticated with the access token (B4).
   app.post(
     '/auth/logout-all',
