@@ -1,6 +1,10 @@
 import { can } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
+import {
+  OrganizationChoiceRequiredError,
+  type MembershipOption,
+} from '../../core/identity/membership.service.js';
 import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
 import { errorLabel } from '../../shared/errors.js';
@@ -64,8 +68,13 @@ export type InboundMessage = {
 export interface ChannelIdentityProvider {
   /** Links the sender to the tenant of an invite code; null when the code is unknown. */
   link(inviteCode: string, senderId: string): Promise<string | null>;
-  /** Throws TenantNotLinkedError when the sender is not linked to any tenant. */
+  /**
+   * Throws TenantNotLinkedError when the sender is not linked to any tenant, and
+   * OrganizationChoiceRequiredError when they belong to several organizations.
+   */
   resolve(senderId: string): Promise<{ tenant: Tenant; userId: string; role: UserRole }>;
+  /** Loads an organization chosen among the memberships of an OrganizationChoiceRequiredError. */
+  tenantFor?(tenantId: string): Promise<Tenant>;
 }
 
 export type ConversationDeps = {
@@ -102,6 +111,25 @@ export const TELEGRAM_COMPRESSED_PHOTO_TIP =
   'Foto: Telegram comprime le foto.';
 
 const LINK_COMMAND = /^\/?start\s+(\S+)/i;
+const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: 'amministratore',
+  OPERATOR: 'operatore',
+  MEMBER: 'collaboratore',
+};
+
+export function formatOrganizationChoice(options: MembershipOption[], activeId?: string | null) {
+  const lines = options.map(
+    (o, i) =>
+      `${i + 1}. ${o.tenantName} (${ROLE_LABELS[o.role]})${o.tenantId === activeId ? ' ← attuale' : ''}`,
+  );
+  return [
+    '🏢 Fai parte di più organizzazioni. Scegli con cui lavorare scrivendo «azienda» e il numero:',
+    '',
+    ...lines,
+  ].join('\n');
+}
 
 function isGreeting(text: string): boolean {
   const t = text.toLowerCase().trim();
@@ -177,6 +205,38 @@ export class ConversationService {
     }
   }
 
+  /**
+   * A person in several organizations works in the one they chose («azienda N»), kept in the
+   * conversation memory. Returns the identity to continue with, or null when the reply is done.
+   */
+  private async chooseOrganization(
+    choice: OrganizationChoiceRequiredError,
+    orgCommand: RegExpExecArray | null,
+    reply: Reply,
+  ): Promise<Awaited<ReturnType<ChannelIdentityProvider['resolve']>> | null> {
+    const active = await this.memory.getActiveOrg(choice.userId);
+    if (orgCommand?.[1]) {
+      const picked = choice.options[Number(orgCommand[1]) - 1];
+      if (!picked) {
+        await reply(formatOrganizationChoice(choice.options, active));
+        return null;
+      }
+      await this.memory.setActiveOrg(choice.userId, picked.tenantId);
+      await reply(`✅ Ora lavori per ${picked.tenantName} come ${ROLE_LABELS[picked.role]}.`);
+      return null;
+    }
+    const current = choice.options.find((o) => o.tenantId === active);
+    if (!current || orgCommand || !this.channel.identity.tenantFor) {
+      await reply(formatOrganizationChoice(choice.options, current?.tenantId));
+      return null;
+    }
+    return {
+      tenant: await this.channel.identity.tenantFor(current.tenantId),
+      userId: choice.userId,
+      role: current.role,
+    };
+  }
+
   private async process(message: InboundMessage, reply: Reply, requestId: string): Promise<void> {
     const { deps } = this;
     const text = message.text;
@@ -195,9 +255,14 @@ export class ConversationService {
       return;
     }
 
+    const orgCommand = ORG_COMMAND.exec(trimmed);
     let identity: Awaited<ReturnType<ChannelIdentityProvider['resolve']>>;
     try {
       identity = await this.channel.identity.resolve(message.senderId);
+      if (orgCommand) {
+        await reply(`🏢 Lavori per ${identity.tenant.name}.`);
+        return;
+      }
     } catch (err: unknown) {
       if (err instanceof TenantNotLinkedError) {
         await reply(
@@ -205,7 +270,10 @@ export class ConversationService {
         );
         return;
       }
-      throw err;
+      if (!(err instanceof OrganizationChoiceRequiredError)) throw err;
+      const chosen = await this.chooseOrganization(err, orgCommand, reply);
+      if (!chosen) return;
+      identity = chosen;
     }
 
     const tenant = identity.tenant;

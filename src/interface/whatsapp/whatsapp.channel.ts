@@ -1,10 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
-import { bindUserToTenant, getTenantIdByInvite } from '../../core/tenant/tenant.invite.store.js';
 import { getTenantById } from '../../core/tenant/tenant.store.js';
-import { WhatsappIdentityRepository } from '../../data/repositories/whatsapp-identity.repository.js';
+import {
+  normalizePhoneNumber,
+  WhatsappIdentityRepository,
+} from '../../data/repositories/whatsapp-identity.repository.js';
 import { errorLabel } from '../../shared/errors.js';
+import { createMembershipIdentityProvider } from '../conversation/channel.identity.js';
 import { ConversationService } from '../conversation/conversation.service.js';
 
 import type { WhatsAppClient } from './whatsapp.client.js';
@@ -105,23 +107,14 @@ export function parseWebhookPayload(payload: unknown): WhatsAppIncoming[] {
 /** WhatsApp users are identified by their phone number, linked to a user with an invite code. */
 export function createWhatsAppIdentityProvider(prisma: PrismaClient): ChannelIdentityProvider {
   const identities = new WhatsappIdentityRepository(prisma);
+  const provider = createMembershipIdentityProvider(prisma, 'WHATSAPP', (tenantId, phone) =>
+    identities.ensureLinkedUser(tenantId, phone),
+  );
+  // Numbers are stored digits only, as the Cloud API sends them.
   return {
-    async link(inviteCode, phone) {
-      const tenantId = await getTenantIdByInvite(prisma, inviteCode);
-      if (!tenantId) return null;
-      const { userId } = await identities.ensureLinkedUser(tenantId, phone);
-      await bindUserToTenant(prisma, userId, tenantId);
-      return tenantId;
-    },
-    async resolve(phone) {
-      const identity = await identities.findLatestByPhone(phone);
-      if (!identity) throw new TenantNotLinkedError();
-      return {
-        tenant: await getTenantById(prisma, identity.tenantId),
-        userId: identity.userId,
-        role: identity.role,
-      };
-    },
+    link: (code, phone) => provider.link(code, normalizePhoneNumber(phone)),
+    resolve: (phone) => provider.resolve(normalizePhoneNumber(phone)),
+    tenantFor: (tenantId) => getTenantById(prisma, tenantId),
   };
 }
 

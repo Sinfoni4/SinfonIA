@@ -58,8 +58,8 @@ export class PracticeRepository {
   ): Promise<PracticeDTO> {
     requireTenantId(tenantId);
     try {
-      const owner = await this.prisma.user.findFirst({
-        where: { tenantId, id: data.userId },
+      const owner = await this.prisma.membership.findFirst({
+        where: { orgId: tenantId, userId: data.userId, status: 'ACTIVE' },
         select: { id: true },
       });
       if (!owner) {

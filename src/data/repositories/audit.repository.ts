@@ -37,8 +37,9 @@ export class AuditRepository {
     requireTenantId(input.tenantId);
     try {
       if (input.userId) {
-        const owner = await this.prisma.user.findFirst({
-          where: { tenantId: input.tenantId, id: input.userId },
+        // Any membership, even revoked: actions of a member are recorded after a revocation too.
+        const owner = await this.prisma.membership.findFirst({
+          where: { orgId: input.tenantId, userId: input.userId },
           select: { id: true },
         });
         if (!owner) {

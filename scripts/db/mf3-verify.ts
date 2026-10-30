@@ -12,27 +12,29 @@ export type IdentityCheck = { name: string; ok: boolean; count: number; detail: 
 
 const CHECKS: Array<{ name: string; sql: string; detail: string; informational?: boolean }> = [
   {
+    // Since MF4 roles and statuses live in the membership: only its existence is checked.
     name: 'users_without_membership',
-    detail: 'users with no ACTIVE membership in their tenant, with their role',
+    detail: 'users with no membership at all in their legacy tenant',
     sql: `SELECT count(*)::int n FROM "user" u
            WHERE NOT EXISTS (SELECT 1 FROM membership m
-                              WHERE m.user_id = u.id AND m.org_id = u.tenant_id
-                                AND m.role = u.role AND m.status = 'ACTIVE')`,
+                              WHERE m.user_id = u.id AND m.org_id = u.tenant_id)`,
   },
   {
-    name: 'active_memberships_without_legacy_user',
-    detail: 'ACTIVE memberships that do not match the legacy tenant of their user',
+    // Since MF4 a person can belong to several organizations: no longer an inconsistency.
+    name: 'people_in_several_organizations',
+    detail: 'ACTIVE memberships outside the legacy tenant of their user: informational',
+    informational: true,
     sql: `SELECT count(*)::int n FROM membership m JOIN "user" u ON u.id = m.user_id
            WHERE m.status = 'ACTIVE' AND m.org_id <> u.tenant_id`,
   },
   {
+    // A link revoked since MF4 is legitimate; an account never mirrored is not.
     name: 'telegram_ids_without_link',
-    detail: 'Telegram ids with no active channel identity at all',
+    detail: 'Telegram ids that never had a channel identity',
     sql: `SELECT count(DISTINCT u.telegram_id)::int n FROM "user" u
            WHERE u.telegram_id IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM channel_identity c
-                              WHERE c.channel = 'TELEGRAM' AND c.external_id = u.telegram_id
-                                AND c.revoked_at IS NULL)`,
+                              WHERE c.channel = 'TELEGRAM' AND c.external_id = u.telegram_id)`,
   },
   {
     name: 'telegram_link_not_most_recent_user',
@@ -44,11 +46,10 @@ const CHECKS: Array<{ name: string; sql: string; detail: string; informational?:
   },
   {
     name: 'whatsapp_without_link',
-    detail: 'WhatsApp identities with no active channel identity',
+    detail: 'WhatsApp identities that never had a channel identity',
     sql: `SELECT count(*)::int n FROM whatsapp_identity w
            WHERE NOT EXISTS (SELECT 1 FROM channel_identity c
-                              WHERE c.channel = 'WHATSAPP' AND c.external_id = w.phone_number
-                                AND c.revoked_at IS NULL)`,
+                              WHERE c.channel = 'WHATSAPP' AND c.external_id = w.phone_number)`,
   },
   {
     name: 'duplicate_active_links',
