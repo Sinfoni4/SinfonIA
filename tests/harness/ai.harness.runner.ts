@@ -373,6 +373,7 @@ export async function runHarness(args: {
       AZURE_OPENAI_API_VERSION: '2024-10-21',
       AUTH_EMAIL_LOGIN: false,
       RATE_LIMIT_AUTH_PER_MINUTE: 10,
+      MISTRAL_MODEL: 'mistral-small-latest',
     },
     logger,
     {

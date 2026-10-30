@@ -12,10 +12,12 @@ export default defineConfig({
   datasource: {
     // Prisma CLI requires a URL even for `generate`.
     // We keep a safe local default so CI can build without provisioning a DB.
+    // Migrations run as the schema owner (MF1): MIGRATION_DATABASE_URL when the application
+    // connects with its least-privilege role, DATABASE_URL otherwise.
     url:
+      process.env.MIGRATION_DATABASE_URL ??
       process.env.DATABASE_URL ??
       'postgresql://sinfonia_user:sinfonia_pass@localhost:5432/sinfonia_db?schema=public',
     shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });
-

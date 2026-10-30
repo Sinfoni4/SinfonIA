@@ -4,7 +4,11 @@ import { ExecutorService } from './ai/execution/executor.service.js';
 import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
 import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
-import { createAzureOpenAIProvider, createOpenAIProvider } from './ai/providers/openai.provider.js';
+import {
+  createAzureOpenAIProvider,
+  createMistralProvider,
+  createOpenAIProvider,
+} from './ai/providers/openai.provider.js';
 import { AITracer } from './ai/tracing/ai.tracer.js';
 import {
   validateBeforeDecision,
@@ -85,8 +89,13 @@ function createLLMClient(
     | 'AZURE_OPENAI_API_KEY'
     | 'AZURE_OPENAI_DEPLOYMENT'
     | 'AZURE_OPENAI_API_VERSION'
+    | 'MISTRAL_API_KEY'
+    | 'MISTRAL_MODEL'
   >,
 ): LLMClient {
+  if (config.ENABLE_LLM && config.LLM_PROVIDER === 'mistral' && config.MISTRAL_API_KEY) {
+    return createMistralProvider({ apiKey: config.MISTRAL_API_KEY, model: config.MISTRAL_MODEL });
+  }
   if (
     config.ENABLE_LLM &&
     config.LLM_PROVIDER === 'azure' &&
@@ -107,7 +116,9 @@ function createLLMClient(
       model: config.OPENAI_MODEL,
     });
   }
-  return createDisabledLLMClient('LLM is disabled via ENABLE_LLM=false or missing OPENAI_API_KEY');
+  return createDisabledLLMClient(
+    'LLM is disabled via ENABLE_LLM=false or missing the API key of LLM_PROVIDER',
+  );
 }
 
 // Composition root: wires layers together.
