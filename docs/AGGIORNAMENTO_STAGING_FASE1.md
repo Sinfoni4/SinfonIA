@@ -1,8 +1,14 @@
 # Aggiornamento dello staging alla Fase 1 (MF1, MF3, MF4, MF5, MF2b)
 
-**Data**: 29/10/2026 · **Stato**: procedura pronta, **non eseguita** · Riferimenti: `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` §9, `docs/BACKUP_RIPRISTINO_E_RUOLI.md` (in MF1)
+**Data**: 29/10/2026 · **Stato**: **eseguita il 30/10/2026** (esito nel piano, §16) · Riferimenti: `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` §9, `docs/BACKUP_RIPRISTINO_E_RUOLI.md`
 
-Lo staging gira sul PC: database `sinfonia_staging` nel cluster PostgreSQL sulla porta 5433, applicazione avviata dalla cartella del repository sulla porta 3110, allegati in `.runtime/storage`. Ogni passo indica chi lo esegue.
+Lo staging gira sul PC: database `sinfonia_staging` nel cluster PostgreSQL sulla porta 5433, applicazione avviata dalla cartella del repository sulla porta 3110. Ogni passo indica chi lo esegue.
+
+**Differenze rispetto alla procedura, decise durante l'esecuzione**:
+
+- i ruoli hanno il prefisso `sinfonia_staging` (`DB_ROLE_PREFIX=sinfonia_staging`): lo stesso cluster ospita anche il database di test, e i ruoli PostgreSQL valgono per tutto il cluster;
+- gli allegati dello staging sono in una cartella propria, `.runtime/storage-staging` (`STORAGE_LOCAL_DIR`), separata da `.runtime/storage` usata dai test;
+- il backup è su un supporto USB esterno.
 
 ## 0. Prerequisiti
 
@@ -55,8 +61,9 @@ DB_BACKUP_PASSWORD=… DB_ROLES_STAGING_APPROVED=yes npm run db:roles
 
 Configurazione dell'applicazione di staging:
 
-- `DATABASE_URL` con `sinfonia_app`;
-- `MIGRATION_DATABASE_URL` con `sinfonia_owner`.
+- `DATABASE_URL` con `sinfonia_staging_app`;
+- `MIGRATION_DATABASE_URL` con `sinfonia_staging_owner`;
+- `STORAGE_LOCAL_DIR` sulla cartella degli allegati dello staging.
 
 **Rollback**: `DATABASE_URL` di nuovo con le credenziali precedenti e riavvio. I ruoli restano ma non sono usati.
 
