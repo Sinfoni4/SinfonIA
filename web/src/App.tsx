@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from 'react-router';
 
 import { Layout } from './components/Layout';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
+import { DeadlinesPage } from './pages/DeadlinesPage';
+import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { NewPracticePage } from './pages/NewPracticePage';
@@ -34,6 +36,8 @@ export function App() {
         <Route path="pratiche" element={<PracticesPage me={me} />} />
         <Route path="pratiche/nuova" element={<NewPracticePage />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
+        <Route path="scadenze" element={<DeadlinesPage me={me} />} />
+        <Route path="export" element={<ExportPage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

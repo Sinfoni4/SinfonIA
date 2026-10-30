@@ -48,6 +48,8 @@ export function Layout({ me }: { me: Me }) {
         </div>
         <nav aria-label="Sezioni">
           <NavLink to="/pratiche">Pratiche</NavLink>
+          <NavLink to="/scadenze">Scadenze</NavLink>
+          <NavLink to="/export">Export</NavLink>
         </nav>
         <nav aria-label="Account">
           <NavLink to="/profilo">Profilo</NavLink>
