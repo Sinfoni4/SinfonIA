@@ -1,7 +1,9 @@
 # SinfonIA — Fase 1: organizzazioni, identità, autorizzazioni e sicurezza
 
-**Stato**: direzione architetturale approvabile; MF2 e MF0 (fasi 1 e 2) eseguiti; MF1, MF3, MF4, MF5 e MF2b in PR non unite · **Data**: 29/10/2026 · **Versione**: 9
-**Autorizzato finora**: preparazione documentale; MF2 su un ramo dedicato con C1; MF0 fase 1 solo su dati sintetici; MF0 fase 2 sullo staging (A1–A5, §10.13); unione delle PR #9–#12 e riavvio dello staging (29/10/2026); MF1 e MF3–MF5 su rami dedicati, provati su database isolati e di test; MF2b dopo la decisione C2. Non autorizzati: unione delle PR aperte, migrazioni e ruoli sullo staging o in produzione, installazioni, configurazioni, dipendenze o servizi esterni.
+**Stato**: MF0, MF1, MF2, MF2b, MF3, MF4 e MF5 eseguiti e in `main`; MF8 in parte (regole di export D5 e D5b); MF6 in parte (login via email disattivato in attesa del fornitore); staging aggiornato · **Data**: 30/10/2026 · **Versione**: 10
+**Autorizzato finora**: tutto quanto elencato in §16, compresi l'unione delle PR #13–#23 e l'aggiornamento dello staging (30/10/2026). Non autorizzati: produzione, installazioni di dipendenze, servizi esterni (fornitore email, Mistral), backup automatici pianificati sul PC, durate di conservazione, cancellazione dei dati.
+
+Novità della versione 10: stato per micro-fase dopo l'unione delle PR #13–#23; aggiornamento dello staging (backup cifrato su supporto esterno e ripristino provato, migrazioni, ruoli separati, cartella degli allegati propria); misura delle prestazioni con la Fase 1 completa; affermazioni verificate (§16).
 
 Novità della versione 9: decisioni del 29/10/2026 su C2 (approvata), D5 (approvata) e D5b (opzione b, poi d); rinviate D11 (fornitore email), D3 (durata delle deleghe) e D4 (aggregati delle reti) (§A, §B, §3.3, §3.4); domande per la consulenza legale e privacy in `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`; stato aggiornato (§16).
 
@@ -992,27 +994,51 @@ Il primo pilota richiede MF0–MF8, MF10, MF11 e MF13; MF2b e MF9 possono seguir
 
 ## 16. Stato e autorizzazioni
 
-**Al 29/10/2026**:
+**Al 30/10/2026**: PR #9–#23 unite in `main` (CI verde); aperta [#24](https://github.com/Sinfoni4/SinfonIA/pull/24) (completamento di MF5), non unita. Ogni attività futura richiede una **propria approvazione esplicita** (§14).
 
-- **MF2 eseguito** su `feat/mf2-authorization` con C1 e le ottimizzazioni misurate (§11.5): [PR #9](https://github.com/Sinfoni4/SinfonIA/pull/9), CI verde, **non unita**.
-- **MF0 fase 1 eseguita su dati sintetici** in un cluster isolato poi cancellato: tutte le verifiche superate, [PR #10](https://github.com/Sinfoni4/SinfonIA/pull/10), **non unita**. Nessun dump, copia, database o rapporto con dati reali è stato creato.
-- **MF0 fase 2 eseguita e superata** sullo staging in sola lettura, copia cancellata e verificata (§10.13).
-- Nessuna modifica a schema, dati, configurazioni, dipendenze, staging, PC o servizi esterni. Sul database di test (dati sintetici) sono state aggiunte righe per le misure di prestazioni.
-- Ogni attività futura richiede una **propria approvazione esplicita** (§14); MF0 e MF2 sono autorizzati separatamente.
-- **PR #9–#12 unite** in `main` e staging riavviato sulla porta 3110 (29/10/2026).
-- **Aperte, CI verde, non unite**: [#13 MF1](https://github.com/Sinfoni4/SinfonIA/pull/13) (ruoli PostgreSQL), [#14 MF3](https://github.com/Sinfoni4/SinfonIA/pull/14) (espansione dello schema), [#15 MF4](https://github.com/Sinfoni4/SinfonIA/pull/15) (appartenenze), [#16 MF5](https://github.com/Sinfoni4/SinfonIA/pull/16) (revoca); MF2b (vista chat C2) in PR separata. Nessun ruolo né migrazione applicati allo staging.
-- **Decisioni del 29/10/2026**: C2 e D5 approvate; D5b b poi d; D11, D3 (durata) e D4 rinviate. Consulenza legale e privacy da avviare con `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`.
+| Micro-fase | Stato | Dove |
+| :--- | :--- | :--- |
+| MF0 Backup e ripristino | **eseguita**: fasi 1 e 2 (§10.13); backup cifrato `npm run db:backup` e ripristino `npm run db:restore` provati sullo staging | #10, #20 |
+| MF1 Ruoli PostgreSQL | **eseguita** e **applicata allo staging** (ruoli `sinfonia_staging_owner/app/backup`) | #13 |
+| MF2 Autorizzazione | **eseguita** (C1) | #9 |
+| MF2b Vista della chat (C2) | **eseguita** | #17 |
+| MF3 Espansione dello schema | **eseguita** e applicata allo staging | #14 |
+| MF4 Appartenenze | **eseguita** e applicata allo staging | #15 |
+| MF5 Revoca, scheduler, outbox, download | **eseguita**; cambio di ruolo e identità di sistema dello scheduler in revisione | #16, #24 |
+| MF6 Login email, sessioni, inviti | **in parte**: codici, sessioni con rinnovo ruotato e inviti con invio **simulato**, disattivati (`AUTH_EMAIL_LOGIN`) e rifiutati in produzione fino alla scelta del fornitore (D11, rinviata) | #23 |
+| MF7 Collegamento Telegram/WhatsApp verificato | da fare, dopo MF6 | — |
+| MF8 Deleghe ed export | **in parte**: regole di export D5 e D5b opzione b (export pianificato solo a chi lo sceglie, audit di ogni export e consegna); deleghe in attesa di D3 | #21 |
+| MF9 Reti e aggregati | in attesa di D4 | — |
+| MF10, MF13 Conservazione e cancellazione | in attesa della consulenza legale e privacy; disponibile il report in sola lettura dei file orfani (`npm run storage:orphans`) | #22 |
+| MF11 Applicazione allo staging | **eseguita** il 30/10/2026 per MF1–MF5, MF2b, MF8 in parte (vedi sotto) | `docs/AGGIORNAMENTO_STAGING_FASE1.md` |
+| MF12 Pulizia M3 | dopo il periodo di verifica | — |
+
+Altre modifiche unite: Mistral AI come fornitore AI selezionabile, non attivo senza chiave (#19); decisioni del 29/10/2026 e domande per il consulente (#18).
+
+**Staging aggiornato il 30/10/2026** (procedura `docs/AGGIORNAMENTO_STAGING_FASE1.md`):
+
+1. Backup cifrato (AES-256-GCM, chiave custodita dal proprietario) su supporto USB esterno: 16 tabelle, 16 migrazioni, 15 allegati, ruoli.
+2. Prova di ripristino in un database temporaneo: righe identiche in tutte le tabelle, allegati identici byte per byte; database e file temporanei cancellati.
+3. Migrazioni MF3, MF4 e scelta dell'export pianificato applicate; `mf3-verify` tutto `OK`.
+4. Ruoli separati: l'applicazione usa `sinfonia_staging_app` (dati sì; niente modifiche dello schema, `TRUNCATE`, modifica o cancellazione dell'audit, storico delle migrazioni); verificato ruolo per ruolo.
+5. Riavvio con il nuovo codice: `/readyz`, lettura, scrittura, elenco dei membri e rifiuto di un token con versione diversa verificati via API; chat provata dal proprietario («lista pratiche», «pratiche azienda», «attiva export pianificato»).
+6. Allegati dello staging in una cartella propria (`STORAGE_LOCAL_DIR`), separata da quella dei test: 2 file spostati con impronte identiche e scaricati dall'API; nessun file orfano dello staging.
+
+**Prestazioni con la Fase 1 completa** (criterio di §11.5; mediana di 3 giri sul database di test, confronto con le misure di MF2 del 29/10, non giri alternati): elenco e dettaglio a 1 e 5 richieste simultanee entro +1,4 ms al p50 e +1,9 ms al p95. Criterio **rispettato**.
+
+**Decisioni**: C2, D5 e D5b approvate (§A.15–A.16); D11, D3 (durata), D4 rinviate; consulenza legale e privacy da avviare con `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`.
 
 **Operazioni eseguite per preparare il piano (tutte in sola lettura)**: lettura del codice e degli schemi; conteggi, catalogo delle colonne, estensioni e impostazioni dei log sullo staging in transazioni di sola lettura; letture delle impostazioni del PC (sincronizzazione, indicizzazione, file di paging, dump di memoria, unità); consultazione di fonti web per i servizi email. Le attività operative precedenti di questa sessione (unione delle PR #6–#8, migrazioni e riavvio dello staging, test di carico sul database di test) sono anteriori alla Fase 1 e furono approvate allora.
 
 | Affermazione | Stato |
 | :--- | :--- |
 | Modello attuale utente-azienda, punti del codice dipendenti, incoerenze tra canali, cancellazione con file orfani, eventi di audit presenti | **verificato** nel codice (§0) |
-| Ruolo PostgreSQL privilegiato, impostazioni dei log, colonne di testo e JSON, `pgcrypto` installato | **verificato** sullo staging in sola lettura |
+| Ruolo PostgreSQL privilegiato, impostazioni dei log, colonne di testo e JSON, `pgcrypto` installato | **verificato** sullo staging in sola lettura; dal 30/10/2026 l'applicazione usa un ruolo senza privilegi sullo schema |
 | File di paging non cifrato, dump di memoria automatici, cartella fuori da OneDrive e Dropbox, Windows Search attivo | **verificato** sul PC in sola lettura |
 | BitLocker non attivo | **dichiarato** dal proprietario |
 | Configurazione dei client di sincronizzazione, strumenti di backup del PC, ibernazione, invio dei rapporti WER | **non verificato** |
-| `pg_restore` da pipe senza file temporanei; coincidenza del formato delle righe tra `COPY` e dump | **presunto**, da provare su dati sintetici |
+| `pg_restore` da pipe senza file temporanei; coincidenza del formato delle righe tra `COPY` e dump | **verificato** in MF0 (fasi 1 e 2) e nella prova di ripristino dello staging del 30/10/2026 |
 | Prezzi e condizioni dei servizi email | **verificato** su fonti ufficiali dove indicato (§13), altrimenti non verificato |
 | Obblighi di conservazione, ruoli GDPR, regole di cancellazione | **da verificare** con consulenza legale e privacy (domande in `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`) |
-| Tutto il resto del documento (modello, flussi, regole, micro-fasi, stime) | **progettato**, non implementato |
+| Micro-fasi indicate come eseguite nella tabella sopra | **implementate** e coperte da test |
+| Tutto il resto del documento (modello, flussi, regole, micro-fasi rimanenti, stime) | **progettato**, non implementato |
