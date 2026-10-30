@@ -29,6 +29,7 @@
     "db:backup": "tsx scripts/backup/encrypted-backup.ts",
     "db:restore": "tsx scripts/backup/encrypted-restore.ts",
     "storage:orphans": "tsx scripts/storage/report-orphans.ts",
+    "staging:start": "tsx scripts/staging/start.ts",
     "postinstall": "prisma generate",
     "db:diag": "tsx src/devtools/runDbDiagnostics.ts",
     "db:explain": "tsx scripts/explain-queries.ts",

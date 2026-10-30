@@ -5,6 +5,7 @@ import { createMembershipIdentityProvider } from '../conversation/channel.identi
 import {
   ConversationService,
   TELEGRAM_COMPRESSED_PHOTO_TIP,
+  VOICE_NOT_SUPPORTED,
 } from '../conversation/conversation.service.js';
 
 import { TelegramClient } from './telegram.client.js';
@@ -75,6 +76,11 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
     if (!msg.from || msg.from.is_bot) return;
     const chatId = msg.chat.id;
     const reply = (text: string) => bot.sendMessage(chatId, text);
+    // Without a text, a voice message would otherwise get no answer at all.
+    if (msg.voice || msg.audio || msg.video_note) {
+      await reply(VOICE_NOT_SUPPORTED);
+      return;
+    }
     const download = (fileId: string) => async () => {
       const info = await bot.getFile(fileId);
       if (!info.file_path) throw new Error('Telegram returned no file path');

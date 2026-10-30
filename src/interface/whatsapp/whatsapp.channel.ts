@@ -7,7 +7,7 @@ import {
 } from '../../data/repositories/whatsapp-identity.repository.js';
 import { errorLabel } from '../../shared/errors.js';
 import { createMembershipIdentityProvider } from '../conversation/channel.identity.js';
-import { ConversationService } from '../conversation/conversation.service.js';
+import { ConversationService, VOICE_NOT_SUPPORTED } from '../conversation/conversation.service.js';
 
 import type { WhatsAppClient } from './whatsapp.client.js';
 import type {
@@ -165,6 +165,10 @@ export class WhatsAppChannel {
   private async handle(message: WhatsAppIncoming): Promise<void> {
     const reply = (text: string) => this.client.sendText(message.from, text);
     try {
+      if (message.type === 'audio') {
+        await reply(VOICE_NOT_SUPPORTED);
+        return;
+      }
       if (message.type !== 'text' && !message.media) {
         await reply(UNSUPPORTED_MESSAGE);
         return;

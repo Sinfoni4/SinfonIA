@@ -30,6 +30,7 @@ import {
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 
+import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
@@ -128,6 +129,10 @@ export const TELEGRAM_COMPRESSED_PHOTO_TIP =
   '\n\n💡 Per una lettura migliore invia il documento come File (📎 → File) invece che come ' +
   'Foto: Telegram comprime le foto.';
 
+/** Voice messages are not transcribed yet (speech-to-text provider still to be chosen). */
+export const VOICE_NOT_SUPPORTED =
+  '🎙️ I messaggi vocali non sono ancora supportati: scrivi la richiesta come testo.';
+
 const LINK_COMMAND = /^\/?start\s+(\S+)/i;
 const SCHEDULED_EXPORT_COMMAND = /^(attiva|disattiva)\s+export\s+pianificato$/i;
 const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
@@ -188,6 +193,20 @@ export class ConversationService {
   private readonly pendingAttachments = new PendingAttachmentStore<InboundFile>();
   // Transitions of practices of others waiting for «sì», by person (C2).
   private readonly pendingTransitions = new Map<string, PendingTransition>();
+  // Commands suggested after a typing error, waiting for «sì», by person.
+  private readonly pendingSuggestions = new Map<
+    string,
+    { tenantId: string; text: string; expiresAt: number }
+  >();
+
+  /** Whether a text is a command this channel handles without the AI. */
+  private isCommand(text: string): boolean {
+    return (
+      (Boolean(this.deps.scheduledExport) && SCHEDULED_EXPORT_COMMAND.test(text)) ||
+      (Boolean(this.deps.complianceService) && parseComplianceCommand(text) !== null) ||
+      parsePracticeCommand(text) !== null
+    );
+  }
   private readonly memory: ConversationMemory;
 
   constructor(
@@ -421,6 +440,49 @@ export class ConversationService {
       }
       await reply('Ok, operazione annullata.');
       if (!parsePracticeCommand(trimmed) && !parseComplianceCommand(trimmed)) return;
+    }
+
+    // A command suggested after a typing error, waiting for «sì»; any other message drops it.
+    const pendingSuggestion = this.pendingSuggestions.get(dbUser.id);
+    if (pendingSuggestion) {
+      this.pendingSuggestions.delete(dbUser.id);
+      if (CONFIRMATION.test(trimmed)) {
+        if (pendingSuggestion.tenantId !== tenant.id || pendingSuggestion.expiresAt <= Date.now()) {
+          await reply('⌛ La richiesta è scaduta: ripeti il comando.');
+          return;
+        }
+        await this.process(
+          { senderId: message.senderId, text: pendingSuggestion.text },
+          reply,
+          requestId,
+        );
+        return;
+      }
+    }
+
+    // Typing errors in a command: a certain one on a read-only command is corrected at once,
+    // anything else is asked first. Never applied to sentences, which go to the AI.
+    const suggestion = suggestCommand(trimmed, (candidate) => this.isCommand(candidate));
+    if (suggestion) {
+      if (suggestion.readOnly && suggestion.distance === 1) {
+        await reply(`🔎 Ho inteso «${suggestion.phrase}».`);
+        await this.process(
+          { senderId: message.senderId, text: suggestion.corrected },
+          reply,
+          requestId,
+        );
+        return;
+      }
+      this.pendingSuggestions.set(dbUser.id, {
+        tenantId: tenant.id,
+        text: suggestion.corrected,
+        expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
+      });
+      await reply(
+        `❓ Intendevi «${suggestion.corrected}»? Rispondi «sì» per eseguirlo, ` +
+          'oppure scrivi di nuovo la richiesta.',
+      );
+      return;
     }
 
     const scheduledExport = SCHEDULED_EXPORT_COMMAND.exec(trimmed);

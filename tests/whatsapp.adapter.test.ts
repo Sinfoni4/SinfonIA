@@ -442,7 +442,8 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
       linkedIdentity,
     );
     await channel.receive(webhook({ id: 'a1', from: '39333', type: 'audio', audio: { id: 'x' } }));
-    expect(wa.sent.at(-1)).toContain('testo, foto e documenti');
+    // Voice messages get their own answer: not transcribed yet.
+    expect(wa.sent.at(-1)).toContain('messaggi vocali non sono ancora supportati');
   });
 
   it('delivers deadline reminders to the admins linked on WhatsApp', async () => {
