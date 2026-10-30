@@ -289,6 +289,11 @@ describeWithDb('outbox dispatcher with PostgreSQL (Step 5)', () => {
         telegramId: chat(telegramId),
       });
     }
+    // The admins chose to receive the scheduled export (D5b option b; tests/mf8a.export-rules).
+    await prisma.membership.updateMany({
+      where: { orgId: tenant.id, role: 'ADMIN' },
+      data: { scheduledExportSince: new Date() },
+    });
     // Members never receive exports.
     await users.createUser(tenant.id, {
       email: `member-${randomUUID()}@outbox.local`,

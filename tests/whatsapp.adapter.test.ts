@@ -415,6 +415,7 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
     expect(deps.practiceService.executeCommand).toHaveBeenCalledWith(
       { type: 'LIST_PRACTICES', payload: {} },
       { tenantId, userId: identity!.userId, role: 'MEMBER' },
+      { channel: 'whatsapp' },
     );
   });
 

@@ -107,6 +107,38 @@ export async function chatRecipients(
   return [...new Set(rows.map((r) => r.externalId))];
 }
 
+/**
+ * Chat accounts that receive the scheduled export (D5b option b): active ADMINs of an active
+ * organization who chose it, through an active link. Checked at every delivery, so a lost role,
+ * membership or link stops it.
+ */
+export async function scheduledExportRecipients(
+  prisma: PrismaLike,
+  tenantId: string,
+  channel: ChannelType,
+): Promise<Array<{ userId: string; externalId: string }>> {
+  const rows = await prisma.channelIdentity.findMany({
+    where: {
+      channel,
+      revokedAt: null,
+      user: {
+        status: 'ACTIVE',
+        memberships: {
+          some: {
+            ...activeMembership(tenantId),
+            role: 'ADMIN',
+            scheduledExportSince: { not: null },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { userId: true, externalId: true },
+  });
+  const seen = new Set<string>();
+  return rows.filter((r) => !seen.has(r.externalId) && seen.add(r.externalId));
+}
+
 /** First active ADMIN of an organization (scheduled tasks run on its behalf), or null. */
 export async function firstActiveAdmin(
   prisma: PrismaLike,

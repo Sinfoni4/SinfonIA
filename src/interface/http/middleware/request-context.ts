@@ -8,6 +8,8 @@ export type RequestContext = {
   tenantId: string | null;
   userId: string | null;
   role: AuthRole | null;
+  /** Extra scopes of the membership, read with the role at every request (D5). */
+  extraPermissions?: readonly string[];
 };
 
 const CONTEXT_KEY = 'requestContext' as const;
@@ -32,7 +34,10 @@ export function getRequestContext(req: FastifyRequest): RequestContext | null {
   return (req as FastifyRequest & { [CONTEXT_KEY]?: RequestContext })[CONTEXT_KEY] ?? null;
 }
 
-export function attachAuthenticatedContext(req: FastifyRequest, auth: AuthContext): void {
+export function attachAuthenticatedContext(
+  req: FastifyRequest,
+  auth: AuthContext & { extraPermissions?: readonly string[] },
+): void {
   const ctx = getRequestContext(req);
   if (!ctx) {
     throw new Error('Request context must be created before authentication');
@@ -40,6 +45,7 @@ export function attachAuthenticatedContext(req: FastifyRequest, auth: AuthContex
   ctx.tenantId = auth.tenantId;
   ctx.userId = auth.userId;
   ctx.role = auth.role;
+  ctx.extraPermissions = auth.extraPermissions ?? [];
 }
 
 export function requestContextHook(

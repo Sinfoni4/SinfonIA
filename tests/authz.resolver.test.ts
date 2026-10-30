@@ -28,7 +28,12 @@ describe.runIf(Boolean(DATABASE_URL))('principal resolver (C1)', () => {
         resolve({ tenantId, userId, tokenRole: 'ADMIN' });
 
       // The token says ADMIN, the database says OPERATOR.
-      expect(await ask(a.id)).toEqual({ tenantId: a.id, userId: user.id, role: 'OPERATOR' });
+      expect(await ask(a.id)).toEqual({
+        tenantId: a.id,
+        userId: user.id,
+        role: 'OPERATOR',
+        extraPermissions: [],
+      });
       // A real user, but of another tenant.
       expect(await ask(b.id)).toBeNull();
       expect(await ask(a.id, randomUUID())).toBeNull();

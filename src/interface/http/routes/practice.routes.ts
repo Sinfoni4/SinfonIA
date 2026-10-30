@@ -161,6 +161,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
           tenantId: auth.tenantId,
           userId: targetUserId,
           filter: body.filter,
+          audit: { actorUserId: auth.userId, channel: 'api' },
         });
 
         return reply.status(200).send(ok(exported));

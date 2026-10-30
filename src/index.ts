@@ -17,6 +17,7 @@ import {
 import { loadConfig } from './config/config.js';
 import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
+import { setScheduledExport } from './core/identity/member-access.service.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
@@ -189,6 +190,8 @@ async function main() {
   });
   const conversationDeps = {
     prisma,
+    scheduledExport: (orgId: string, userId: string, enabled: boolean) =>
+      setScheduledExport(prisma, orgId, userId, enabled, { userId }),
     memory: conversationMemory,
     practiceService,
     complianceService,

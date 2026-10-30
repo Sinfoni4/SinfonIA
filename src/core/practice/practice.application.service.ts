@@ -474,6 +474,8 @@ export class PracticeApplicationService {
     tenantId: string;
     userId?: string;
     filter: PracticeExportFilter;
+    /** Manual exports are audited (D5): who, through which channel, what perimeter, how many. */
+    audit?: { actorUserId: string; channel: string };
   }): Promise<PracticeExportResult> {
     requireDatabase();
     const range = exportFilterRange(input.filter);
@@ -496,6 +498,20 @@ export class PracticeApplicationService {
       after = { createdAt: last.createdAt, id: last.id };
     }
 
+    if (input.audit) {
+      await new AuditService(this.prisma).logEvent({
+        tenantId: input.tenantId,
+        userId: input.audit.actorUserId,
+        eventType: 'EXPORT_GENERATED',
+        payload: {
+          channel: input.audit.channel,
+          scope: input.userId ? 'own' : 'tenant',
+          filter: input.filter,
+          rows: lines.length,
+        },
+      });
+    }
+
     return {
       filter: input.filter,
       title: exportFilterTitle(input.filter),
@@ -507,6 +523,8 @@ export class PracticeApplicationService {
   async executeCommand(
     command: PracticeCommand,
     actor: PracticeActor,
+    /** Channel of the request, recorded in the audit of exports. */
+    options: { channel?: string } = {},
   ): Promise<PracticeCommandResult> {
     const grant = authorize(actor, COMMAND_PERMISSIONS[command.type]);
     // Default view (C2): text commands work on the actor's own practices; the organization only
@@ -630,10 +648,12 @@ export class PracticeApplicationService {
       case 'EXPORT_PRACTICES':
         return {
           type: 'export',
+          // D5: an export by text command is always of the caller's own practices.
           result: await this.exportPractices({
             tenantId: actor.tenantId,
             userId: actor.userId,
             filter: command.payload.filter,
+            audit: { actorUserId: actor.userId, channel: options.channel ?? 'api' },
           }),
           send: command.payload.send,
         };
