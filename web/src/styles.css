@@ -453,3 +453,31 @@ details .facts {
 .card .actions {
   margin-top: 1rem;
 }
+
+/* Deadlines and export (FE3) */
+.plain-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.plain-fieldset legend {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+label.radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+  margin: 0.35rem 0;
+}
+
+label.radio input {
+  width: auto;
+}
+
+table.list td .actions button {
+  margin-top: 0;
+}

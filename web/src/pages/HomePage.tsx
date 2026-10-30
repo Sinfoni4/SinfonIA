@@ -4,8 +4,12 @@ import { ROLE_LABELS, type Me } from '../api/client';
 
 const SECTIONS: Array<{ title: string; text: string; to?: string; adminOnly?: boolean }> = [
   { title: 'Pratiche', text: 'Elenco, dettaglio, stati e allegati.', to: '/pratiche' },
-  { title: 'Scadenze', text: 'DURC, sicurezza, visite mediche e altre scadenze.' },
-  { title: 'Export', text: 'Esportazione delle pratiche in CSV.' },
+  {
+    title: 'Scadenze',
+    text: 'DURC, sicurezza, visite mediche e altre scadenze.',
+    to: '/scadenze',
+  },
+  { title: 'Export', text: 'Esportazione delle pratiche in CSV.', to: '/export' },
   { title: 'Persone', text: 'Membri, ruoli e inviti.', adminOnly: true },
 ];
 
