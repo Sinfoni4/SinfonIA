@@ -8,9 +8,11 @@ import { runtimeState } from '../../runtime/runtime.state.js';
 import { createAuthHook, PUBLIC_PATHS } from './auth/auth.hook.js';
 import { AuthService } from './auth/auth.service.js';
 import { requireAuthContext } from './auth/guards.js';
+import { issueAuthToken } from './auth/token.js';
 import { buildRateLimitOptions, createTenantLimiter } from './middleware/rate-limit.js';
 import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
+import { authRoutes } from './routes/auth.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
 import { membersRoutes } from './routes/members.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
@@ -26,6 +28,7 @@ import type { AppConfig } from '../../config/config.js';
 import type { PrincipalResolver } from '../../core/authz/authorization.service.js';
 import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
+import type { LoginService } from '../../core/identity/login.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
 import type { PrismaClient } from '@prisma/client';
@@ -53,7 +56,12 @@ export type ServerDeps = {
   tracer?: AITracer;
   /** Database for the members administration (MF5); routes absent when not given. */
   prisma?: PrismaClient;
+  /** Email login and invitations (MF6); routes absent when not given. */
+  login?: LoginService;
 };
+
+/** Access tokens issued by a login session last 10 minutes (§5, D7). */
+export const SESSION_ACCESS_TOKEN_TTL_SECONDS = 600;
 
 export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDeps) {
   // Interface Layer: HTTP transport only.
@@ -136,7 +144,21 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(whatsappRoutes, deps.whatsappWebhook);
   }
   if (deps.prisma) {
-    void app.register(membersRoutes, { prisma: deps.prisma });
+    void app.register(membersRoutes, { prisma: deps.prisma, login: deps.login });
+  }
+  if (deps.login) {
+    const tokenConfig = {
+      secret: config.AUTH_SECRET,
+      issuer: config.AUTH_ISSUER,
+      audience: config.AUTH_AUDIENCE,
+      defaultTtlSeconds: SESSION_ACCESS_TOKEN_TTL_SECONDS,
+    };
+    void app.register(authRoutes, {
+      login: deps.login,
+      issueAccessToken: (grant) => issueAuthToken(grant, tokenConfig),
+      accessTokenTtlSeconds: SESSION_ACCESS_TOKEN_TTL_SECONDS,
+      perMinute: config.RATE_LIMIT_AUTH_PER_MINUTE,
+    });
   }
   if (deps.complianceService) {
     void app.register(complianceRoutes, { complianceService: deps.complianceService });

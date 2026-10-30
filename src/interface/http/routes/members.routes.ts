@@ -13,10 +13,11 @@ import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
+import type { LoginService } from '../../../core/identity/login.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback } from 'fastify';
 
-export type MembersRoutesDeps = { prisma: PrismaClient };
+export type MembersRoutesDeps = { prisma: PrismaClient; login?: LoginService };
 
 const MemberParamsSchema = z.object({ userId: z.string().uuid() });
 const RevokeBodySchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
@@ -25,6 +26,11 @@ const PermissionBodySchema = z.object({
   granted: z.boolean(),
 });
 const ScheduledExportBodySchema = z.object({ enabled: z.boolean() });
+const InvitationBodySchema = z.object({
+  email: z.string().trim().email().max(254),
+  role: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']),
+});
+const InvitationParamsSchema = z.object({ invitationId: z.string().uuid() });
 
 /**
  * Members of the caller's organization, for its administrators (MF5): revocation takes effect at
@@ -113,6 +119,47 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
       }
     },
   );
+
+  // Named invitations (MF6), only when email login is enabled.
+  const login = deps.login;
+  if (login) {
+    app.post(
+      '/members/invitations',
+      { config: { permission: 'members.manage' } },
+      async (req, reply) => {
+        try {
+          const auth = requirePermission(req, 'members.manage').principal;
+          const body = InvitationBodySchema.parse(req.body);
+          const created = await login.createInvitation(auth.tenantId, body.email, body.role, {
+            userId: auth.userId,
+          });
+          return reply.status(201).send(ok(created));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+    app.post(
+      '/members/invitations/:invitationId/revoke',
+      { config: { permission: 'members.manage' } },
+      async (req, reply) => {
+        try {
+          const auth = requirePermission(req, 'members.manage').principal;
+          const { invitationId } = InvitationParamsSchema.parse(req.params);
+          const revoked = await login.revokeInvitation(auth.tenantId, invitationId, {
+            userId: auth.userId,
+          });
+          return revoked
+            ? reply.send(ok({ invitationId, revoked: true }))
+            : reply.status(404).send(fail('NOT_FOUND', 'Invitation not found'));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+  }
 
   done();
 };
