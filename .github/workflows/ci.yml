@@ -50,6 +50,15 @@ jobs:
       - name: Migrate database
         run: npm run db:migrate:deploy
 
+      # MF1: separate roles; the tests below run as the least-privilege application role.
+      - name: Apply database roles
+        run: npm run db:roles
+        env:
+          DB_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/sinfonia
+          DB_OWNER_PASSWORD: ci-only-owner-password
+          DB_APP_PASSWORD: ci-only-app-password
+          DB_BACKUP_PASSWORD: ci-only-backup-password
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -61,6 +70,10 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          DATABASE_URL: postgresql://sinfonia_app:ci-only-app-password@localhost:5432/sinfonia?schema=public
+          # Superuser only for the role test, which creates and drops its own database.
+          DB_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/sinfonia
 
       - name: Build
         run: npm run build

@@ -30,6 +30,8 @@ const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
   'compliance.read': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
   'compliance.manage': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'denied' },
   'audit.read': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
+  'members.read': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
+  'members.manage': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
 };
 
 const ROLES: UserRole[] = ['ADMIN', 'OPERATOR', 'MEMBER'];
@@ -65,7 +67,7 @@ describe('permission matrix', () => {
   });
 
   // Decisions still open: the expectations above describe today's behaviour for these cases.
-  it.todo('C2: default view of practices in chat for ADMIN and OPERATOR (§3.4)');
+  // C2 is decided and covered by tests/mf2b.chat-view.test.ts.
   it.todo('C3: deletion only by ORG_ADMIN, with confirmation, per rules R1-R13 (§3.5)');
   it.todo('D5: OPERATOR exports the whole organization only with an extra permission (§3.3)');
 });

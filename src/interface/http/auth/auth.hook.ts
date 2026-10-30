@@ -24,6 +24,8 @@ export function createAuthHook(authService: AuthService, principals: PrincipalRe
         tenantId: claims.tenantId,
         userId: claims.userId,
         tokenRole: claims.role,
+        authVersion: claims.authVersion,
+        ...(claims.sessionId ? { sessionId: claims.sessionId } : {}),
       });
       if (!principal) {
         throw new AuthError('User not found in tenant', 'INVALID_TOKEN');

@@ -323,6 +323,7 @@ async function main(): Promise<void> {
         AI_TRACE_RETENTION_DAYS: 90,
         LLM_PROVIDER: 'openai',
         AZURE_OPENAI_API_VERSION: '2024-10-21',
+        MISTRAL_MODEL: 'mistral-small-latest',
       },
       logger,
       {

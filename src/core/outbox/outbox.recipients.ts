@@ -1,3 +1,5 @@
+import { chatRecipients } from '../identity/membership.service.js';
+
 import { DeliveryError } from './outbox.delivery.js';
 
 import type {
@@ -21,16 +23,8 @@ export async function telegramDeliveries(
   send: (telegram: TelegramNotifier, chatId: string) => Promise<void>,
   extraUserIds: string[] = [],
 ): Promise<OutboxDelivery[]> {
-  const users = await prisma.user.findMany({
-    where: {
-      tenantId,
-      telegramId: { not: null },
-      OR: [{ role: 'ADMIN' }, ...(extraUserIds.length ? [{ id: { in: extraUserIds } }] : [])],
-    },
-    orderBy: { createdAt: 'asc' },
-    select: { telegramId: true },
-  });
-  const chatIds = [...new Set(users.map((u) => u.telegramId!))];
+  // Active ADMINs (and extra users) with an active Telegram link, checked at delivery time.
+  const chatIds = await chatRecipients(prisma, tenantId, 'TELEGRAM', extraUserIds);
 
   return chatIds.map((chatId) => ({
     target: `telegram:${chatId}`,
@@ -73,20 +67,10 @@ export async function whatsappDeliveries(
   send: (notifier: ChatNotifier, phone: string) => Promise<void>,
   extraUserIds: string[] = [],
 ): Promise<OutboxDelivery[]> {
-  const identities = await prisma.whatsappIdentity.findMany({
-    where: {
-      tenantId,
-      OR: [
-        { user: { role: 'ADMIN' } },
-        ...(extraUserIds.length ? [{ userId: { in: extraUserIds } }] : []),
-      ],
-    },
-    orderBy: { createdAt: 'asc' },
-    select: { phoneNumber: true },
-  });
+  const phones = await chatRecipients(prisma, tenantId, 'WHATSAPP', extraUserIds);
   return chatTargets(
     'whatsapp',
-    identities.map((i) => i.phoneNumber),
+    phones,
     whatsapp,
     send,
     'WhatsApp non configurato (WHATSAPP_ACCESS_TOKEN)',
@@ -94,6 +78,27 @@ export async function whatsappDeliveries(
 }
 
 /** Telegram and WhatsApp deliveries of the same content to the same recipients. */
+/**
+ * Messages of a suspended or deactivated organization are held (retried later) instead of being
+ * delivered or dropped: if it is reactivated in time they go out (MF5).
+ */
+async function heldForInactiveOrganization(
+  prisma: PrismaLike,
+  tenantId: string,
+): Promise<OutboxDelivery[] | null> {
+  const org = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { status: true } });
+  if (!org || org.status === 'ACTIVE') return null;
+  return [
+    {
+      target: 'organization',
+      send: () =>
+        Promise.reject(
+          new DeliveryError(`Organizzazione non attiva (${org.status})`, { permanent: false }),
+        ),
+    },
+  ];
+}
+
 export async function chatDeliveries(
   prisma: PrismaLike,
   tenantId: string,
@@ -101,6 +106,8 @@ export async function chatDeliveries(
   send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
   extraUserIds: string[] = [],
 ): Promise<OutboxDelivery[]> {
+  const held = await heldForInactiveOrganization(prisma, tenantId);
+  if (held) return held;
   return [
     ...(await telegramDeliveries(prisma, tenantId, channels.telegram, send, extraUserIds)),
     ...(await whatsappDeliveries(prisma, tenantId, channels.whatsapp, send, extraUserIds)),
@@ -114,6 +121,8 @@ export async function webhookDeliveries(
   webhook: WebhookNotifier | undefined,
   data: unknown,
 ): Promise<OutboxDelivery[]> {
+  const held = await heldForInactiveOrganization(prisma, message.tenantId);
+  if (held) return held;
   const tenant = await prisma.tenant.findUnique({
     where: { id: message.tenantId },
     select: { webhookUrl: true },

@@ -13,17 +13,22 @@ datasource db {
 // This schema is designed to avoid destructive refactors later.
 
 model Tenant {
-  id                 String   @id @default(uuid()) @db.Uuid
-  name               String
-  module             String   @default("music")
-  integrationType    String   @default("none") @map("integration_type")
-  schedulerEnabled   Boolean  @default(false) @map("scheduler_enabled")
-  schedulerFrequency String?  @map("scheduler_frequency")
-  schedulerTasks     Json?    @map("scheduler_tasks")
+  id                  String             @id @default(uuid()) @db.Uuid
+  name                String
+  module              String             @default("music")
+  integrationType     String             @default("none") @map("integration_type")
+  schedulerEnabled    Boolean            @default(false) @map("scheduler_enabled")
+  schedulerFrequency  String?            @map("scheduler_frequency")
+  schedulerTasks      Json?              @map("scheduler_tasks")
   // HTTPS endpoint that receives signed outbox events (integration_type = external).
-  webhookUrl         String?  @map("webhook_url")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @default(now()) @map("updated_at")
+  webhookUrl          String?            @map("webhook_url")
+  // Phase 1 (MF3): every tenant is an organization of a type (company, network, ...).
+  type                OrganizationType   @default(COMPANY)
+  status              OrganizationStatus @default(ACTIVE)
+  deactivatedAt       DateTime?          @map("deactivated_at")
+  deletionScheduledAt DateTime?          @map("deletion_scheduled_at")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @default(now()) @map("updated_at")
 
   users               User[]
   practices           Practice[]
@@ -39,6 +44,12 @@ model Tenant {
   whatsappIdentities  WhatsappIdentity[]
   aiTraces            AiTrace[]
   conversationStates  ConversationState[]
+  memberships         Membership[]
+  parentRelations     OrganizationRelation[] @relation("RelationChild")
+  childRelations      OrganizationRelation[] @relation("RelationParent")
+  invitations         Invitation[]
+  grantsGiven         AccessGrant[]          @relation("GrantGrantor")
+  grantsReceived      AccessGrant[]          @relation("GrantGranteeOrg")
 
   @@map("tenant")
 }
@@ -75,20 +86,32 @@ enum UserRole {
 }
 
 model User {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @map("tenant_id") @db.Uuid
-  email      String
-  role       UserRole @default(MEMBER)
-  telegramId String?  @map("telegram_id")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String       @map("tenant_id") @db.Uuid
+  email           String
+  role            UserRole     @default(MEMBER)
+  telegramId      String?      @map("telegram_id")
+  // Phase 1 (MF3): global identity. tenantId/role/telegramId stay until the contract step (M3).
+  status          UserStatus   @default(ACTIVE)
+  emailVerifiedAt DateTime?    @map("email_verified_at")
+  // Incremented at every global revocation: sessions of an older version are refused.
+  authVersion     Int          @default(0) @map("auth_version")
+  platformRole    PlatformRole @default(NONE) @map("platform_role")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
-  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   practices           Practice[]
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
   whatsappIdentity    WhatsappIdentity?
   conversationState   ConversationState?
+  memberships         Membership[]
+  channelIdentities   ChannelIdentity[]
+  sessions            Session[]
+  authChallenges      AuthChallenge[]
+  grantsReceived      AccessGrant[]            @relation("GrantGranteeUser")
+  beneficiaryOf       AccessGrantBeneficiary[]
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -365,4 +388,266 @@ model ConversationState {
 
   @@index([tenantId])
   @@map("conversation_state")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 1 — organizations, identities, memberships, delegations (MF3, expand step).
+// docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md §1-§5. Kept in sync with the legacy columns by
+// database triggers until the code switches over (MF4).
+// ---------------------------------------------------------------------------------------------
+
+enum OrganizationType {
+  COMPANY
+  NETWORK
+  CONSORTIUM
+  TRADE_ASSOCIATION
+  ASSOCIATION
+  PROFESSIONAL_FIRM
+  OTHER
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  PENDING_DELETION
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum PlatformRole {
+  NONE
+  PLATFORM_ADMIN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+/// A person's role in one organization: the same person can belong to several.
+model Membership {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  orgId            String           @map("org_id") @db.Uuid
+  role             UserRole
+  status           MembershipStatus @default(ACTIVE)
+  /// Explicit extra permissions granted by an ORG_ADMIN (e.g. organization-wide export).
+  extraPermissions String[]         @default([]) @map("extra_permissions")
+  invitedBy        String?          @map("invited_by") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at")
+  revokedAt        DateTime?        @map("revoked_at")
+  revokedBy        String?          @map("revoked_by") @db.Uuid
+  revocationReason String?          @map("revocation_reason")
+
+  user User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId, status])
+  @@map("membership")
+}
+
+enum ChannelType {
+  TELEGRAM
+  WHATSAPP
+}
+
+/// A chat account (numeric Telegram id, WhatsApp number) linked to one person. At most one
+/// active link per account: partial unique index in the migration.
+model ChannelIdentity {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String      @map("user_id") @db.Uuid
+  channel    ChannelType
+  externalId String      @map("external_id")
+  verifiedAt DateTime?   @map("verified_at")
+  lastUsedAt DateTime?   @map("last_used_at")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  revokedAt  DateTime?   @map("revoked_at")
+  revokedBy  String?     @map("revoked_by") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([channel, externalId])
+  @@map("channel_identity")
+}
+
+enum RelationType {
+  MEMBER_OF
+}
+
+enum RelationStatus {
+  PENDING
+  ACTIVE
+  ENDED
+}
+
+/// E.g. a company that belongs to a network. Grants no permission on data by itself.
+model OrganizationRelation {
+  id           String         @id @default(uuid()) @db.Uuid
+  parentOrgId  String         @map("parent_org_id") @db.Uuid
+  childOrgId   String         @map("child_org_id") @db.Uuid
+  relationType RelationType   @default(MEMBER_OF) @map("relation_type")
+  status       RelationStatus @default(PENDING)
+  requestedBy  String?        @map("requested_by") @db.Uuid
+  confirmedBy  String?        @map("confirmed_by") @db.Uuid
+  startedAt    DateTime?      @map("started_at")
+  endedAt      DateTime?      @map("ended_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  parent Tenant @relation("RelationParent", fields: [parentOrgId], references: [id], onDelete: Cascade)
+  child  Tenant @relation("RelationChild", fields: [childOrgId], references: [id], onDelete: Cascade)
+
+  @@unique([parentOrgId, childOrgId, relationType])
+  @@index([childOrgId])
+  @@map("organization_relation")
+}
+
+/// Login session: short access tokens refer to it; revoking it ends the access at once.
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  /// auth_version of the user when the session started.
+  authVersion      Int       @map("auth_version")
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastSeenAt       DateTime? @map("last_seen_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  revocationReason String?   @map("revocation_reason")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+enum AuthChallengePurpose {
+  LOGIN
+  INVITATION
+  TELEGRAM_LINK
+  EMAIL_ADD
+}
+
+/// One-time code (stored as a hash) for login, invitations and channel linking.
+model AuthChallenge {
+  id                String               @id @default(uuid()) @db.Uuid
+  purpose           AuthChallengePurpose
+  email             String?
+  userId            String?              @map("user_id") @db.Uuid
+  /// For TELEGRAM_LINK: the numeric Telegram id that started the challenge.
+  channelExternalId String?              @map("channel_external_id")
+  codeHash          String               @map("code_hash")
+  attempts          Int                  @default(0)
+  expiresAt         DateTime             @map("expires_at")
+  consumedAt        DateTime?            @map("consumed_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([purpose, email])
+  @@index([expiresAt])
+  @@map("auth_challenge")
+}
+
+/// Named, single-use invitation with an initial role.
+model Invitation {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  email      String
+  role       UserRole
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  acceptedBy String?   @map("accepted_by") @db.Uuid
+  revokedAt  DateTime? @map("revoked_at")
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  org Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("invitation")
+}
+
+enum GranteeType {
+  USER
+  ORGANIZATION
+}
+
+enum GrantStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum GrantOperation {
+  READ
+  CREATE
+  UPDATE
+  APPROVE
+  DELETE
+  EXPORT
+}
+
+/// Explicit delegation from an organization to a person or to another organization.
+model AccessGrant {
+  id               String           @id @default(uuid()) @db.Uuid
+  grantorOrgId     String           @map("grantor_org_id") @db.Uuid
+  granteeType      GranteeType      @map("grantee_type")
+  granteeUserId    String?          @map("grantee_user_id") @db.Uuid
+  granteeOrgId     String?          @map("grantee_org_id") @db.Uuid
+  /// Data types and optional object ids or categories the delegation covers.
+  scope            Json
+  operations       GrantOperation[]
+  validFrom        DateTime         @default(now()) @map("valid_from")
+  validUntil       DateTime         @map("valid_until")
+  status           GrantStatus      @default(ACTIVE)
+  createdBy        String?          @map("created_by") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at")
+  revokedAt        DateTime?        @map("revoked_at")
+  revokedBy        String?          @map("revoked_by") @db.Uuid
+  revocationReason String?          @map("revocation_reason")
+
+  grantor       Tenant                   @relation("GrantGrantor", fields: [grantorOrgId], references: [id], onDelete: Cascade)
+  granteeUser   User?                    @relation("GrantGranteeUser", fields: [granteeUserId], references: [id], onDelete: Cascade)
+  granteeOrg    Tenant?                  @relation("GrantGranteeOrg", fields: [granteeOrgId], references: [id], onDelete: Cascade)
+  beneficiaries AccessGrantBeneficiary[]
+
+  @@index([grantorOrgId, status])
+  @@index([granteeUserId])
+  @@index([granteeOrgId])
+  @@map("access_grant")
+}
+
+enum BeneficiaryStatus {
+  PROPOSED
+  ACTIVE
+  REVOKED
+}
+
+/// Named people a delegation to an organization applies to, approved by the grantor.
+model AccessGrantBeneficiary {
+  id         String            @id @default(uuid()) @db.Uuid
+  grantId    String            @map("grant_id") @db.Uuid
+  userId     String            @map("user_id") @db.Uuid
+  status     BeneficiaryStatus @default(PROPOSED)
+  proposedBy String?           @map("proposed_by") @db.Uuid
+  approvedBy String?           @map("approved_by") @db.Uuid
+  approvedAt DateTime?         @map("approved_at")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  revokedAt  DateTime?         @map("revoked_at")
+
+  grant AccessGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([grantId, userId])
+  @@map("access_grant_beneficiary")
 }

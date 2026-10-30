@@ -21,6 +21,8 @@ export const PERMISSIONS = [
   'compliance.read',
   'compliance.manage',
   'audit.read',
+  'members.read',
+  'members.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -46,7 +48,7 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, PermissionScope>>> = {
-  ADMIN: { ...STAFF, 'audit.read': 'tenant' },
+  ADMIN: { ...STAFF, 'audit.read': 'tenant', 'members.read': 'tenant', 'members.manage': 'tenant' },
   OPERATOR: STAFF,
   MEMBER: {
     'practice.create': 'own',

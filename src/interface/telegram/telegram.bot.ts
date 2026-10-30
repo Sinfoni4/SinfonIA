@@ -1,8 +1,7 @@
-import { bindUserToTenant, getTenantIdByInvite } from '../../core/tenant/tenant.invite.store.js';
-import { getTenantByTelegramUserAsync } from '../../core/tenant/tenant.store.js';
 import { UserRepository } from '../../data/repositories/user.repository.js';
 import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
+import { createMembershipIdentityProvider } from '../conversation/channel.identity.js';
 import {
   ConversationService,
   TELEGRAM_COMPRESSED_PHOTO_TIP,
@@ -56,18 +55,11 @@ process.once('beforeExit', () => {
   void shutdownTelegram();
 });
 
-/** Telegram users are identified by their Telegram user id, stored on the user. */
+/** Telegram users are identified by their numeric Telegram user id (channel identity). */
 export function createTelegramIdentityProvider(prisma: PrismaClient): ChannelIdentityProvider {
-  return {
-    async link(inviteCode, telegramId) {
-      const tenantId = await getTenantIdByInvite(prisma, inviteCode);
-      if (!tenantId) return null;
-      const user = await new UserRepository(prisma).ensureTelegramUser(tenantId, telegramId);
-      await bindUserToTenant(prisma, user.id, tenantId);
-      return tenantId;
-    },
-    resolve: (telegramId) => getTenantByTelegramUserAsync(prisma, telegramId),
-  };
+  return createMembershipIdentityProvider(prisma, 'TELEGRAM', async (tenantId, telegramId) => ({
+    userId: (await new UserRepository(prisma).ensureTelegramUser(tenantId, telegramId)).id,
+  }));
 }
 
 // Exported for tests, which drive it with a fake client.

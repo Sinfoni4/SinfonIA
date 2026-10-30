@@ -2,6 +2,7 @@ import { SchedulerRepository } from '../../data/repositories/scheduler.repositor
 import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
 import { ComplianceService } from '../compliance/compliance.service.js';
+import { firstActiveAdmin } from '../identity/membership.service.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
 import { ComplianceDeadlinesTask, ExportPracticesTask } from './scheduler.tasks.js';
@@ -144,7 +145,13 @@ export class SchedulerService {
     let triggeredCount = 0;
     let skippedCount = 0;
 
-    let tenants = await getAllTenants(this.prisma);
+    // Suspended or deactivated organizations get no scheduled task (MF5).
+    const active = new Set(
+      (
+        await this.prisma.tenant.findMany({ where: { status: 'ACTIVE' }, select: { id: true } })
+      ).map((t) => t.id),
+    );
+    let tenants = (await getAllTenants(this.prisma)).filter((t) => active.has(t.id));
     if (tenantId) {
       tenants = tenants.filter((t) => t.id === tenantId);
     }
@@ -205,11 +212,8 @@ export class SchedulerService {
       }
 
       // Scheduled tasks run only for tenants with at least one ADMIN user
-      const adminUser = await this.prisma.user.findFirst({
-        where: { tenantId: tenant.id, role: 'ADMIN' },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      });
+      const adminUserId = await firstActiveAdmin(this.prisma, tenant.id);
+      const adminUser = adminUserId ? { id: adminUserId } : null;
 
       if (!adminUser) {
         log.warn({ tenantId: tenant.id }, 'Scheduler: tenant has no ADMIN user, task skipped');

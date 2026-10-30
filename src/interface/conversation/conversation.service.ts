@@ -1,7 +1,15 @@
 import { can } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
-import { parsePracticeCommand } from '../../core/practice/practice.commands.js';
+import {
+  OrganizationChoiceRequiredError,
+  type MembershipOption,
+} from '../../core/identity/membership.service.js';
+import {
+  parsePracticeCommand,
+  type ChatTransition,
+  type PracticeCommand,
+} from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
 import { errorLabel } from '../../shared/errors.js';
 import {
@@ -64,8 +72,13 @@ export type InboundMessage = {
 export interface ChannelIdentityProvider {
   /** Links the sender to the tenant of an invite code; null when the code is unknown. */
   link(inviteCode: string, senderId: string): Promise<string | null>;
-  /** Throws TenantNotLinkedError when the sender is not linked to any tenant. */
+  /**
+   * Throws TenantNotLinkedError when the sender is not linked to any tenant, and
+   * OrganizationChoiceRequiredError when they belong to several organizations.
+   */
   resolve(senderId: string): Promise<{ tenant: Tenant; userId: string; role: UserRole }>;
+  /** Loads an organization chosen among the memberships of an OrganizationChoiceRequiredError. */
+  tenantFor?(tenantId: string): Promise<Tenant>;
 }
 
 export type ConversationDeps = {
@@ -96,12 +109,42 @@ type Reply = (text: string) => Promise<unknown>;
 // Most recent practices considered when choosing where a received file goes.
 const ATTACHMENT_PRACTICE_LOOKUP_LIMIT = 20;
 
+// A transition of someone else's practice waits this long for the person's confirmation (C2).
+const TRANSITION_CONFIRMATION_MS = 5 * 60_000;
+const CONFIRMATION = /^(s[iì]|conferm[ao])[.!]?$/i;
+
+type PendingTransition = {
+  tenantId: string;
+  practiceId: string;
+  nextState: ChatTransition;
+  expiresAt: number;
+};
+
 // Telegram compresses photos to 1280 px, which hurts OCR on small print (found in staging).
 export const TELEGRAM_COMPRESSED_PHOTO_TIP =
   '\n\n💡 Per una lettura migliore invia il documento come File (📎 → File) invece che come ' +
   'Foto: Telegram comprime le foto.';
 
 const LINK_COMMAND = /^\/?start\s+(\S+)/i;
+const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: 'amministratore',
+  OPERATOR: 'operatore',
+  MEMBER: 'collaboratore',
+};
+
+export function formatOrganizationChoice(options: MembershipOption[], activeId?: string | null) {
+  const lines = options.map(
+    (o, i) =>
+      `${i + 1}. ${o.tenantName} (${ROLE_LABELS[o.role]})${o.tenantId === activeId ? ' ← attuale' : ''}`,
+  );
+  return [
+    '🏢 Fai parte di più organizzazioni. Scegli con cui lavorare scrivendo «azienda» e il numero:',
+    '',
+    ...lines,
+  ].join('\n');
+}
 
 function isGreeting(text: string): boolean {
   const t = text.toLowerCase().trim();
@@ -139,6 +182,8 @@ Prova a scrivere:
 export class ConversationService {
   // Files received while the user still has to choose the target practice.
   private readonly pendingAttachments = new PendingAttachmentStore<InboundFile>();
+  // Transitions of practices of others waiting for «sì», by person (C2).
+  private readonly pendingTransitions = new Map<string, PendingTransition>();
   private readonly memory: ConversationMemory;
 
   constructor(
@@ -177,6 +222,38 @@ export class ConversationService {
     }
   }
 
+  /**
+   * A person in several organizations works in the one they chose («azienda N»), kept in the
+   * conversation memory. Returns the identity to continue with, or null when the reply is done.
+   */
+  private async chooseOrganization(
+    choice: OrganizationChoiceRequiredError,
+    orgCommand: RegExpExecArray | null,
+    reply: Reply,
+  ): Promise<Awaited<ReturnType<ChannelIdentityProvider['resolve']>> | null> {
+    const active = await this.memory.getActiveOrg(choice.userId);
+    if (orgCommand?.[1]) {
+      const picked = choice.options[Number(orgCommand[1]) - 1];
+      if (!picked) {
+        await reply(formatOrganizationChoice(choice.options, active));
+        return null;
+      }
+      await this.memory.setActiveOrg(choice.userId, picked.tenantId);
+      await reply(`✅ Ora lavori per ${picked.tenantName} come ${ROLE_LABELS[picked.role]}.`);
+      return null;
+    }
+    const current = choice.options.find((o) => o.tenantId === active);
+    if (!current || orgCommand || !this.channel.identity.tenantFor) {
+      await reply(formatOrganizationChoice(choice.options, current?.tenantId));
+      return null;
+    }
+    return {
+      tenant: await this.channel.identity.tenantFor(current.tenantId),
+      userId: choice.userId,
+      role: current.role,
+    };
+  }
+
   private async process(message: InboundMessage, reply: Reply, requestId: string): Promise<void> {
     const { deps } = this;
     const text = message.text;
@@ -195,9 +272,14 @@ export class ConversationService {
       return;
     }
 
+    const orgCommand = ORG_COMMAND.exec(trimmed);
     let identity: Awaited<ReturnType<ChannelIdentityProvider['resolve']>>;
     try {
       identity = await this.channel.identity.resolve(message.senderId);
+      if (orgCommand) {
+        await reply(`🏢 Lavori per ${identity.tenant.name}.`);
+        return;
+      }
     } catch (err: unknown) {
       if (err instanceof TenantNotLinkedError) {
         await reply(
@@ -205,7 +287,10 @@ export class ConversationService {
         );
         return;
       }
-      throw err;
+      if (!(err instanceof OrganizationChoiceRequiredError)) throw err;
+      const chosen = await this.chooseOrganization(err, orgCommand, reply);
+      if (!chosen) return;
+      identity = chosen;
     }
 
     const tenant = identity.tenant;
@@ -302,6 +387,38 @@ export class ConversationService {
       }
     }
 
+    // Any message answers a pending confirmation: «sì» executes it, anything else cancels it.
+    const pendingTransition = this.pendingTransitions.get(dbUser.id);
+    if (pendingTransition) {
+      this.pendingTransitions.delete(dbUser.id);
+      if (
+        pendingTransition.tenantId === tenant.id &&
+        pendingTransition.expiresAt > Date.now() &&
+        CONFIRMATION.test(trimmed)
+      ) {
+        const confirmed: PracticeCommand = {
+          type: 'CONFIRM_TRANSITION',
+          payload: {
+            practiceId: pendingTransition.practiceId,
+            nextState: pendingTransition.nextState,
+          },
+        };
+        const result = await deps.practiceService.executeCommand(confirmed, {
+          tenantId: tenant.id,
+          userId: dbUser.id,
+          role: dbUser.role,
+        });
+        await reply(formatPracticeCommandResult(result));
+        return;
+      }
+      if (CONFIRMATION.test(trimmed)) {
+        await reply('⌛ La richiesta è scaduta: ripeti il comando.');
+        return;
+      }
+      await reply('Ok, operazione annullata.');
+      if (!parsePracticeCommand(trimmed) && !parseComplianceCommand(trimmed)) return;
+    }
+
     const complianceCommand = deps.complianceService ? parseComplianceCommand(trimmed) : null;
     if (complianceCommand && deps.complianceService) {
       await reply(
@@ -317,12 +434,20 @@ export class ConversationService {
 
     const command = parsePracticeCommand(trimmed);
     if (command) {
-      // C2 pending: in chat every command works on the caller's own practices.
+      // C2: the caller's own practices by default; the organization only with explicit commands.
       const result = await deps.practiceService.executeCommand(command, {
         tenantId: tenant.id,
         userId: dbUser.id,
         role: dbUser.role,
       });
+      if (result.type === 'confirm_transition') {
+        this.pendingTransitions.set(dbUser.id, {
+          tenantId: tenant.id,
+          practiceId: result.practice.id,
+          nextState: result.nextState,
+          expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
+        });
+      }
       await reply(formatPracticeCommandResult(result));
       return;
     }

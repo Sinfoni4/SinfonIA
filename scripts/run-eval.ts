@@ -2,10 +2,11 @@
  * AI evaluation on the golden set.
  *
  *   npm run ai:eval                 pipeline mode: simulated LLM, checks the deterministic pipeline
- *   npm run ai:eval:nightly         model mode: the real provider (OpenAI or Azure OpenAI)
+ *   npm run ai:eval:nightly         model mode: the real provider (OpenAI, Azure OpenAI or Mistral)
  *
- * Model mode needs ENABLE-independent credentials: OPENAI_API_KEY, or LLM_PROVIDER=azure with the
- * AZURE_OPENAI_* variables. --max-cost-usd caps the spend (default $0.10); the report is written
+ * Model mode needs ENABLE-independent credentials: OPENAI_API_KEY, LLM_PROVIDER=azure with the
+ * AZURE_OPENAI_* variables, or LLM_PROVIDER=mistral with MISTRAL_API_KEY (and MISTRAL_MODEL).
+ * The cost estimate uses gpt-4o-mini prices whatever the provider. --max-cost-usd caps the spend (default $0.10); the report is written
  * to reports/ai-eval-<mode>.json (an artifact of the nightly CI job).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -16,7 +17,9 @@ import dotenv from 'dotenv';
 import { EvaluationHarness } from '../src/ai/evaluation/evaluation.harness.js';
 import {
   createAzureOpenAIProvider,
+  createMistralProvider,
   createOpenAIProvider,
+  DEFAULT_MISTRAL_MODEL,
 } from '../src/ai/providers/openai.provider.js';
 
 import type { LLMClient } from '../src/ai/interpreter/interpreter.service.js';
@@ -46,6 +49,10 @@ function realProvider(): LLMClient | null {
       }),
       model: env.AZURE_OPENAI_DEPLOYMENT,
     };
+  }
+  if (env.LLM_PROVIDER === 'mistral' && env.MISTRAL_API_KEY) {
+    const model = env.MISTRAL_MODEL ?? DEFAULT_MISTRAL_MODEL;
+    return createMistralProvider({ apiKey: env.MISTRAL_API_KEY, model });
   }
   if (env.OPENAI_API_KEY) {
     const model = env.OPENAI_MODEL ?? 'gpt-4o-mini';

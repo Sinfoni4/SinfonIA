@@ -34,7 +34,7 @@ export function authHeaders(
  * Principal resolver for tests: the real database lookup when a client is given, otherwise the
  * role written in the token (tests that run without a database).
  */
-export function testPrincipals(prisma?: Pick<PrismaClient, 'user'>): PrincipalResolver {
+export function testPrincipals(prisma?: Pick<PrismaClient, 'membership'>): PrincipalResolver {
   if (prisma) return createPrismaPrincipalResolver(prisma);
   return ({ tenantId, userId, tokenRole }) =>
     Promise.resolve({ tenantId, userId, role: tokenRole });

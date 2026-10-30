@@ -11,6 +11,8 @@ export class AuthService {
     userId: string;
     role: AuthClaims['role'];
     ttlSeconds?: number;
+    sessionId?: string;
+    authVersion?: number;
   }): string {
     return issueAuthToken(input, this.config);
   }
@@ -19,7 +21,9 @@ export class AuthService {
     return verifyAuthToken(token, this.config);
   }
 
-  authenticate(authorizationHeader: string | undefined): AuthContext {
+  authenticate(
+    authorizationHeader: string | undefined,
+  ): AuthContext & { sessionId?: string; authVersion: number } {
     if (!authorizationHeader) {
       throw new AuthError('Missing Authorization header', 'MISSING_TOKEN');
     }
@@ -34,6 +38,8 @@ export class AuthService {
       tenantId: claims.tid,
       userId: claims.sub,
       role: claims.role,
+      sessionId: claims.sid,
+      authVersion: claims.ver ?? 0,
     };
   }
 }

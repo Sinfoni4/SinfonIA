@@ -1,7 +1,9 @@
 # SinfonIA — Fase 1: organizzazioni, identità, autorizzazioni e sicurezza
 
-**Stato**: direzione architetturale approvabile; MF2 e MF0 (fasi 1 e 2) eseguiti · **Data**: 29/10/2026 · **Versione**: 8
-**Autorizzato finora**: preparazione documentale; MF2 su un ramo dedicato con C1 (senza C2, C3, D5b); MF0 fase 1 solo su dati sintetici; MF0 fase 2 sullo staging (A1–A5, §10.13); unione delle PR #9–#12 e riavvio dello staging (29/10/2026). Non autorizzati: migrazioni, installazioni, interventi su staging, produzione, configurazioni, dipendenze o servizi esterni.
+**Stato**: direzione architetturale approvabile; MF2 e MF0 (fasi 1 e 2) eseguiti; MF1, MF3, MF4, MF5 e MF2b in PR non unite · **Data**: 29/10/2026 · **Versione**: 9
+**Autorizzato finora**: preparazione documentale; MF2 su un ramo dedicato con C1; MF0 fase 1 solo su dati sintetici; MF0 fase 2 sullo staging (A1–A5, §10.13); unione delle PR #9–#12 e riavvio dello staging (29/10/2026); MF1 e MF3–MF5 su rami dedicati, provati su database isolati e di test; MF2b dopo la decisione C2. Non autorizzati: unione delle PR aperte, migrazioni e ruoli sullo staging o in produzione, installazioni, configurazioni, dipendenze o servizi esterni.
+
+Novità della versione 9: decisioni del 29/10/2026 su C2 (approvata), D5 (approvata) e D5b (opzione b, poi d); rinviate D11 (fornitore email), D3 (durata delle deleghe) e D4 (aggregati delle reti) (§A, §B, §3.3, §3.4); domande per la consulenza legale e privacy in `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`; stato aggiornato (§16).
 
 Novità della versione 8: esito di MF0 fase 2 sullo staging (§10.13) e stato aggiornato (§16).
 
@@ -41,6 +43,8 @@ Confermate dal proprietario del progetto (messaggi del 29/10/2026):
 12. Collegamento Telegram solo dopo l'autenticazione dell'account applicativo, con codice monouso, a scadenza, legato allo scopo e all'ID numerico Telegram. Il possesso di un'email non equivale all'identità legale.
 13. Tutte le durate di conservazione sono **proposte**, non regole approvate.
 14. Il primo pilota non richiede un amministratore di rete reale; il modello lo deve supportare.
+15. **C2 (D6) approvata** (29/10/2026): in chat la vista predefinita sono le proprie pratiche; ADMIN e OPERATOR raggiungono l'organizzazione solo con richiesta esplicita, a pagine, con conferma per il cambio di stato di una pratica non propria; mai oltre il permesso (§3.4). Implementata in MF2b.
+16. **D5 approvata** (29/10/2026): perimetri di esportazione per ruolo e canale come da proposta di §3.3. **D5b**: opzione **b** (export pianificato su Telegram solo agli ORG_ADMIN che lo scelgono) fino alla disponibilità del login (MF6), poi opzione **d** (avviso con collegamento a download autenticato). Implementazione in MF8, con avviso agli ADMIN prima del cambio.
 
 ## B. Punti ancora da decidere
 
@@ -48,18 +52,18 @@ Confermate dal proprietario del progetto (messaggi del 29/10/2026):
 | :-: | :--- | :--- |
 | D1 | Organizzazione unica con tipo e relazioni (proposta) | §1 |
 | D2 | Consulente come persona con deleghe, senza appartenenza all'azienda cliente | §2.2 |
-| D3 | Beneficiari delle deleghe a organizzazioni: elenco nominativo approvato dal concedente; durata massima delle deleghe | §2.4 |
-| D4 | Soglia minima ed elenco degli indicatori aggregati per le reti | §1.3 |
-| D5 | Esportazione: perimetri per ruolo **e canale** (proposta diversa dall'attuale) | §3.3 |
-| D6 | C2 — visibilità delle pratiche in chat: proposta «vista predefinita ristretta, mai più ampia del permesso» | §3.4 |
+| D3 | Beneficiari delle deleghe a organizzazioni: elenco nominativo approvato dal concedente (**confermato**); durata massima delle deleghe (**rinviata** all'avvio di MF8, proposta 12 mesi rinnovabili) | §2.4 |
+| D4 | Soglia minima ed elenco degli indicatori aggregati per le reti (**rinviata** all'avvio di MF9, proposta soglia 5 aziende) | §1.3 |
+| D5 | Esportazione: perimetri per ruolo **e canale** — **approvata** il 29/10/2026 (§A.16) | §3.3 |
+| D6 | C2 — visibilità delle pratiche in chat — **approvata** il 29/10/2026 (§A.15) | §3.4 |
 | D6b | C3 — regole di cancellazione R1–R13 e correzione dei file orfani | §3.5 |
-| D5b | Export pianificato su Telegram: opzioni a–d, raccomandata b poi d | §3.3 |
+| D5b | Export pianificato su Telegram — **decisa** il 29/10/2026: b, poi d (§A.16) | §3.3 |
 | D14 | MF0: protezione del database ripristinato (Opzione A, allegati esclusi, preferita dal proprietario). Raccomandata 2-R (sostituzione casuale a flusso) sul PC attuale; alternativa disco esterno cifrato; accettazione dei rischi residui di §10.4 | §10.3–§10.11 |
 | D7 | Strategia di revoca (verifica a ogni richiesta, token 10 min, rinnovo ruotato) | §5 |
 | D8 | Recupero degli account con email segnaposto o non accessibile; fusione di account | §4.3 |
 | D9 | Approvatore e durata massima dell'accesso eccezionale | §7 |
 | D10 | Durate di conservazione e trattamento dell'audit alla cancellazione di un'organizzazione (con verifica legale e privacy) | §8 |
-| D11 | Fornitore email | §13 |
+| D11 | Fornitore email (**rinviata** il 29/10/2026; MF6 e MF7 restano in attesa) | §13 |
 | D12 | Piano di separazione dei ruoli PostgreSQL (MF1) | §6 |
 | D13 | Autorizzazione di MF0 e, separatamente, di MF2 | §10, §11, §14 |
 
@@ -307,11 +311,13 @@ Legenda: **O** = org · **P** = proprie · **D** = solo se la delega include l'o
 - Audit della generazione e di ogni download.
 - Conseguenze: un passaggio in più per l'utente (login nel browser o, in futuro, nella Mini App); nessun file nella cronologia di Telegram.
 
-**Raccomandazione**: b fino alla disponibilità di MF5 e MF6, poi d. Il cambio da «tutti gli ADMIN» a «chi lo sceglie» va in MF8 con le altre regole di export.
+**Decisione (29/10/2026)**: b fino alla disponibilità di MF6, poi d (MF5 fornisce già il download autenticato degli allegati). Il cambio da «tutti gli ADMIN» a «chi lo sceglie» va in MF8 con le altre regole di export, preceduto da un avviso agli ADMIN che oggi ricevono il file.
 
 **Deleghe**: confermato che una delega a un'organizzazione vale solo per i **beneficiari nominativi approvati** dal concedente (§2.4); nuovi membri o amministratori dell'organizzazione beneficiaria non ottengono alcun accesso, neanche all'export, senza approvazione.
 
-### 3.4 C2 — Visibilità delle pratiche in chat [P] — D6
+### 3.4 C2 — Visibilità delle pratiche in chat — D6 (approvata il 29/10/2026)
+
+**Implementazione (MF2b)**: comandi espliciti «pratiche azienda [N]» (10 per pagina, le proprie segnate), «stato pratica azienda <nome>» e «valida/completa pratica azienda <nome>»; con due pratiche dello stesso nome non viene scelta nessuna; il cambio di stato di una pratica altrui richiede «sì» entro 5 minuti, con nuovo controllo di permesso e pratica alla conferma. «stato pratica <nome>» cerca tra le proprie e suggerisce la forma esplicita a chi può usarla. Il percorso AI resta sulle proprie pratiche (più ristretto del permesso).
 
 **Principio**: il **permesso** è unico per tutti i canali e deciso dal servizio di autorizzazione. Ogni canale può applicare una **vista predefinita più ristretta** e limitare alcune operazioni, **mai** ampliarle oltre il permesso. In chat (telefono, anteprime delle notifiche, cronologia conservata dal servizio di messaggistica) conviene mostrare il minimo per default.
 
@@ -327,7 +333,7 @@ Legenda: **O** = org · **P** = proprie · **D** = solo se la delega include l'o
 | Esportazione | tutti | §3.3 | proprie | proprie (invariato) |
 | Cancellazione | §3.5 | §3.5 | chiunque, proprie, senza conferma | §3.5 |
 
-Fino alla decisione esplicita:
+Fino alla decisione esplicita (ora presa, vedi sopra):
 
 - MF2 **non cambia** la vista della chat;
 - i test di caratterizzazione descrivono il comportamento attuale in un file marcato «**comportamento attuale, non normativo**»;
@@ -993,6 +999,9 @@ Il primo pilota richiede MF0–MF8, MF10, MF11 e MF13; MF2b e MF9 possono seguir
 - **MF0 fase 2 eseguita e superata** sullo staging in sola lettura, copia cancellata e verificata (§10.13).
 - Nessuna modifica a schema, dati, configurazioni, dipendenze, staging, PC o servizi esterni. Sul database di test (dati sintetici) sono state aggiunte righe per le misure di prestazioni.
 - Ogni attività futura richiede una **propria approvazione esplicita** (§14); MF0 e MF2 sono autorizzati separatamente.
+- **PR #9–#12 unite** in `main` e staging riavviato sulla porta 3110 (29/10/2026).
+- **Aperte, CI verde, non unite**: [#13 MF1](https://github.com/Sinfoni4/SinfonIA/pull/13) (ruoli PostgreSQL), [#14 MF3](https://github.com/Sinfoni4/SinfonIA/pull/14) (espansione dello schema), [#15 MF4](https://github.com/Sinfoni4/SinfonIA/pull/15) (appartenenze), [#16 MF5](https://github.com/Sinfoni4/SinfonIA/pull/16) (revoca); MF2b (vista chat C2) in PR separata. Nessun ruolo né migrazione applicati allo staging.
+- **Decisioni del 29/10/2026**: C2 e D5 approvate; D5b b poi d; D11, D3 (durata) e D4 rinviate. Consulenza legale e privacy da avviare con `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`.
 
 **Operazioni eseguite per preparare il piano (tutte in sola lettura)**: lettura del codice e degli schemi; conteggi, catalogo delle colonne, estensioni e impostazioni dei log sullo staging in transazioni di sola lettura; letture delle impostazioni del PC (sincronizzazione, indicizzazione, file di paging, dump di memoria, unità); consultazione di fonti web per i servizi email. Le attività operative precedenti di questa sessione (unione delle PR #6–#8, migrazioni e riavvio dello staging, test di carico sul database di test) sono anteriori alla Fase 1 e furono approvate allora.
 
@@ -1005,5 +1014,5 @@ Il primo pilota richiede MF0–MF8, MF10, MF11 e MF13; MF2b e MF9 possono seguir
 | Configurazione dei client di sincronizzazione, strumenti di backup del PC, ibernazione, invio dei rapporti WER | **non verificato** |
 | `pg_restore` da pipe senza file temporanei; coincidenza del formato delle righe tra `COPY` e dump | **presunto**, da provare su dati sintetici |
 | Prezzi e condizioni dei servizi email | **verificato** su fonti ufficiali dove indicato (§13), altrimenti non verificato |
-| Obblighi di conservazione, ruoli GDPR, regole di cancellazione | **da verificare** con consulenza legale e privacy |
+| Obblighi di conservazione, ruoli GDPR, regole di cancellazione | **da verificare** con consulenza legale e privacy (domande in `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`) |
 | Tutto il resto del documento (modello, flussi, regole, micro-fasi, stime) | **progettato**, non implementato |

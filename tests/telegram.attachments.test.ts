@@ -106,8 +106,14 @@ describe('Telegram bot: choosing the practice for a received file', () => {
     };
 
     const prisma = {
-      user: {
-        findFirst: vi.fn().mockResolvedValue({ id: userId, tenantId, role: 'MEMBER' }),
+      // Chat identity (MF4): an active Telegram link to a person with one membership.
+      channelIdentity: {
+        findFirst: vi.fn().mockResolvedValue({
+          userId,
+          user: {
+            memberships: [{ orgId: tenantId, role: 'MEMBER', org: { name: 'Cooperativa Test' } }],
+          },
+        }),
       },
       tenant: {
         findUnique: vi.fn().mockResolvedValue({

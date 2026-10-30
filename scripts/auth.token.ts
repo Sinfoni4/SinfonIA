@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 import { loadConfig } from '../src/config/config.js';
+import { createPrismaClient } from '../src/data/db/prisma.js';
 import { AuthService } from '../src/interface/http/auth/auth.service.js';
 import { AuthRoleSchema } from '../src/interface/http/auth/auth.types.js';
 
@@ -44,11 +45,27 @@ const auth = new AuthService({
   defaultTtlSeconds: config.AUTH_TTL_SECONDS,
 });
 
-console.log(
-  auth.issue({
-    tenantId: tenantId.data,
-    userId: userId.data,
-    role: role.data,
-    ttlSeconds: ttl,
-  }),
-);
+// The token carries the person's current auth_version: a later revocation invalidates it (MF5).
+const prisma = createPrismaClient(config.DATABASE_URL);
+try {
+  const user = await prisma.user.findUnique({
+    where: { id: userId.data },
+    select: { authVersion: true },
+  });
+  if (!user) {
+    console.error('User not found');
+    process.exitCode = 1;
+  } else {
+    console.log(
+      auth.issue({
+        tenantId: tenantId.data,
+        userId: userId.data,
+        role: role.data,
+        ttlSeconds: ttl,
+        authVersion: user.authVersion,
+      }),
+    );
+  }
+} finally {
+  await prisma.$disconnect();
+}
