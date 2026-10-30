@@ -69,7 +69,7 @@ Configurazione dell'applicazione di staging:
 
 ## 4. Riavvio e verifiche
 
-1. Avvio sulla porta 3110.
+1. Avvio sulla porta 3110: `npm run staging:start` avvia, se serve, il database sulla porta 5433, controlla che la porta sia libera (senza mai fermare altri processi) e avvia l'applicazione con `sinfonia_staging_app` e la cartella degli allegati dello staging; `npm run staging:start -- --check` controlla soltanto. Va eseguito anche dopo ogni riavvio del PC.
 2. `GET /readyz` → 200.
 3. Bot Telegram: «lista pratiche», poi «pratiche azienda» con un ADMIN.
 4. Un'operazione di scrittura: crea pratica o nuova scadenza.

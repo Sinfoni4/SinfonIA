@@ -29,6 +29,10 @@ export type TelegramMessage = {
   caption?: string;
   photo?: TelegramPhotoSize[];
   document?: TelegramDocument;
+  /** Voice and audio messages, and round video notes: only noticed, not transcribed. */
+  voice?: { file_id: string; duration?: number };
+  audio?: { file_id: string; duration?: number };
+  video_note?: { file_id: string; duration?: number };
   chat: {
     id: number;
     type: string;
