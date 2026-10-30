@@ -123,6 +123,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const AMOUNTS = new Set(['taxableAmount', 'vatAmount', 'totalAmount']);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The data read from a document, as label and value, in a stable order; text only. */
 export function readFields(result: Record<string, unknown> | null): {
@@ -140,7 +141,9 @@ export function readFields(result: Record<string, unknown> | null): {
       const value =
         AMOUNTS.has(key) && typeof raw === 'number'
           ? raw.toLocaleString('it-IT', { style: 'currency', currency })
-          : String(raw);
+          : typeof raw === 'string' && ISO_DATE.test(raw)
+            ? raw.split('-').reverse().join('/')
+            : String(raw);
       return { label: FIELD_LABELS[key], value };
     });
   const type = typeof result.documentType === 'string' ? result.documentType : null;
@@ -152,6 +155,18 @@ export function readFields(result: Record<string, unknown> | null): {
       ? result.warnings.filter((w): w is string => typeof w === 'string')
       : [],
   };
+}
+
+/** The type of a practice in Italian (the API label is in English). */
+export function kindLabel(practice: Pick<Practice, 'kind' | 'typeLabel'>): string {
+  return KIND_LABELS[practice.kind] ?? practice.typeLabel;
+}
+
+/** The summary, unless it only repeats the name («pratica <nome>»). */
+export function usefulSummary(practice: Pick<Practice, 'name' | 'summary'>): string | null {
+  const summary = practice.summary.trim();
+  if (!summary || summary.toLowerCase() === `pratica ${practice.name}`.toLowerCase()) return null;
+  return summary;
 }
 
 export function formatDate(iso: string): string {

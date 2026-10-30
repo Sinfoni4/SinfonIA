@@ -6,10 +6,12 @@ import { describeError, type Me } from '../api/client';
 import {
   formatDate,
   formatSize,
+  kindLabel,
   OCR_LABELS,
   readFields,
   STATE_LABELS,
   TRANSITION_LABELS,
+  usefulSummary,
   type Attachment,
   type PracticeDetail,
   type PracticeState,
@@ -72,11 +74,11 @@ export function PracticeDetailPage({ me }: { me: Me }) {
       <section className="card">
         <dl className="facts">
           <dt>Tipo</dt>
-          <dd>{p.typeLabel}</dd>
-          {p.summary && (
+          <dd>{kindLabel(p)}</dd>
+          {usefulSummary(p) && (
             <>
               <dt>Riepilogo</dt>
-              <dd>{p.summary}</dd>
+              <dd>{usefulSummary(p)}</dd>
             </>
           )}
           <dt>Creata</dt>

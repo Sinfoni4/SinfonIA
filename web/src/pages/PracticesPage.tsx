@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { describeError, type Me } from '../api/client';
 import {
   formatDate,
+  kindLabel,
   practicesQuery,
   STATE_LABELS,
   type PracticeFilters,
@@ -113,7 +114,7 @@ export function PracticesPage({ me }: { me: Me }) {
                       <span className="badge">mia</span>
                     )}
                   </td>
-                  <td>{p.typeLabel}</td>
+                  <td>{kindLabel(p)}</td>
                   <td>
                     <span className={`state state-${p.status.toLowerCase()}`}>
                       {STATE_LABELS[p.status]}
@@ -134,7 +135,8 @@ export function PracticesPage({ me }: { me: Me }) {
               Precedente
             </button>
             <span>
-              Pagina {data.page} di {Math.max(1, data.totalPages)} · {data.total} pratiche
+              Pagina {data.page} di {Math.max(1, data.totalPages)} · {data.total}{' '}
+              {data.total === 1 ? 'pratica' : 'pratiche'}
             </span>
             <button
               type="button"
