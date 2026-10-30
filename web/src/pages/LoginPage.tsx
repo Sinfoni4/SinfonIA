@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 
 import { describeError } from '../api/client';
 import { useSession } from '../session/session';
@@ -68,6 +69,9 @@ export function LoginPage({ notice }: { notice?: string }) {
             <button type="submit" disabled={busy || !email.includes('@')}>
               Ricevi il codice di accesso
             </button>
+            <p className="muted">
+              Hai ricevuto un invito? <Link to="/invito">Accetta l&apos;invito</Link>
+            </p>
           </form>
         ) : (
           <form onSubmit={(e) => void checkCode(e)} noValidate>

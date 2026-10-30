@@ -91,6 +91,11 @@ export type LoginServiceOptions = {
    * with the simulated email. The configuration refuses it outside NODE_ENV=development.
    */
   exposeCodes?: boolean;
+  /**
+   * Public address of the dashboard (WEB_PUBLIC_URL): the invitation email carries a link to the
+   * acceptance page, with the token after `#` so it never reaches server logs or other sites.
+   */
+  webUrl?: string;
 };
 
 export type InvitationView = {
@@ -106,6 +111,7 @@ export class LoginService {
   private readonly log?: Log;
   private readonly now: () => Date;
   private readonly exposeCodes: boolean;
+  private readonly webUrl?: string;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -116,6 +122,7 @@ export class LoginService {
     this.log = options.log;
     this.now = options.now ?? (() => new Date());
     this.exposeCodes = options.exposeCodes ?? false;
+    this.webUrl = options.webUrl?.replace(/\/+$/, '');
   }
 
   private codeHash(challengeId: string, code: string): string {
@@ -355,7 +362,7 @@ export class LoginService {
     email: string,
     role: UserRole,
     actor: { userId: string },
-  ): Promise<{ invitationId: string }> {
+  ): Promise<{ invitationId: string; devToken?: string }> {
     const normalized = normalizeEmail(email);
     if (!normalized.includes('@') || PLACEHOLDER_EMAIL.test(normalized)) {
       throw new InvitationError('Indirizzo email non valido');
@@ -390,9 +397,13 @@ export class LoginService {
       subject: `Invito a ${org.name} su SinfonIA`,
       text:
         `Sei stato invitato a lavorare per ${org.name} su SinfonIA.\n` +
+        (this.webUrl ? `Accetta l'invito: ${this.webUrl}/app/invito#${token}\n` : '') +
         `Codice invito: ${token}\nVale 7 giorni e una sola volta.`,
     });
-    return { invitationId: invitation.id };
+    // Development only (F5): the administrator can try the acceptance without a real mailbox.
+    return this.exposeCodes
+      ? { invitationId: invitation.id, devToken: token }
+      : { invitationId: invitation.id };
   }
 
   async revokeInvitation(orgId: string, invitationId: string, actor: { userId: string }) {

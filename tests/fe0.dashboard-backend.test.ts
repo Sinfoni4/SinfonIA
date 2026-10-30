@@ -103,7 +103,10 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
       principals: testPrincipals(prisma),
       prisma,
       // exposeCodes is set here directly: the configuration allows it only in development.
-      login: new LoginService(prisma, mail, TEST_AUTH_SECRET, { exposeCodes: true }),
+      login: new LoginService(prisma, mail, TEST_AUTH_SECRET, {
+        exposeCodes: true,
+        webUrl: 'https://app.sinfonia.test/',
+      }),
       practiceService: practices,
       interpreterService: new InterpreterService(llm),
       executorService: new ExecutorService({ practiceService: practices }),
@@ -211,6 +214,31 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
       headers: authHeaders(orgId, memberId, 'MEMBER'),
     });
     expect(asMember.statusCode).toBe(403);
+  });
+
+  it('links the invitation email to the acceptance page, token after # (FE4)', async () => {
+    const email = `link-${run}@fe0.local`;
+    const created = await post(
+      '/members/invitations',
+      { email, role: 'MEMBER' },
+      authHeaders(orgId, adminId, 'ADMIN'),
+    );
+    expect(created.statusCode).toBe(201);
+    // Development only, like the login code: the token comes back to try the acceptance.
+    const { devToken } = created.json<{ data: { devToken?: string } }>().data;
+    expect(devToken).toMatch(/^[\w-]{40,}$/);
+    const text = mail.lastTo(email)?.text ?? '';
+    expect(text).toContain(`https://app.sinfonia.test/app/invito#${devToken}`);
+    expect(text).toContain(`Codice invito: ${devToken}`);
+    const start = await post('/auth/invitations/start', { token: devToken });
+    expect(start.statusCode).toBe(200);
+  });
+
+  it('refuses a public address that is not http(s)', () => {
+    expect(config({ WEB_PUBLIC_URL: 'https://app.sinfonia.it' }).WEB_PUBLIC_URL).toBe(
+      'https://app.sinfonia.it',
+    );
+    expect(() => config({ WEB_PUBLIC_URL: 'javascript:alert(1)' })).toThrow(/WEB_PUBLIC_URL/);
   });
 
   it('tells which next states the caller may set (B6) and labels dashboard exports (B8)', async () => {

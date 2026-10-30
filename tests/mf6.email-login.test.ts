@@ -299,7 +299,9 @@ describe.runIf(Boolean(DATABASE_URL))('email login and invitations (MF6)', () =>
     it('refuses revoked invitations and invitations by non-admins', async () => {
       const email = `revocata-${run}@mf6.local`;
       const created = await invite(email, 'MEMBER');
-      const { invitationId } = created.json<{ data: { invitationId: string } }>().data;
+      const { invitationId, ...rest } = created.json<{ data: { invitationId: string } }>().data;
+      // The token goes only to the invited email outside development.
+      expect(rest).toEqual({});
       const revoke = await post(
         `/members/invitations/${invitationId}/revoke`,
         {},
