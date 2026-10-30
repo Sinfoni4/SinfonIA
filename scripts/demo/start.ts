@@ -107,6 +107,9 @@ async function main() {
       // Never the real bot or WhatsApp number from a demo.
       TELEGRAM_BOT_TOKEN: '',
       WHATSAPP_ACCESS_TOKEN: '',
+      WHATSAPP_PHONE_NUMBER_ID: '',
+      WHATSAPP_APP_SECRET: '',
+      WHATSAPP_VERIFY_TOKEN: '',
       ENABLE_LLM: 'false',
     },
   });
