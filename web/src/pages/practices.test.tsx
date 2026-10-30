@@ -12,7 +12,8 @@ import { App } from '../App';
 import { SessionProvider } from '../session/session';
 
 type Call = { method: string; path: string; query: URLSearchParams; body: unknown };
-type Answer = { status: number; body?: unknown; headers?: Record<string, string>; raw?: Blob };
+// raw: a file body as text (a jsdom Blob is not accepted by the Response of every Node version).
+type Answer = { status: number; body?: unknown; headers?: Record<string, string>; raw?: string };
 
 const ORG = 'a0000000-0000-4000-8000-000000000001';
 const ME = 'u0000000-0000-4000-8000-000000000001';
@@ -220,7 +221,7 @@ describe('practices (FE2)', () => {
         ]),
       [`GET /practices/${P1}/attachments/att-1/download`]: () => ({
         status: 200,
-        raw: new Blob(['%PDF']),
+        raw: '%PDF-1.4 test',
         headers: { 'content-disposition': 'attachment; filename="fattura.pdf"' },
       }),
     });
