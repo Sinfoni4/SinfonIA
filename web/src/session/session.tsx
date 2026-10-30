@@ -45,6 +45,8 @@ type Session = {
   /** P9: accepts the invitation with the code and opens the session, like a login. */
   acceptInvitation: (token: string, challengeId: string, code: string) => Promise<void>;
   enter: (orgId: string) => Promise<void>;
+  /** Reads again who is logged in (e.g. after the organization changed its name). */
+  refreshMe: () => Promise<void>;
   logout: () => Promise<void>;
   logoutEverywhere: () => Promise<void>;
   /** A call to the API as the logged-in person, renewing the access token when needed. */
@@ -172,6 +174,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [queryClient, renew],
   );
 
+  const refreshMe = useCallback(async () => {
+    setState({ status: 'ready', me: await api<Me>('/auth/me') });
+  }, [api]);
+
   // After a reload: resume the last organization if the refresh cookie is still valid.
   useEffect(() => {
     // Once per page, also under React's development double effects.
@@ -273,6 +279,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startInvitation,
       acceptInvitation,
       enter,
+      refreshMe,
       logout,
       logoutEverywhere,
       api,
@@ -285,6 +292,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startInvitation,
       acceptInvitation,
       enter,
+      refreshMe,
       logout,
       logoutEverywhere,
       api,

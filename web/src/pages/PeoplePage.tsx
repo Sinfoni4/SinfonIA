@@ -85,7 +85,7 @@ function Members({ me }: { me: Me }) {
       )}
       {query.isPending && <p className="muted">Caricamento…</p>}
       {query.data && (
-        <table className="list people">
+        <table className="list cards">
           <thead>
             <tr>
               <th scope="col">Persona</th>
@@ -340,7 +340,7 @@ function Invitations({ me }: { me: Me }) {
         <p className="muted">Nessun invito {showClosed ? '' : 'in attesa'}.</p>
       )}
       {invitations.length > 0 && (
-        <table className="list people">
+        <table className="list cards">
           <thead>
             <tr>
               <th scope="col">Email</th>

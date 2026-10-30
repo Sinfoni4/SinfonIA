@@ -79,6 +79,7 @@ select {
 
 select {
   width: auto;
+  max-width: 100%;
 }
 
 input:focus-visible,
@@ -213,8 +214,9 @@ button.link {
 
 .topbar nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
 }
 
 .topbar nav button.link {
@@ -231,14 +233,6 @@ button.link {
   max-width: 64rem;
   margin: 0.75rem auto 0;
   padding: 0 1rem;
-}
-
-.tiles {
-  list-style: none;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 1rem;
 }
 
 .facts {
@@ -511,38 +505,136 @@ section + section {
   margin-top: 2rem;
 }
 
-/* On a phone every person is a card: label and value one under the other. */
+/* On a phone each row is a card (people, activity log): label and value one under the other. */
 @media (max-width: 36rem) {
-  table.list.people thead {
+  table.list.cards thead {
     display: none;
   }
 
-  table.list.people,
-  table.list.people tbody,
-  table.list.people tr,
-  table.list.people td,
-  table.list.people td:nth-child(2) {
+  table.list.cards,
+  table.list.cards tbody,
+  table.list.cards tr,
+  table.list.cards td,
+  table.list.cards td:nth-child(2) {
     display: block;
   }
 
-  table.list.people tr {
+  table.list.cards tr {
     border-bottom: 1px solid var(--border);
     padding: 0.5rem 0;
   }
 
-  table.list.people td {
+  table.list.cards td {
     border: none;
     padding: 0.25rem 0.75rem;
   }
 
-  table.list.people td:empty {
+  table.list.cards td:empty {
     display: none;
   }
 
-  table.list.people td[data-label]::before {
+  table.list.cards td[data-label]::before {
     content: attr(data-label);
     display: block;
     font-size: 0.8rem;
     color: var(--muted);
   }
+}
+
+/* Home, settings and activity (FE6) */
+.kpis {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+}
+
+.kpis .card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0;
+}
+
+.kpis strong {
+  font-size: 1.8rem;
+  margin-right: 0.3rem;
+}
+
+.kpis .card.alert {
+  border-color: var(--danger);
+}
+
+.kpis .card.warn {
+  background: var(--dev-bg);
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.panels .card {
+  margin: 0;
+}
+
+.kpis a {
+  text-decoration: none;
+}
+
+.kpis a:hover {
+  text-decoration: underline;
+}
+
+.panels h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+}
+
+ul.plain li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+ul.plain li:last-child {
+  border-bottom: none;
+}
+
+.tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs a {
+  padding: 0.4rem 0;
+  text-decoration: none;
+}
+
+.tabs a.active {
+  font-weight: 600;
+  border-bottom: 3px solid var(--accent);
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.pager button {
+  margin-top: 0;
 }
