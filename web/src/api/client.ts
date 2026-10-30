@@ -31,11 +31,15 @@ type Envelope<T> =
 
 export type RequestOptions = {
   method?: 'GET' | 'POST';
+  /** JSON body. */
   body?: unknown;
+  /** Multipart body (file uploads); the browser sets its content type. */
+  form?: FormData;
   token?: string;
 };
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/** The raw response of a call (for downloads); errors still become ApiError. */
+export async function send(path: string, options: RequestOptions = {}): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -46,20 +50,29 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
         ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
       },
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : undefined),
     });
   } catch {
     throw new ApiError(0, 'NETWORK', 'Servizio non raggiungibile');
   }
-  if (response.status === 204) return undefined as T;
-  const envelope = (await response.json().catch(() => null)) as Envelope<T> | null;
-  if (!response.ok || !envelope || !envelope.success) {
+  if (!response.ok) {
+    const envelope = (await response.json().catch(() => null)) as Envelope<unknown> | null;
     const error = envelope && !envelope.success ? envelope.error : undefined;
     throw new ApiError(
       response.status,
       error?.code ?? 'HTTP_ERROR',
       error?.message ?? response.statusText,
     );
+  }
+  return response;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const response = await send(path, options);
+  if (response.status === 204) return undefined as T;
+  const envelope = (await response.json().catch(() => null)) as Envelope<T> | null;
+  if (!envelope || !envelope.success) {
+    throw new ApiError(response.status, 'BAD_RESPONSE', 'Risposta non valida');
   }
   return envelope.data;
 }
@@ -71,6 +84,12 @@ export function describeError(err: unknown): string {
   if (err.status === 401) return 'Codice non valido o scaduto.';
   if (err.status === 403) return 'Non hai il permesso per questa operazione.';
   if (err.status === 429) return 'Troppi tentativi: riprova tra qualche minuto.';
+  if (err.status === 404) return 'Non trovato, oppure non è nel tuo perimetro.';
+  if (err.code === 'ATTACHMENT_TOO_LARGE') return 'Il file è troppo grande.';
+  if (err.code === 'UNSUPPORTED_MEDIA_TYPE')
+    return 'Tipo di file non supportato: usa PDF o immagini.';
+  if (err.code === 'EMPTY_ATTACHMENT') return 'Il file è vuoto.';
+  if (err.status === 409) return 'Operazione non consentita nello stato attuale.';
   return 'Si è verificato un errore: riprova.';
 }
 

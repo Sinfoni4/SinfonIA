@@ -278,3 +278,178 @@ button.link {
     grid-template-columns: 1fr;
   }
 }
+
+/* Practices (FE2) */
+a.button {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  text-decoration: none;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.filters label {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filters input[type='search'] {
+  min-width: 14rem;
+}
+
+.filters .check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+  padding-bottom: 0.6rem;
+}
+
+.filters .check input {
+  width: auto;
+}
+
+.filters button {
+  margin-top: 0;
+}
+
+table.list {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+table.list th,
+table.list td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+table.list th {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.pager button {
+  margin-top: 0;
+}
+
+.state {
+  display: inline-block;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  background: var(--notice-bg);
+}
+
+.state-completed {
+  background: #e3f4e8;
+  color: #1d6b38;
+}
+
+.state-failed {
+  background: #fde8e6;
+  color: var(--danger);
+}
+
+.badge.warn {
+  background: var(--dev-bg);
+  color: #7a5a00;
+}
+
+.form {
+  max-width: 32rem;
+}
+
+.attachments {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.attachments > li {
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 0;
+}
+
+.attachment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.attachment-head button {
+  margin-top: 0;
+}
+
+details {
+  margin-top: 0.5rem;
+}
+
+details .facts {
+  margin-top: 0.5rem;
+}
+
+.fact {
+  display: contents;
+}
+
+.warnings {
+  color: #7a5a00;
+}
+
+.upload {
+  margin-top: 1rem;
+  max-width: 32rem;
+}
+
+.upload h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+@media (max-width: 36rem) {
+  table.list th:nth-child(2),
+  table.list td:nth-child(2) {
+    display: none;
+  }
+}
+
+.card .actions {
+  margin-top: 1rem;
+}

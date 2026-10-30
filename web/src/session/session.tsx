@@ -10,7 +10,14 @@ import {
   type ReactNode,
 } from 'react';
 
-import { ApiError, request, type Me, type Organization, type RequestOptions } from '../api/client';
+import {
+  ApiError,
+  request,
+  send,
+  type Me,
+  type Organization,
+  type RequestOptions,
+} from '../api/client';
 
 /**
  * The login session in the browser (docs/PROGETTO_FRONTEND_V1.md §6):
@@ -38,6 +45,8 @@ type Session = {
   logoutEverywhere: () => Promise<void>;
   /** A call to the API as the logged-in person, renewing the access token when needed. */
   api: <T>(path: string, options?: Omit<RequestOptions, 'token'>) => Promise<T>;
+  /** A file of the API (attachment download) as the logged-in person. */
+  download: (path: string) => Promise<{ blob: Blob; fileName: string }>;
 };
 
 const SessionContext = createContext<Session | null>(null);
@@ -111,22 +120,41 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [forget],
   );
 
-  const api = useCallback(
-    async <T,>(path: string, options: Omit<RequestOptions, 'token'> = {}): Promise<T> => {
+  /** Runs a call with the access token; after a 401, renews once and retries, else logs out. */
+  const withRenewal = useCallback(
+    async <R,>(call: (accessToken: string | undefined) => Promise<R>): Promise<R> => {
       try {
-        return await request<T>(path, { ...options, token: token.current ?? undefined });
+        return await call(token.current ?? undefined);
       } catch (err: unknown) {
         if (!(err instanceof ApiError) || err.status !== 401 || !orgId.current) throw err;
         try {
-          const fresh = await renew(orgId.current);
-          return await request<T>(path, { ...options, token: fresh });
+          return await call(await renew(orgId.current));
         } catch (retryErr: unknown) {
-          forget('La sessione è terminata: accedi di nuovo.');
+          if (retryErr instanceof ApiError && retryErr.status === 401) {
+            forget('La sessione è terminata: accedi di nuovo.');
+          }
           throw retryErr;
         }
       }
     },
     [renew, forget],
+  );
+
+  const api = useCallback(
+    <T,>(path: string, options: Omit<RequestOptions, 'token'> = {}) =>
+      withRenewal((accessToken) => request<T>(path, { ...options, token: accessToken })),
+    [withRenewal],
+  );
+
+  const download = useCallback(
+    (path: string) =>
+      withRenewal(async (accessToken) => {
+        const response = await send(path, { token: accessToken });
+        const disposition = response.headers.get('content-disposition') ?? '';
+        const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'allegato';
+        return { blob: await response.blob(), fileName };
+      }),
+    [withRenewal],
   );
 
   const enter = useCallback(
@@ -200,8 +228,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [api, forget]);
 
   const value = useMemo<Session>(
-    () => ({ state, startLogin, verifyLogin, enter, logout, logoutEverywhere, api }),
-    [state, startLogin, verifyLogin, enter, logout, logoutEverywhere, api],
+    () => ({ state, startLogin, verifyLogin, enter, logout, logoutEverywhere, api, download }),
+    [state, startLogin, verifyLogin, enter, logout, logoutEverywhere, api, download],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
