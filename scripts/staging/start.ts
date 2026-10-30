@@ -63,15 +63,21 @@ async function main() {
   } else {
     if (!existsSync(DATA_DIR)) throw new Error(`Cluster folder ${DATA_DIR} not found`);
     console.log(`Database: avvio del cluster ${DATA_DIR} sulla porta ${dbPort}...`);
-    const started = spawnSync(
+    // Detached, in its own process group: stopping the application (Ctrl+C, closing the
+    // terminal) must not stop the database, which the test suite uses too.
+    spawn(
       tool('pg_ctl'),
-      ['-D', DATA_DIR, '-o', `-p ${dbPort}`, '-l', `${DATA_DIR}/postgres.log`, '-w', 'start'],
-      { stdio: 'inherit' },
-    );
-    if (started.status !== 0 || !databaseReady(host, dbPort)) {
-      throw new Error(`The cluster did not start: see ${DATA_DIR}/postgres.log`);
+      ['-D', DATA_DIR, '-o', `-p ${dbPort}`, '-l', `${DATA_DIR}/postgres.log`, 'start'],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    ).unref();
+    const deadline = Date.now() + 60_000;
+    while (!databaseReady(host, dbPort)) {
+      if (Date.now() > deadline) {
+        throw new Error(`The cluster did not start: see ${DATA_DIR}/postgres.log`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    console.log('Database: avviato');
+    console.log('Database: avviato (resta attivo anche quando si ferma lo staging)');
   }
 
   // 2. Port of the application: never take it from another process.
