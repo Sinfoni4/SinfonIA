@@ -11,13 +11,14 @@ export default [
   prettier,
   ...tseslint.configs.recommendedTypeChecked.map((c) => ({
     ...c,
-    files: ['src/**/*.ts', 'tests/**/*.ts'],
+    files: ['src/**/*.ts', 'tests/**/*.ts', 'web/src/**/*.{ts,tsx}', 'web/vite.config.ts'],
   })),
   {
-    files: ['src/**/*.ts', 'tests/**/*.ts'],
+    // The web dashboard (web/) has its own tsconfig and packages, same rules.
+    files: ['src/**/*.ts', 'tests/**/*.ts', 'web/src/**/*.{ts,tsx}', 'web/vite.config.ts'],
     languageOptions: {
       parserOptions: {
-        project: './tsconfig.json',
+        project: ['./tsconfig.json', './web/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -67,6 +68,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'web/dist/**', 'web/node_modules/**'],
   },
 ];
