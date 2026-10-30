@@ -103,6 +103,7 @@ async function main() {
       AUTH_EMAIL_LOGIN: 'true',
       AUTH_DEV_SHOW_CODE: 'true',
       WEB_DIST_DIR: path.resolve('web/dist'),
+      WEB_PUBLIC_URL: `http://localhost:${PORT}`,
       STORAGE_LOCAL_DIR: STORAGE,
       // Never the real bot or WhatsApp number from a demo.
       TELEGRAM_BOT_TOKEN: '',

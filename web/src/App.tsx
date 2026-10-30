@@ -1,12 +1,14 @@
-import { Navigate, Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { Layout } from './components/Layout';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
 import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
+import { InvitationPage } from './pages/InvitationPage';
 import { LoginPage } from './pages/LoginPage';
 import { NewPracticePage } from './pages/NewPracticePage';
+import { PeoplePage } from './pages/PeoplePage';
 import { PracticeDetailPage } from './pages/PracticeDetailPage';
 import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -15,6 +17,7 @@ import { useSession } from './session/session';
 /** The pages follow the session: login, choice of the organization, then the dashboard. */
 export function App() {
   const { state } = useSession();
+  const { pathname } = useLocation();
 
   if (state.status === 'loading') {
     return (
@@ -23,6 +26,8 @@ export function App() {
       </main>
     );
   }
+  // The link of an invitation email works whether or not someone is logged in (P9).
+  if (pathname === '/invito') return <InvitationPage />;
   if (state.status === 'anonymous') return <LoginPage notice={state.notice} />;
   if (state.status === 'choosing') {
     return <ChooseOrganizationPage organizations={state.organizations} />;
@@ -38,6 +43,7 @@ export function App() {
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />
         <Route path="export" element={<ExportPage me={me} />} />
+        <Route path="persone" element={<PeoplePage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

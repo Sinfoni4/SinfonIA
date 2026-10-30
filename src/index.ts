@@ -231,6 +231,7 @@ async function main() {
           login: new LoginService(prisma, new SimulatedEmailSender(), config.AUTH_SECRET, {
             log: logger,
             exposeCodes: config.AUTH_DEV_SHOW_CODE,
+            webUrl: config.WEB_PUBLIC_URL,
           }),
         }
       : {}),

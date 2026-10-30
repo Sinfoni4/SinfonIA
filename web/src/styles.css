@@ -481,3 +481,68 @@ label.radio input {
 table.list td .actions button {
   margin-top: 0;
 }
+
+/* People and invitations (FE4) */
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+label.check input {
+  width: auto;
+}
+
+table.list td select {
+  padding: 0.35rem 0.5rem;
+}
+
+.actions.confirm label {
+  margin: 0;
+  font-weight: 400;
+}
+
+.dev-link {
+  word-break: break-all;
+}
+
+section + section {
+  margin-top: 2rem;
+}
+
+/* On a phone every person is a card: label and value one under the other. */
+@media (max-width: 36rem) {
+  table.list.people thead {
+    display: none;
+  }
+
+  table.list.people,
+  table.list.people tbody,
+  table.list.people tr,
+  table.list.people td,
+  table.list.people td:nth-child(2) {
+    display: block;
+  }
+
+  table.list.people tr {
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 0;
+  }
+
+  table.list.people td {
+    border: none;
+    padding: 0.25rem 0.75rem;
+  }
+
+  table.list.people td:empty {
+    display: none;
+  }
+
+  table.list.people td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+}

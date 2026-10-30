@@ -49,6 +49,12 @@ const ConfigSchema = z
       .transform((v) => v === 'true' || v === '1'),
     // Built dashboard served under /app (B2); absent: no dashboard.
     WEB_DIST_DIR: z.string().min(1).optional(),
+    // Public address of the dashboard, for the links in emails (invitations); absent: code only.
+    WEB_PUBLIC_URL: z
+      .string()
+      .url()
+      .refine((v) => /^https?:\/\//.test(v), 'WEB_PUBLIC_URL must be an http(s) address')
+      .optional(),
     // Email login (MF6): off until an email provider is chosen (D11); emails are simulated.
     AUTH_EMAIL_LOGIN: z
       .string()

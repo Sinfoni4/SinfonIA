@@ -40,6 +40,10 @@ type Session = {
   state: SessionState;
   startLogin: (email: string) => Promise<{ challengeId: string; devCode?: string }>;
   verifyLogin: (challengeId: string, code: string) => Promise<void>;
+  /** P9: sends the confirmation code to the invited email. */
+  startInvitation: (token: string) => Promise<{ challengeId: string; devCode?: string }>;
+  /** P9: accepts the invitation with the code and opens the session, like a login. */
+  acceptInvitation: (token: string, challengeId: string, code: string) => Promise<void>;
   enter: (orgId: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutEverywhere: () => Promise<void>;
@@ -197,12 +201,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const verifyLogin = useCallback(
-    async (challengeId: string, code: string) => {
-      const session = await request<{ organizations: Organization[] }>('/auth/login/verify', {
-        method: 'POST',
-        body: { challengeId, code },
-      });
+  /** After a login or an accepted invitation: straight in, or the choice of the organization. */
+  const opened = useCallback(
+    async (session: { organizations: Organization[] }) => {
       if (session.organizations.length === 0) {
         setState({
           status: 'anonymous',
@@ -217,6 +218,43 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [enter],
   );
 
+  const verifyLogin = useCallback(
+    async (challengeId: string, code: string) =>
+      opened(
+        await request<{ organizations: Organization[] }>('/auth/login/verify', {
+          method: 'POST',
+          body: { challengeId, code },
+        }),
+      ),
+    [opened],
+  );
+
+  const startInvitation = useCallback(
+    (inviteToken: string) =>
+      request<{ challengeId: string; devCode?: string }>('/auth/invitations/start', {
+        method: 'POST',
+        body: { token: inviteToken },
+      }),
+    [],
+  );
+
+  const acceptInvitation = useCallback(
+    async (inviteToken: string, challengeId: string, code: string) => {
+      // Whoever was logged in in this browser leaves: the new session is the invited person's.
+      if (timer.current) clearTimeout(timer.current);
+      token.current = null;
+      orgId.current = null;
+      queryClient.clear();
+      await opened(
+        await request<{ organizations: Organization[] }>('/auth/invitations/accept', {
+          method: 'POST',
+          body: { token: inviteToken, challengeId, code },
+        }),
+      );
+    },
+    [opened, queryClient],
+  );
+
   const logout = useCallback(async () => {
     await request('/auth/logout', { method: 'POST', body: {} }).catch(() => undefined);
     forget();
@@ -228,8 +266,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [api, forget]);
 
   const value = useMemo<Session>(
-    () => ({ state, startLogin, verifyLogin, enter, logout, logoutEverywhere, api, download }),
-    [state, startLogin, verifyLogin, enter, logout, logoutEverywhere, api, download],
+    () => ({
+      state,
+      startLogin,
+      verifyLogin,
+      startInvitation,
+      acceptInvitation,
+      enter,
+      logout,
+      logoutEverywhere,
+      api,
+      download,
+    }),
+    [
+      state,
+      startLogin,
+      verifyLogin,
+      startInvitation,
+      acceptInvitation,
+      enter,
+      logout,
+      logoutEverywhere,
+      api,
+      download,
+    ],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

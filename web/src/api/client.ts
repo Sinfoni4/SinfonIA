@@ -89,6 +89,12 @@ export function describeError(err: unknown): string {
   if (err.code === 'UNSUPPORTED_MEDIA_TYPE')
     return 'Tipo di file non supportato: usa PDF o immagini.';
   if (err.code === 'EMPTY_ATTACHMENT') return 'Il file è vuoto.';
+  if (err.code === 'LAST_ADMIN')
+    return "Serve almeno un amministratore attivo: non puoi revocare o cambiare il ruolo dell'ultimo.";
+  if (err.code === 'MEMBER_ACCESS_NOT_ALLOWED')
+    return 'Operazione non consentita per il ruolo di questa persona.';
+  // The backend explains these in Italian (invalid or expired invitation, too many requests…).
+  if (err.code === 'INVITATION_INVALID') return err.message;
   if (err.status === 409) return 'Operazione non consentita nello stato attuale.';
   return 'Si è verificato un errore: riprova.';
 }
