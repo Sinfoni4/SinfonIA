@@ -2,7 +2,6 @@ import { SchedulerRepository } from '../../data/repositories/scheduler.repositor
 import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
 import { ComplianceService } from '../compliance/compliance.service.js';
-import { firstActiveAdmin } from '../identity/membership.service.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
 import { ComplianceDeadlinesTask, ExportPracticesTask } from './scheduler.tasks.js';
@@ -211,15 +210,6 @@ export class SchedulerService {
         return false;
       }
 
-      // Scheduled tasks run only for tenants with at least one ADMIN user
-      const adminUserId = await firstActiveAdmin(this.prisma, tenant.id);
-      const adminUser = adminUserId ? { id: adminUserId } : null;
-
-      if (!adminUser) {
-        log.warn({ tenantId: tenant.id }, 'Scheduler: tenant has no ADMIN user, task skipped');
-        return false;
-      }
-
       // Create RUNNING run record (unique idempotencyKey ensures DB constraint safety)
       const run = await this.schedulerRepo.createRun({
         tenantId: tenant.id,
@@ -228,10 +218,13 @@ export class SchedulerService {
       });
 
       try {
+        // A system identity limited to this organization, not "the first ADMIN" (§5): tasks do not
+        // depend on a person, and suspended organizations are already excluded by tick().
         const runResult = await handler.run({
           tenant,
           payload: resolveDynamicPayload(task.payload ?? {}, now),
           now,
+          actor: { kind: 'system', orgId: tenant.id, task: task.type },
         });
 
         // Mark run as COMPLETED

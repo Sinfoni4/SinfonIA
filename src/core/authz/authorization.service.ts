@@ -19,6 +19,12 @@ export type Principal = {
   extraPermissions?: readonly string[];
 };
 
+/**
+ * The scheduler acting for one organization (§5): no person and no role behind it, limited to
+ * that organization and to the task it runs. It never stands in for a member.
+ */
+export type SystemActor = { kind: 'system'; orgId: string; task: string };
+
 export type Grant = { principal: Principal; permission: Permission; scope: PermissionScope };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
