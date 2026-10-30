@@ -227,7 +227,12 @@ async function main() {
     prisma,
     // Email login (MF6): only where enabled, never in production until a provider exists (D11).
     ...(config.AUTH_EMAIL_LOGIN
-      ? { login: new LoginService(prisma, new SimulatedEmailSender(), config.AUTH_SECRET, logger) }
+      ? {
+          login: new LoginService(prisma, new SimulatedEmailSender(), config.AUTH_SECRET, {
+            log: logger,
+            exposeCodes: config.AUTH_DEV_SHOW_CODE,
+          }),
+        }
       : {}),
     practiceService,
     complianceService,

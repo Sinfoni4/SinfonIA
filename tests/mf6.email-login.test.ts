@@ -67,6 +67,17 @@ describe.runIf(Boolean(DATABASE_URL))('email login and invitations (MF6)', () =>
 
   const post = (url: string, payload: unknown, headers: Record<string, string> = {}) =>
     app.inject({ method: 'POST', url, payload: payload as object, headers });
+  // The refresh token travels only in the HttpOnly cookie (B1): read it from Set-Cookie.
+  const cookieOf = (res: { headers: Record<string, string | string[] | number | undefined> }) => {
+    const header = res.headers['set-cookie'];
+    const text = Array.isArray(header)
+      ? header.join(';')
+      : typeof header === 'string'
+        ? header
+        : '';
+    return /sinfonia_refresh=([^;]*)/.exec(text)?.[1] ?? '';
+  };
+  const withCookie = (refreshToken: string) => ({ cookie: `sinfonia_refresh=${refreshToken}` });
   const codeIn = (to: string) => /(\d{6})/.exec(mail.lastTo(to)?.text ?? '')?.[1] ?? '';
   const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
@@ -74,13 +85,10 @@ describe.runIf(Boolean(DATABASE_URL))('email login and invitations (MF6)', () =>
     const start = await post('/auth/login/start', { email });
     const { challengeId } = start.json<{ data: { challengeId: string } }>().data;
     const verify = await post('/auth/login/verify', { challengeId, code: codeIn(email) });
-    return verify.json<{
-      data: {
-        refreshToken: string;
-        sessionId: string;
-        organizations: Array<{ orgId: string; role: string }>;
-      };
+    const data = verify.json<{
+      data: { sessionId: string; organizations: Array<{ orgId: string; role: string }> };
     }>().data;
+    return { ...data, refreshToken: cookieOf(verify) };
   };
   // At most 5 codes per email and hour: each scenario logs in with its own person.
   const newPerson = async (name: string) => {
@@ -89,12 +97,14 @@ describe.runIf(Boolean(DATABASE_URL))('email login and invitations (MF6)', () =>
     return { id: user.id, email };
   };
   const token = async (refreshToken: string, orgId: string) => {
-    const res = await post('/auth/token', { refreshToken, orgId });
+    const res = await post('/auth/token', { orgId }, withCookie(refreshToken));
     return {
       status: res.statusCode,
       ...(res.statusCode === 200
-        ? res.json<{ data: { accessToken: string; refreshToken: string; expiresIn: number } }>()
-            .data
+        ? {
+            ...res.json<{ data: { accessToken: string; expiresIn: number } }>().data,
+            refreshToken: cookieOf(res),
+          }
         : { accessToken: '', refreshToken: '', expiresIn: 0 }),
     };
   };
@@ -224,9 +234,7 @@ describe.runIf(Boolean(DATABASE_URL))('email login and invitations (MF6)', () =>
     const other = await newPerson('logout');
     const a = await login(other.email);
     const access = await token(a.refreshToken, orgA);
-    expect((await post('/auth/logout', { refreshToken: access.refreshToken })).statusCode).toBe(
-      204,
-    );
+    expect((await post('/auth/logout', {}, withCookie(access.refreshToken))).statusCode).toBe(204);
     expect(
       (await app.inject({ method: 'GET', url: '/practices', headers: bearer(access.accessToken) }))
         .statusCode,

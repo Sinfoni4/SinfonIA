@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-import { scopedUserId } from '../../../core/authz/authorization.service.js';
+import { can, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
+import { allowedNextStates } from '../../../core/workflow/state-machine.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -138,7 +139,12 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         userId: targetUserId,
       });
 
-      return reply.status(200).send(ok(practice));
+      // The next states the caller may set (B6): the dashboard shows only valid actions, the
+      // transition itself is still checked by the backend.
+      const allowedTransitions = can(auth.role, 'practice.transition')
+        ? allowedNextStates(practice.status)
+        : [];
+      return reply.status(200).send(ok({ ...practice, allowedTransitions }));
     } catch (err: unknown) {
       const mapped = mapErrorToHttp(err);
       return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
@@ -161,7 +167,11 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
           tenantId: auth.tenantId,
           userId: targetUserId,
           filter: body.filter,
-          audit: { actorUserId: auth.userId, channel: 'api' },
+          // The dashboard marks its requests (B8): a label for the audit, not a permission.
+          audit: {
+            actorUserId: auth.userId,
+            channel: req.headers['x-sinfonia-client'] === 'web' ? 'web' : 'api',
+          },
         });
 
         return reply.status(200).send(ok(exported));
