@@ -1,7 +1,9 @@
+import { Link } from 'react-router';
+
 import { ROLE_LABELS, type Me } from '../api/client';
 
-const SECTIONS = [
-  { title: 'Pratiche', text: 'Elenco, dettaglio, stati e allegati.' },
+const SECTIONS: Array<{ title: string; text: string; to?: string; adminOnly?: boolean }> = [
+  { title: 'Pratiche', text: 'Elenco, dettaglio, stati e allegati.', to: '/pratiche' },
   { title: 'Scadenze', text: 'DURC, sicurezza, visite mediche e altre scadenze.' },
   { title: 'Export', text: 'Esportazione delle pratiche in CSV.' },
   { title: 'Persone', text: 'Membri, ruoli e inviti.', adminOnly: true },
@@ -18,9 +20,9 @@ export function HomePage({ me }: { me: Me }) {
       <ul className="tiles">
         {SECTIONS.filter((s) => !s.adminOnly || isAdmin).map((s) => (
           <li key={s.title} className="card">
-            <h2>{s.title}</h2>
+            <h2>{s.to ? <Link to={s.to}>{s.title}</Link> : s.title}</h2>
             <p>{s.text}</p>
-            <p className="muted">In arrivo</p>
+            {!s.to && <p className="muted">In arrivo</p>}
           </li>
         ))}
       </ul>
