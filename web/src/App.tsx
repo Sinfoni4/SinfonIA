@@ -4,6 +4,9 @@ import { Layout } from './components/Layout';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { NewPracticePage } from './pages/NewPracticePage';
+import { PracticeDetailPage } from './pages/PracticeDetailPage';
+import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { useSession } from './session/session';
 
@@ -28,6 +31,9 @@ export function App() {
     <Routes>
       <Route element={<Layout me={me} />}>
         <Route index element={<HomePage me={me} />} />
+        <Route path="pratiche" element={<PracticesPage me={me} />} />
+        <Route path="pratiche/nuova" element={<NewPracticePage />} />
+        <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

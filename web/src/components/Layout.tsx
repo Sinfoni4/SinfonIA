@@ -46,6 +46,9 @@ export function Layout({ me }: { me: Me }) {
           )}
           <span className="badge">{ROLE_LABELS[me.current.role]}</span>
         </div>
+        <nav aria-label="Sezioni">
+          <NavLink to="/pratiche">Pratiche</NavLink>
+        </nav>
         <nav aria-label="Account">
           <NavLink to="/profilo">Profilo</NavLink>
           <button type="button" className="link" onClick={() => void logout()}>
