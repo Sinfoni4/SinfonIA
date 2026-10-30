@@ -67,7 +67,7 @@ describe('permission matrix', () => {
   });
 
   // Decisions still open: the expectations above describe today's behaviour for these cases.
-  it.todo('C2: default view of practices in chat for ADMIN and OPERATOR (§3.4)');
+  // C2 is decided and covered by tests/mf2b.chat-view.test.ts.
   it.todo('C3: deletion only by ORG_ADMIN, with confirmation, per rules R1-R13 (§3.5)');
   it.todo('D5: OPERATOR exports the whole organization only with an extra permission (§3.3)');
 });

@@ -356,7 +356,9 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
     it('finds the status and exports only among own practices', async () => {
       const admin = chat('admin', 'ADMIN');
       await admin.say(`stato pratica ${seed.names.member}`);
-      expect(admin.replies[0]).toContain('Nessuna pratica trovata');
+      // C2 (MF2b): still own practices only, with the hint to the explicit organization request.
+      expect(admin.replies[0]).toContain('Nessuna delle tue pratiche');
+      expect(admin.replies[0]).toContain('stato pratica azienda');
       await admin.say('export pratiche');
       expect(admin.replies[1]).toContain(seed.names.admin);
       expect(admin.replies[1]).not.toContain(seed.names.member);

@@ -6,14 +6,14 @@ import { AuditService } from '../../data/services/audit.service.js';
 import { defaultStorageService, type StorageService } from '../../data/storage/storage.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
-import { authorize, type Principal } from '../authz/authorization.service.js';
+import { authorize, scopedUserId, type Principal } from '../authz/authorization.service.js';
 import { AttachmentRejectedError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
 import { readPracticePayload } from './practice.payload.js';
 
-import type { PracticeCommand } from './practice.commands.js';
+import type { ChatTransition, PracticeCommand } from './practice.commands.js';
 import type { PracticeExportFilter } from './practice.export.js';
 import type { PracticeKind, PracticePayloadKind } from './practice.payload.js';
 import type { DocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
@@ -34,7 +34,16 @@ const COMMAND_PERMISSIONS: Record<PracticeCommand['type'], Permission> = {
   GET_PRACTICE_STATUS: 'practice.read',
   DELETE_PRACTICE: 'practice.delete',
   EXPORT_PRACTICES: 'practice.export',
+  LIST_ORG_PRACTICES: 'practice.read',
+  GET_ORG_PRACTICE_STATUS: 'practice.read',
+  TRANSITION_ORG_PRACTICE: 'practice.transition',
+  CONFIRM_TRANSITION: 'practice.transition',
 };
+
+/** Practices per page of the organization list in chat. */
+export const ORG_PRACTICES_PAGE_SIZE = 10;
+// Practices matching a name looked at when searching the whole organization.
+const ORG_NAME_LOOKUP_LIMIT = 50;
 
 export type PracticeView = {
   id: string;
@@ -80,7 +89,23 @@ export type PracticeCommandResult =
   | { type: 'status'; practice: PracticeView }
   | { type: 'deleted'; practice: PracticeView }
   | { type: 'export'; result: PracticeExportResult; send: boolean }
-  | { type: 'not_found'; name: string };
+  /** `orgHint`: the caller may search the whole organization with an explicit request. */
+  | { type: 'not_found'; name: string; orgHint?: boolean }
+  | {
+      type: 'org_list';
+      practices: Array<PracticeView & { own: boolean }>;
+      page: number;
+      totalPages: number;
+      total: number;
+    }
+  | { type: 'org_status'; practice: PracticeView; own: boolean }
+  /** Several practices of the organization have that name: nothing is done. */
+  | { type: 'ambiguous'; name: string; practices: PracticeView[] }
+  /** The caller's permission covers only their own practices. */
+  | { type: 'org_view_denied' }
+  /** The practice belongs to someone else: the person confirms before the transition. */
+  | { type: 'confirm_transition'; practice: PracticeView; nextState: ChatTransition }
+  | { type: 'transitioned'; practice: PracticeView };
 
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -483,8 +508,9 @@ export class PracticeApplicationService {
     command: PracticeCommand,
     actor: PracticeActor,
   ): Promise<PracticeCommandResult> {
-    authorize(actor, COMMAND_PERMISSIONS[command.type]);
-    // Text commands always work on the actor's own practices (chat default view, C2 pending).
+    const grant = authorize(actor, COMMAND_PERMISSIONS[command.type]);
+    // Default view (C2): text commands work on the actor's own practices; the organization only
+    // through the explicit commands below, and never beyond the permission.
     switch (command.type) {
       case 'CREATE_PRACTICE':
         return {
@@ -510,7 +536,79 @@ export class PracticeApplicationService {
         const practice = await this.findPracticeByName(actor, command.payload.name);
         return practice
           ? { type: 'status', practice }
-          : { type: 'not_found', name: command.payload.name };
+          : {
+              type: 'not_found',
+              name: command.payload.name,
+              ...(grant.scope === 'tenant' ? { orgHint: true } : {}),
+            };
+      }
+
+      case 'LIST_ORG_PRACTICES': {
+        if (grant.scope !== 'tenant') return { type: 'org_view_denied' };
+        const page = await this.listPracticesPaginated({
+          tenantId: actor.tenantId,
+          page: command.payload.page,
+          limit: ORG_PRACTICES_PAGE_SIZE,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc',
+        });
+        return {
+          type: 'org_list',
+          practices: page.items.map((p) => ({ ...p, own: p.userId === actor.userId })),
+          page: page.page,
+          totalPages: page.totalPages,
+          total: page.total,
+        };
+      }
+
+      case 'GET_ORG_PRACTICE_STATUS': {
+        if (grant.scope !== 'tenant') return { type: 'org_view_denied' };
+        const found = await this.findOrgPracticesByName(actor, command.payload.name);
+        if (found.length === 0) return { type: 'not_found', name: command.payload.name };
+        if (found.length > 1) {
+          return { type: 'ambiguous', name: command.payload.name, practices: found };
+        }
+        return { type: 'org_status', practice: found[0], own: found[0].userId === actor.userId };
+      }
+
+      case 'TRANSITION_ORG_PRACTICE': {
+        if (grant.scope !== 'tenant') return { type: 'org_view_denied' };
+        const found = await this.findOrgPracticesByName(actor, command.payload.name);
+        if (found.length === 0) return { type: 'not_found', name: command.payload.name };
+        if (found.length > 1) {
+          return { type: 'ambiguous', name: command.payload.name, practices: found };
+        }
+        const practice = found[0];
+        if (practice.userId !== actor.userId) {
+          return { type: 'confirm_transition', practice, nextState: command.payload.nextState };
+        }
+        return {
+          type: 'transitioned',
+          practice: await this.transitionPractice({
+            tenantId: actor.tenantId,
+            userId: actor.userId,
+            practiceId: practice.id,
+            nextState: command.payload.nextState,
+          }),
+        };
+      }
+
+      case 'CONFIRM_TRANSITION': {
+        // Checked again at confirmation: the role or the practice may have changed meanwhile.
+        await this.getPractice({
+          tenantId: actor.tenantId,
+          practiceId: command.payload.practiceId,
+          userId: scopedUserId(grant),
+        });
+        return {
+          type: 'transitioned',
+          practice: await this.transitionPractice({
+            tenantId: actor.tenantId,
+            userId: actor.userId,
+            practiceId: command.payload.practiceId,
+            nextState: command.payload.nextState,
+          }),
+        };
       }
 
       case 'DELETE_PRACTICE': {
@@ -540,6 +638,21 @@ export class PracticeApplicationService {
           send: command.payload.send,
         };
     }
+  }
+
+  /** Practices of the whole organization with exactly that name (case-insensitive). */
+  private async findOrgPracticesByName(
+    actor: PracticeActor,
+    name: string,
+  ): Promise<PracticeView[]> {
+    const needle = name.trim().toLowerCase();
+    if (!needle) return [];
+    const practices = await this.listPractices({
+      tenantId: actor.tenantId,
+      search: name.trim(),
+      limit: ORG_NAME_LOOKUP_LIMIT,
+    });
+    return practices.filter((practice) => practice.name.toLowerCase() === needle);
   }
 
   private async findPracticeByName(
