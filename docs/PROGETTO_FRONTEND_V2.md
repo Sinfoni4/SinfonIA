@@ -1,6 +1,6 @@
 # SinfonIA — Frontend, seconda versione: area dell'organizzazione e console di piattaforma
 
-**Stato**: proposta da approvare · **Data**: 30/10/2026 · **Versione**: 1
+**Stato**: decisioni G1–G9 approvate il 30/10/2026 · **Data**: 30/10/2026 · **Versione**: 1
 **Riferimenti**: `docs/PROGETTO_FRONTEND_V1.md` (pagine P1–P10, tappe FE0–FE5), `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (modello organizzativo §1, deleghe §2.4, permessi §3, RLS §6, accesso eccezionale §7, conservazione §8)
 
 Questo documento estende la dashboard della prima versione in tre direzioni:
@@ -9,7 +9,7 @@ Questo documento estende la dashboard della prima versione in tre direzioni:
 - **sezioni per tipo di organizzazione**: reti d'impresa, consorzi, associazioni di categoria, studi professionali, aziende;
 - **console di piattaforma**: la gestione generale di SinfonIA da parte del super admin.
 
-Le scelte segnate **G1–G9** (§9) sono decisioni del proprietario. Nessuna migrazione, dipendenza o modifica allo staging viene fatta prima dell'approvazione.
+Le scelte **G1–G9** (§9) sono state **approvate dal proprietario il 30/10/2026** come proposte. Le migrazioni (B15, B18, B19), le nuove dipendenze e le modifiche allo staging richiedono comunque un'approvazione separata al momento dell'esecuzione.
 
 ---
 
@@ -155,9 +155,9 @@ L'ordine proposto (G8) mette prima la console perché sostituisce gli script per
 
 ---
 
-## 9. Decisioni richieste
+## 9. Decisioni (approvate il 30/10/2026)
 
-| #   | Decisione                        | Proposta                                                                                                                                                         |
+| #   | Decisione                        | Decisione                                                                                                                                                        |
 | :-- | :------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | G1  | Dove sta la console              | area `/app/piattaforma` della stessa app, con token separato. Alternativa: app separata su un indirizzo dedicato e raggiungibile solo da rete fidata             |
 | G2  | Verifica per la console          | v1: codice email recente (12 ore) e nuovo codice per le azioni critiche; poi secondo fattore (app di autenticazione o passkey)                                   |
