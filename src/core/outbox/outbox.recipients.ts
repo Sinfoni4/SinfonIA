@@ -78,6 +78,27 @@ export async function whatsappDeliveries(
 }
 
 /** Telegram and WhatsApp deliveries of the same content to the same recipients. */
+/**
+ * Messages of a suspended or deactivated organization are held (retried later) instead of being
+ * delivered or dropped: if it is reactivated in time they go out (MF5).
+ */
+async function heldForInactiveOrganization(
+  prisma: PrismaLike,
+  tenantId: string,
+): Promise<OutboxDelivery[] | null> {
+  const org = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { status: true } });
+  if (!org || org.status === 'ACTIVE') return null;
+  return [
+    {
+      target: 'organization',
+      send: () =>
+        Promise.reject(
+          new DeliveryError(`Organizzazione non attiva (${org.status})`, { permanent: false }),
+        ),
+    },
+  ];
+}
+
 export async function chatDeliveries(
   prisma: PrismaLike,
   tenantId: string,
@@ -85,6 +106,8 @@ export async function chatDeliveries(
   send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
   extraUserIds: string[] = [],
 ): Promise<OutboxDelivery[]> {
+  const held = await heldForInactiveOrganization(prisma, tenantId);
+  if (held) return held;
   return [
     ...(await telegramDeliveries(prisma, tenantId, channels.telegram, send, extraUserIds)),
     ...(await whatsappDeliveries(prisma, tenantId, channels.whatsapp, send, extraUserIds)),
@@ -98,6 +121,8 @@ export async function webhookDeliveries(
   webhook: WebhookNotifier | undefined,
   data: unknown,
 ): Promise<OutboxDelivery[]> {
+  const held = await heldForInactiveOrganization(prisma, message.tenantId);
+  if (held) return held;
   const tenant = await prisma.tenant.findUnique({
     where: { id: message.tenantId },
     select: { webhookUrl: true },

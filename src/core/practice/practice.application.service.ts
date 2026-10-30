@@ -414,6 +414,33 @@ export class PracticeApplicationService {
   }
 
   /**
+   * The file of an attachment, with the same access check as the practice (own-scoped callers
+   * only reach their own practices). The attachment must belong to that practice.
+   */
+  async downloadAttachment(input: {
+    tenantId: string;
+    practiceId: string;
+    attachmentId: string;
+    userId?: string;
+  }): Promise<{ fileName: string; mimeType: string; content: Buffer }> {
+    requireDatabase();
+    await this.getPractice({
+      tenantId: input.tenantId,
+      practiceId: input.practiceId,
+      userId: input.userId,
+    });
+    const attachment = await this.attachmentRepository.getAttachmentById(
+      input.tenantId,
+      input.attachmentId,
+    );
+    if (attachment.practiceId !== input.practiceId) {
+      throw new NotFoundError('Attachment not found');
+    }
+    const content = await this.storageService.read(input.tenantId, attachment.storagePath);
+    return { fileName: attachment.fileName, mimeType: attachment.mimeType, content };
+  }
+
+  /**
    * CSV export of a tenant's (or a user's) practices. Read from the database in batches with the
    * date filter applied in the query, and without payloads, so memory does not grow with the
    * number or size of the practices (10,000 practices are covered by a test).

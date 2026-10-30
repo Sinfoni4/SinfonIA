@@ -11,6 +11,10 @@ export type AuthClaims = {
   exp: number;
   iss: string;
   aud: string;
+  /** Login session (MF6); tokens without it are only valid until the next global revocation. */
+  sid?: string;
+  /** auth_version of the person when the token was issued (MF5). */
+  ver?: number;
 };
 
 export type AuthContext = {

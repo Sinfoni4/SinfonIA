@@ -12,6 +12,7 @@ import { buildRateLimitOptions, createTenantLimiter } from './middleware/rate-li
 import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
+import { membersRoutes } from './routes/members.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
 import { whatsappRoutes, type WhatsAppRoutesOptions } from './routes/whatsapp.routes.js';
 
@@ -27,6 +28,7 @@ import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
+import type { PrismaClient } from '@prisma/client';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -49,6 +51,8 @@ export type ServerDeps = {
   decisionEngine: DecisionEngine;
   normalizerService: NormalizerService;
   tracer?: AITracer;
+  /** Database for the members administration (MF5); routes absent when not given. */
+  prisma?: PrismaClient;
 };
 
 export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDeps) {
@@ -130,6 +134,9 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   void app.register(aiRoutes, deps);
   if (deps.whatsappWebhook) {
     void app.register(whatsappRoutes, deps.whatsappWebhook);
+  }
+  if (deps.prisma) {
+    void app.register(membersRoutes, { prisma: deps.prisma });
   }
   if (deps.complianceService) {
     void app.register(complianceRoutes, { complianceService: deps.complianceService });

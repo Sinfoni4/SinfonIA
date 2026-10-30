@@ -15,6 +15,12 @@ export type Grant = { principal: Principal; permission: Permission; scope: Permi
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const MEMBERSHIP_SQL = `SELECT m."role" FROM "membership" m
+   JOIN "user" u ON u."id" = m."user_id"
+   JOIN "tenant" t ON t."id" = m."org_id"
+  WHERE m."user_id" = $1 AND m."org_id" = $2 AND m."status" = 'ACTIVE'
+    AND u."status" = 'ACTIVE' AND t."status" = 'ACTIVE' AND u."auth_version" = $3`;
+
 /** Message starts with PERMISSION_DENIED: chat channels turn it into the Italian reply. */
 export class PermissionDeniedError extends Error {
   constructor(readonly permission: Permission) {
@@ -51,6 +57,10 @@ export type PrincipalResolver = (identity: {
   tenantId: string;
   userId: string;
   tokenRole: UserRole;
+  /** auth_version in the token: an older one means a revoked token (MF5). */
+  authVersion?: number;
+  /** Session in the token (MF6 logins): must exist, be open and not expired. */
+  sessionId?: string;
 }) => Promise<Principal | null>;
 
 export function createPrismaPrincipalResolver(
@@ -60,38 +70,57 @@ export function createPrismaPrincipalResolver(
   // (no ORM overhead), the same query through Prisma otherwise.
   const pool = poolOf(prisma);
   const find = pool
-    ? async (userId: string, tenantId: string) => {
-        // Unique index (user_id, org_id): one lookup, as before MF4.
-        const { rows } = await pool.query<{ role: UserRole }>({
-          name: 'authz_membership',
-          text: `SELECT m."role" FROM "membership" m
-                   JOIN "user" u ON u."id" = m."user_id"
-                   JOIN "tenant" t ON t."id" = m."org_id"
-                  WHERE m."user_id" = $1 AND m."org_id" = $2 AND m."status" = 'ACTIVE'
-                    AND u."status" = 'ACTIVE' AND t."status" = 'ACTIVE'`,
-          values: [userId, tenantId],
-        });
+    ? async (userId: string, tenantId: string, authVersion: number, sessionId?: string) => {
+        // One query (unique index on user_id, org_id): membership, statuses, token version and,
+        // when present, the session.
+        const { rows } = await pool.query<{ role: UserRole }>(
+          sessionId
+            ? {
+                name: 'authz_membership_session',
+                text: `${MEMBERSHIP_SQL} AND EXISTS (
+                         SELECT 1 FROM "session" s
+                          WHERE s."id" = $4 AND s."user_id" = u."id" AND s."revoked_at" IS NULL
+                            AND s."expires_at" > now() AND s."auth_version" = u."auth_version")`,
+                values: [userId, tenantId, authVersion, sessionId],
+              }
+            : {
+                name: 'authz_membership',
+                text: MEMBERSHIP_SQL,
+                values: [userId, tenantId, authVersion],
+              },
+        );
         return rows[0]?.role ?? null;
       }
-    : async (userId: string, tenantId: string) =>
+    : async (userId: string, tenantId: string, authVersion: number, sessionId?: string) =>
         (
           await prisma.membership.findFirst({
             where: {
               userId,
               orgId: tenantId,
               status: 'ACTIVE',
-              user: { status: 'ACTIVE' },
+              user: {
+                status: 'ACTIVE',
+                authVersion,
+                ...(sessionId
+                  ? {
+                      sessions: {
+                        some: { id: sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
+                      },
+                    }
+                  : {}),
+              },
               org: { status: 'ACTIVE' },
             },
             select: { role: true },
           })
         )?.role ?? null;
 
-  return async ({ tenantId, userId }) => {
+  return async ({ tenantId, userId, authVersion = 0, sessionId }) => {
     // The role of the ACTIVE membership in the token's organization (MF4); a suspended person or
     // organization, or a revoked membership, gives no access.
     if (!UUID.test(userId) || !UUID.test(tenantId)) return null;
-    const role = await find(userId, tenantId);
+    if (sessionId !== undefined && !UUID.test(sessionId)) return null;
+    const role = await find(userId, tenantId, authVersion, sessionId);
     return role ? { tenantId, userId, role } : null;
   };
 }

@@ -145,7 +145,13 @@ export class SchedulerService {
     let triggeredCount = 0;
     let skippedCount = 0;
 
-    let tenants = await getAllTenants(this.prisma);
+    // Suspended or deactivated organizations get no scheduled task (MF5).
+    const active = new Set(
+      (
+        await this.prisma.tenant.findMany({ where: { status: 'ACTIVE' }, select: { id: true } })
+      ).map((t) => t.id),
+    );
+    let tenants = (await getAllTenants(this.prisma)).filter((t) => active.has(t.id));
     if (tenantId) {
       tenants = tenants.filter((t) => t.id === tenantId);
     }

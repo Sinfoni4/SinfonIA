@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import { scopedUserId } from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
 import { requirePermission } from '../auth/guards.js';
@@ -16,6 +18,11 @@ import {
 
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+
+const AttachmentDownloadParamsSchema = z.object({
+  id: z.string().uuid(),
+  attachmentId: z.string().uuid(),
+});
 
 export type PracticeRoutesDeps = {
   practiceService: PracticeApplicationService;
@@ -242,6 +249,37 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         });
 
         return reply.status(200).send(ok(attachments));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  // GET /practices/:id/attachments/:attachmentId/download — the file, after the access check.
+  app.get(
+    '/practices/:id/attachments/:attachmentId/download',
+    { config: { permission: 'attachment.read' } },
+    async (req, reply) => {
+      try {
+        const grant = requirePermission(req, 'attachment.read');
+        const params = AttachmentDownloadParamsSchema.parse(req.params);
+        const file = await deps.practiceService.downloadAttachment({
+          tenantId: grant.principal.tenantId,
+          practiceId: params.id,
+          attachmentId: params.attachmentId,
+          userId: scopedUserId(grant),
+        });
+        // Never cached, always downloaded (no rendering of uploaded content in the browser).
+        return reply
+          .header('cache-control', 'no-store')
+          .header('x-content-type-options', 'nosniff')
+          .header(
+            'content-disposition',
+            `attachment; filename="${file.fileName.replace(/[^\w.-]/g, '_')}"`,
+          )
+          .type(file.mimeType)
+          .send(file.content);
       } catch (err: unknown) {
         const mapped = mapErrorToHttp(err);
         return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
