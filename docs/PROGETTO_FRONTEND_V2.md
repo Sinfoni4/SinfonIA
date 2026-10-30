@@ -157,7 +157,7 @@ L'ordine proposto (G8) mette prima la console perché sostituisce gli script per
 
 ## 9. Decisioni (approvate il 30/10/2026)
 
-| #   | Decisione                        | Decisione                                                                                                                                                        |
+| #   | Tema                             | Decisione                                                                                                                                                        |
 | :-- | :------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | G1  | Dove sta la console              | area `/app/piattaforma` della stessa app, con token separato. Alternativa: app separata su un indirizzo dedicato e raggiungibile solo da rete fidata             |
 | G2  | Verifica per la console          | v1: codice email recente (12 ore) e nuovo codice per le azioni critiche; poi secondo fattore (app di autenticazione o passkey)                                   |
