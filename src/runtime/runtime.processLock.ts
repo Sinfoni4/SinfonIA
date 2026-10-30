@@ -13,7 +13,9 @@ import { log } from '../shared/log.js';
  */
 
 function getPidFilePath() {
-  return path.join(process.cwd(), '.runtime', 'dev.pid');
+  // A second, separate instance (e.g. the dashboard demo on the test database) has its own lock.
+  const instance = process.env.SINFONIA_INSTANCE?.replace(/[^a-z0-9-]/gi, '');
+  return path.join(process.cwd(), '.runtime', instance ? `dev-${instance}.pid` : 'dev.pid');
 }
 
 const isProduction = () => process.env.NODE_ENV === 'production';

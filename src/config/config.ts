@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
+/** An empty environment variable counts as not set. */
+function unsetIfEmpty<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((v) => (v === '' ? undefined : v), schema);
+}
+
 // Centralized, validated configuration.
 // If configuration is invalid, the process must fail fast (enterprise safety).
 // quiet: dotenv would otherwise print an unstructured banner line to stdout.
@@ -79,10 +84,11 @@ const ConfigSchema = z
     // Shared secret for signing webhook deliveries; webhooks are not sent without it.
     OUTBOX_WEBHOOK_SECRET: z.string().min(32).optional(),
     // WhatsApp Business Cloud API: the channel is on only when all four values are set.
-    WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
-    WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
-    WHATSAPP_APP_SECRET: z.string().min(1).optional(),
-    WHATSAPP_VERIFY_TOKEN: z.string().min(16).optional(),
+    // Empty means not configured (e.g. the dashboard demo turns WhatsApp off explicitly).
+    WHATSAPP_ACCESS_TOKEN: unsetIfEmpty(z.string().min(1).optional()),
+    WHATSAPP_PHONE_NUMBER_ID: unsetIfEmpty(z.string().min(1).optional()),
+    WHATSAPP_APP_SECRET: unsetIfEmpty(z.string().min(1).optional()),
+    WHATSAPP_VERIFY_TOKEN: unsetIfEmpty(z.string().min(16).optional()),
     WHATSAPP_API_VERSION: z.string().min(2).default('v21.0'),
     // HTTP request limits per minute: per user, per user on /ai/execute, per tenant.
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(120),
