@@ -145,6 +145,20 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
   // Named invitations (MF6), only when email login is enabled.
   const login = deps.login;
   if (login) {
+    // Pending, accepted, revoked and expired invitations (B3); never the token.
+    app.get(
+      '/members/invitations',
+      { config: { permission: 'members.read' } },
+      async (req, reply) => {
+        try {
+          const auth = requirePermission(req, 'members.read').principal;
+          return reply.send(ok(await login.listInvitations(auth.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
     app.post(
       '/members/invitations',
       { config: { permission: 'members.manage' } },

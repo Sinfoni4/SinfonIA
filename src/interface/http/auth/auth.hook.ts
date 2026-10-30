@@ -22,10 +22,18 @@ export const PUBLIC_PATHS = new Set([
   '/auth/invitations/accept',
 ]);
 
+/**
+ * The built dashboard (B2) is public: the page holds no data, and every API call it makes is
+ * authenticated like any other.
+ */
+export function isPublicPath(path: string): boolean {
+  return PUBLIC_PATHS.has(path) || path === '/app' || path.startsWith('/app/');
+}
+
 export function createAuthHook(authService: AuthService, principals: PrincipalResolver) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const path = req.url.split('?')[0] ?? req.url;
-    if (PUBLIC_PATHS.has(path)) return;
+    if (isPublicPath(path)) return;
 
     try {
       const claims = authService.authenticate(req.headers.authorization);

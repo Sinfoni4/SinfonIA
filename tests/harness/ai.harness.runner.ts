@@ -372,6 +372,7 @@ export async function runHarness(args: {
       LLM_PROVIDER: 'openai',
       AZURE_OPENAI_API_VERSION: '2024-10-21',
       AUTH_EMAIL_LOGIN: false,
+      AUTH_DEV_SHOW_CODE: false,
       RATE_LIMIT_AUTH_PER_MINUTE: 10,
       MISTRAL_MODEL: 'mistral-small-latest',
     },

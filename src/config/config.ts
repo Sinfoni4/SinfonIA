@@ -36,6 +36,14 @@ const ConfigSchema = z
     AUTH_ISSUER: z.string().min(1).default('sinfonia'),
     AUTH_AUDIENCE: z.string().min(1).default('sinfonia-api'),
     AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(3600),
+    // Development only (F5): the login code is also returned to the caller.
+    AUTH_DEV_SHOW_CODE: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
+    // Built dashboard served under /app (B2); absent: no dashboard.
+    WEB_DIST_DIR: z.string().min(1).optional(),
     // Email login (MF6): off until an email provider is chosen (D11); emails are simulated.
     AUTH_EMAIL_LOGIN: z
       .string()
@@ -95,6 +103,11 @@ const ConfigSchema = z
       path: ['LLM_PROVIDER'],
     },
   )
+  .refine((c) => !c.AUTH_DEV_SHOW_CODE || c.NODE_ENV === 'development', {
+    // A login code returned to the caller would make the email useless as a proof.
+    message: 'AUTH_DEV_SHOW_CODE is allowed only with NODE_ENV=development',
+    path: ['AUTH_DEV_SHOW_CODE'],
+  })
   .refine((c) => !(c.AUTH_EMAIL_LOGIN && c.NODE_ENV === 'production'), {
     // The login codes would go nowhere: no email provider is configured yet (D11).
     message: 'AUTH_EMAIL_LOGIN needs a real email provider, not available yet',

@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 
 import { runtimeState } from '../../runtime/runtime.state.js';
 
-import { createAuthHook, PUBLIC_PATHS } from './auth/auth.hook.js';
+import { createAuthHook, isPublicPath } from './auth/auth.hook.js';
 import { AuthService } from './auth/auth.service.js';
 import { requireAuthContext } from './auth/guards.js';
 import { issueAuthToken } from './auth/token.js';
@@ -16,6 +16,7 @@ import { authRoutes } from './routes/auth.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
 import { membersRoutes } from './routes/members.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
+import { webRoutes } from './routes/web.routes.js';
 import { whatsappRoutes, type WhatsAppRoutesOptions } from './routes/whatsapp.routes.js';
 
 import type { ContextService } from '../../ai/context/context.service.js';
@@ -85,7 +86,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   // Every authenticated route must declare the permission it needs: a route without one does
   // not start, so none can be added without going through the authorization service.
   app.addHook('onRoute', (route) => {
-    if (PUBLIC_PATHS.has(route.url) || route.config?.permission) return;
+    if (isPublicPath(route.url) || route.config?.permission) return;
     throw new Error(`Route ${route.method.toString()} ${route.url} declares no permission`);
   });
 
@@ -96,7 +97,23 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     perTenantPerMinute: config.RATE_LIMIT_TENANT_PER_MINUTE,
   };
   // Both plugins are registered on the root instance (not encapsulated), before the routes.
-  void app.register(helmet);
+  // Strict content policy (B7): the dashboard loads only its own files and talks only to this API.
+  void app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+  });
   void app.register(rateLimit, buildRateLimitOptions(limits));
   app.addHook('preHandler', createTenantLimiter(limits.perTenantPerMinute));
 
@@ -162,6 +179,9 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   }
   if (deps.complianceService) {
     void app.register(complianceRoutes, { complianceService: deps.complianceService });
+  }
+  if (config.WEB_DIST_DIR) {
+    void app.register(webRoutes, { distDir: config.WEB_DIST_DIR });
   }
 
   // Future-ready: auth middleware, rate limiting (structure only).

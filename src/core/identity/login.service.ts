@@ -10,6 +10,8 @@ import {
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 
+import { revokeAllSessions } from './revocation.service.js';
+
 import type { EmailSender } from '../email/email.sender.js';
 import type { PrismaClient, UserRole } from '@prisma/client';
 
@@ -81,14 +83,40 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+export type LoginServiceOptions = {
+  log?: Log;
+  now?: () => Date;
+  /**
+   * Development only (F5): the code is also returned to the caller, so a developer can log in
+   * with the simulated email. The configuration refuses it outside NODE_ENV=development.
+   */
+  exposeCodes?: boolean;
+};
+
+export type InvitationView = {
+  id: string;
+  email: string;
+  role: UserRole;
+  status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+  expiresAt: Date;
+  createdAt: Date;
+};
+
 export class LoginService {
+  private readonly log?: Log;
+  private readonly now: () => Date;
+  private readonly exposeCodes: boolean;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly email: EmailSender,
     private readonly secret: string,
-    private readonly log?: Log,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+    options: LoginServiceOptions = {},
+  ) {
+    this.log = options.log;
+    this.now = options.now ?? (() => new Date());
+    this.exposeCodes = options.exposeCodes ?? false;
+  }
 
   private codeHash(challengeId: string, code: string): string {
     return createHmac('sha256', this.secret).update(`${challengeId}:${code}`).digest('hex');
@@ -142,7 +170,7 @@ export class LoginService {
    * Starts a login. The answer (a challenge id) is the same for any email: a challenge exists even
    * when no account matches, it just can never be verified and no email is sent.
    */
-  async startLogin(email: string): Promise<{ challengeId: string }> {
+  async startLogin(email: string): Promise<{ challengeId: string; devCode?: string }> {
     const userId = await this.accountFor(email);
     const challenge = await this.createChallenge('LOGIN', email, userId);
     if (!challenge) {
@@ -158,6 +186,7 @@ export class LoginService {
           `Il tuo codice di accesso è ${challenge.code}.\n` +
           'Vale 10 minuti e una sola volta. Se non hai chiesto tu di accedere, ignora questo messaggio.',
       });
+      if (this.exposeCodes) return { challengeId: challenge.id, devCode: challenge.code };
     }
     return { challengeId: challenge.id };
   }
@@ -407,7 +436,7 @@ export class LoginService {
   }
 
   /** Sends a code to the invited email: accepting proves control of that same mailbox. */
-  async startInvitation(token: string): Promise<{ challengeId: string }> {
+  async startInvitation(token: string): Promise<{ challengeId: string; devCode?: string }> {
     const invitation = await this.openInvitation(token);
     const challenge = await this.createChallenge('INVITATION', invitation.email, null);
     if (!challenge) throw new InvitationError('Troppe richieste: riprova più tardi');
@@ -416,7 +445,47 @@ export class LoginService {
       subject: 'Conferma il tuo invito su SinfonIA',
       text: `Il codice per accettare l'invito è ${challenge.code}. Vale 10 minuti.`,
     });
-    return { challengeId: challenge.id };
+    return this.exposeCodes
+      ? { challengeId: challenge.id, devCode: challenge.code }
+      : { challengeId: challenge.id };
+  }
+
+  /** Invitations of an organization, newest first, with their state (no token). */
+  async listInvitations(orgId: string): Promise<InvitationView[]> {
+    const rows = await this.prisma.invitation.findMany({
+      where: { orgId },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        acceptedAt: true,
+        revokedAt: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    });
+    const now = this.now();
+    return rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      role: r.role,
+      status: r.acceptedAt
+        ? 'ACCEPTED'
+        : r.revokedAt
+          ? 'REVOKED'
+          : r.expiresAt <= now
+            ? 'EXPIRED'
+            : 'PENDING',
+      expiresAt: r.expiresAt,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /** «Esci da tutti i dispositivi»: every session and token of the person ends (MF5). */
+  async logoutEverywhere(userId: string): Promise<void> {
+    await revokeAllSessions(this.prisma, userId, { userId });
   }
 
   /**
