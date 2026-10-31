@@ -49,6 +49,9 @@ const ConfigSchema = z
       .transform((v) => v === 'true' || v === '1'),
     // Built dashboard served under /app (B2); absent: no dashboard.
     WEB_DIST_DIR: z.string().min(1).optional(),
+    // Network address of the HTTP server. Absent: this PC only (127.0.0.1) when login codes are
+    // shown on screen (AUTH_DEV_SHOW_CODE), otherwise every interface (0.0.0.0).
+    HOST: z.string().trim().min(1).optional(),
     // Public address of the dashboard, for the links in emails (invitations); absent: code only.
     WEB_PUBLIC_URL: z
       .string()

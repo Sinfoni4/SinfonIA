@@ -8,7 +8,11 @@
  *
  * Host and port come from DATABASE_URL in .env.test, the password from DB_APP_PASSWORD in .env;
  * the connection string is never printed. `--check` only checks and reports.
- * Usage: npm run staging:start [-- --check]
+ *
+ * `--dashboard-login`: the dashboard login with the code shown on screen, while emails are
+ * simulated (no provider yet, D11). The server then answers on this PC only (127.0.0.1): anyone
+ * who reached the page could log in as anyone invited.
+ * Usage: npm run staging:start [-- --check] [-- --dashboard-login]
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -23,6 +27,7 @@ const STORAGE_DIR = path.resolve('.runtime/storage-staging');
 const WEB_DIST = path.resolve('web/dist');
 const PORT = Number(process.env.STAGING_PORT ?? 3110);
 const checkOnly = process.argv.includes('--check');
+const dashboardLogin = process.argv.includes('--dashboard-login');
 
 function envValue(file: string, key: string): string {
   if (!existsSync(file)) throw new Error(`${file} not found (run from the repository folder)`);
@@ -104,6 +109,11 @@ async function main() {
     return;
   }
   console.log(`Applicazione: avvio sulla porta ${PORT} con ${APP_ROLE} (Ctrl+C per fermarla)`);
+  if (dashboardLogin) {
+    console.log(
+      `Dashboard: http://localhost:${PORT}/app/ con il codice sullo schermo, solo da questo PC`,
+    );
+  }
   const app = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     stdio: 'inherit',
     env: {
@@ -115,6 +125,14 @@ async function main() {
       PORT: String(PORT),
       SCHEDULER_INTERVAL_MS: process.env.SCHEDULER_INTERVAL_MS ?? '15000',
       OUTBOX_DISPATCH_INTERVAL_MS: process.env.OUTBOX_DISPATCH_INTERVAL_MS ?? '3000',
+      ...(dashboardLogin
+        ? {
+            AUTH_EMAIL_LOGIN: 'true',
+            AUTH_DEV_SHOW_CODE: 'true',
+            WEB_PUBLIC_URL: `http://localhost:${PORT}`,
+            HOST: '127.0.0.1',
+          }
+        : {}),
     },
   });
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {

@@ -7,7 +7,14 @@ const BASE_DELAY_MS = 250;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DEV_MAX_TOTAL_WAIT_MS = 15000;
 
-export async function listenWithRetry(server: Server, port: number): Promise<void> {
+/** All network interfaces: the default, as before. */
+export const ALL_INTERFACES = '0.0.0.0';
+
+export async function listenWithRetry(
+  server: Server,
+  port: number,
+  host: string = ALL_INTERFACES,
+): Promise<void> {
   let attempt = 0;
   const startTime = Date.now();
 
@@ -31,7 +38,7 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
 
         server.once('error', onError);
         server.once('listening', onListening);
-        server.listen(port, '0.0.0.0');
+        server.listen(port, host);
       });
 
       return;
@@ -54,13 +61,16 @@ export async function listenWithRetry(server: Server, port: number): Promise<voi
       }
 
       const delay = BASE_DELAY_MS * Math.max(1, attempt);
-      log.warn({ port, attempt, maxRetries: MAX_RETRIES, delayMs: delay }, 'Port busy, retrying');
+      log.warn(
+        { port, host, attempt, maxRetries: MAX_RETRIES, delayMs: delay },
+        'Port busy, retrying',
+      );
 
       const elapsed = Date.now() - startTime;
       if (!IS_PRODUCTION && elapsed > DEV_MAX_TOTAL_WAIT_MS) {
         log.warn('HTTP bind postponed: runtime continues without HTTP');
         setTimeout(() => {
-          void listenWithRetry(server, port).catch(() => {});
+          void listenWithRetry(server, port, host).catch(() => {});
         }, 3000);
         return;
       }

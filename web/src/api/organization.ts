@@ -86,6 +86,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'INVITATION_CREATED',
       'INVITATION_ACCEPTED',
       'INVITATION_REVOKED',
+      'MEMBER_ADDED',
       'MEMBER_ROLE_CHANGED',
       'MEMBERSHIP_REVOKED',
       'MEMBERSHIP_REACTIVATED',
@@ -190,6 +191,8 @@ export function describeEvent(event: AuditEvent): string {
       return `Invito accettato come ${roleName(d.role)}`;
     case 'INVITATION_REVOKED':
       return 'Invito revocato';
+    case 'MEMBER_ADDED':
+      return `${target} aggiunto come ${roleName(d.role)}`;
     case 'MEMBER_ROLE_CHANGED':
       return `Ruolo di ${target}: da ${roleName(d.from)} a ${roleName(d.to)}`;
     case 'MEMBERSHIP_REVOKED':
