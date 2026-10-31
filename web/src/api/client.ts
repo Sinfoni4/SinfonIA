@@ -12,8 +12,13 @@ export type Me = {
   userId: string;
   email: string | null;
   organizations: Organization[];
+  /** A platform administrator: the console is offered too (FE7). */
+  platform: boolean;
   current: { orgId: string; role: Role };
 };
+
+/** The platform administrator in the console, with their own organizations to go back to. */
+export type PlatformAdmin = { userId: string; email: string; organizations: Organization[] };
 
 export class ApiError extends Error {
   constructor(

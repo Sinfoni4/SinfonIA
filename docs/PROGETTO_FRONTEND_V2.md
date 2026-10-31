@@ -1,6 +1,6 @@
 # SinfonIA — Frontend, seconda versione: area dell'organizzazione e console di piattaforma
 
-**Stato**: decisioni G1–G9 approvate il 30/10/2026 · **Data**: 30/10/2026 · **Versione**: 1
+**Stato**: decisioni G1–G9 approvate il 30/10/2026; FE4, FE6 e FE7 eseguite (§7) · **Data**: 31/10/2026 · **Versione**: 2
 **Riferimenti**: `docs/PROGETTO_FRONTEND_V1.md` (pagine P1–P10, tappe FE0–FE5), `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (modello organizzativo §1, deleghe §2.4, permessi §3, RLS §6, accesso eccezionale §7, conservazione §8)
 
 Questo documento estende la dashboard della prima versione in tre direzioni:
@@ -140,6 +140,17 @@ Le migrazioni (B15, B18, B19) seguono la regola già in vigore: prima su copia, 
 | FE10  | Collegamento della chat (P15) e accesso eccezionale (A7)                                                                        |        da stimare        | MF7 (D11), D9      |
 
 **Totale stimato FE4–FE8 più FE5: 19–21 giorni di lavoro.** Le stime sono indicative.
+
+**Avanzamento (31/10/2026)**
+
+|        Tappa        | Stato                                                                                                                                                                                                                                                                                                                              |
+| :-----------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|         FE4         | eseguita (PR #35)                                                                                                                                                                                                                                                                                                                  |
+|         FE6         | eseguita (PR #36)                                                                                                                                                                                                                                                                                                                  |
+|         FE7         | eseguita: accesso con token separato e codice recente (G1, G2), A1–A3 e A6, codice di conferma per creazione e sospensione, tipo «cooperativa» (G6), script `npm run platform:admin` (G4). Le **funzioni attive per organizzazione** (`…/features` di B15) sono rinviate a FE9, quando esisteranno funzioni da attivare (MF8, MF9) |
+| FE8, FE5, FE9, FE10 | da fare                                                                                                                                                                                                                                                                                                                            |
+
+La migrazione di FE7 (`20261031120000_fe7_platform_console`) è applicata solo al database di test. Sullo staging serve un'approvazione separata; dopo la migrazione va rieseguito lo script dei ruoli (`scripts/db/apply-roles.ts`), che toglie all'applicazione modifica e cancellazione sul registro della piattaforma.
 
 L'ordine proposto (G8) mette prima la console perché sostituisce gli script per creare le organizzazioni ed è necessaria per accogliere il pilota; FE9 e FE10 partono quando le decisioni rinviate saranno prese.
 

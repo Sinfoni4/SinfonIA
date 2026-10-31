@@ -4,16 +4,23 @@ import { describeError, ROLE_LABELS, type Organization } from '../api/client';
 import { useSession } from '../session/session';
 
 /** P2: a person in several organizations chooses where to work. */
-export function ChooseOrganizationPage({ organizations }: { organizations: Organization[] }) {
-  const { enter, logout } = useSession();
+export function ChooseOrganizationPage({
+  organizations,
+  platform = false,
+}: {
+  organizations: Organization[];
+  /** A platform administrator: the console is one of the choices (FE7). */
+  platform?: boolean;
+}) {
+  const { enter, enterPlatform, logout } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const choose = async (orgId: string) => {
+  const choose = async (orgId: string | null) => {
     setBusy(true);
     setError(null);
     try {
-      await enter(orgId);
+      await (orgId ? enter(orgId) : enterPlatform());
     } catch (err: unknown) {
       setError(describeError(err));
       setBusy(false);
@@ -33,6 +40,14 @@ export function ChooseOrganizationPage({ organizations }: { organizations: Organ
               </button>
             </li>
           ))}
+          {platform && (
+            <li>
+              <button type="button" disabled={busy} onClick={() => void choose(null)}>
+                <span>Console di piattaforma</span>
+                <span className="muted">gestione di SinfonIA</span>
+              </button>
+            </li>
+          )}
         </ul>
         {error && (
           <p className="error" role="alert">

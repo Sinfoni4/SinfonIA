@@ -638,3 +638,8 @@ ul.plain li:last-child {
 .pager button {
   margin-top: 0;
 }
+
+/* Platform console (FE7): a different header, so nobody confuses it with an organization. */
+.topbar.console {
+  background: var(--dev-bg);
+}

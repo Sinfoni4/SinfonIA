@@ -10,6 +10,7 @@ import { InvitationPage } from './pages/InvitationPage';
 import { LoginPage } from './pages/LoginPage';
 import { NewPracticePage } from './pages/NewPracticePage';
 import { PeoplePage } from './pages/PeoplePage';
+import { PlatformApp } from './pages/PlatformPages';
 import { PracticeDetailPage } from './pages/PracticeDetailPage';
 import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -32,8 +33,9 @@ export function App() {
   if (pathname === '/invito') return <InvitationPage />;
   if (state.status === 'anonymous') return <LoginPage notice={state.notice} />;
   if (state.status === 'choosing') {
-    return <ChooseOrganizationPage organizations={state.organizations} />;
+    return <ChooseOrganizationPage organizations={state.organizations} platform={state.platform} />;
   }
+  if (state.status === 'platform') return <PlatformApp admin={state.admin} />;
 
   const { me } = state;
   return (

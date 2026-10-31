@@ -16,6 +16,7 @@ import {
   send,
   type Me,
   type Organization,
+  type PlatformAdmin,
   type RequestOptions,
 } from '../api/client';
 
@@ -31,8 +32,9 @@ import {
 export type SessionState =
   | { status: 'loading' }
   | { status: 'anonymous'; notice?: string }
-  | { status: 'choosing'; organizations: Organization[] }
-  | { status: 'ready'; me: Me };
+  | { status: 'choosing'; organizations: Organization[]; platform?: boolean }
+  | { status: 'ready'; me: Me }
+  | { status: 'platform'; admin: PlatformAdmin };
 
 type TokenGrant = { accessToken: string; expiresIn: number };
 
@@ -45,6 +47,10 @@ type Session = {
   /** P9: accepts the invitation with the code and opens the session, like a login. */
   acceptInvitation: (token: string, challengeId: string, code: string) => Promise<void>;
   enter: (orgId: string) => Promise<void>;
+  /** FE7: the platform console, with its own token (G1). */
+  enterPlatform: () => Promise<void>;
+  /** From the console back to the administrator's own organizations. */
+  leavePlatform: () => Promise<void>;
   /** Reads again who is logged in (e.g. after the organization changed its name). */
   refreshMe: () => Promise<void>;
   logout: () => Promise<void>;
@@ -58,6 +64,8 @@ type Session = {
 const SessionContext = createContext<Session | null>(null);
 
 const LAST_ORG = 'sinfonia.lastOrganization';
+/** Where the tokens are for, instead of an organization id: the platform console. */
+const PLATFORM = 'platform';
 
 // Storage can be missing or blocked (private windows): the session works without it.
 function rememberOrg(orgId: string | null) {
@@ -100,15 +108,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
-  /** A new access token for an organization, with the refresh cookie; schedules the next one. */
+  /**
+   * A new access token for an organization, or for the console (`PLATFORM`), with the refresh
+   * cookie; schedules the next one.
+   */
   const renew = useCallback(
     (org: string): Promise<string> => {
       if (renewing.current) return renewing.current;
       const run = (async () => {
-        const grant = await request<TokenGrant>('/auth/token', {
-          method: 'POST',
-          body: { orgId: org },
-        });
+        const grant =
+          org === PLATFORM
+            ? await request<TokenGrant>('/auth/platform-token', { method: 'POST', body: {} })
+            : await request<TokenGrant>('/auth/token', { method: 'POST', body: { orgId: org } });
         token.current = grant.accessToken;
         orgId.current = org;
         if (timer.current) clearTimeout(timer.current);
@@ -137,7 +148,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return await call(await renew(orgId.current));
         } catch (retryErr: unknown) {
           if (retryErr instanceof ApiError && retryErr.status === 401) {
-            forget('La sessione è terminata: accedi di nuovo.');
+            forget(
+              retryErr.code === 'PLATFORM_REAUTH'
+                ? 'Per la console serve un accesso recente: entra di nuovo con il codice.'
+                : 'La sessione è terminata: accedi di nuovo.',
+            );
           }
           throw retryErr;
         }
@@ -174,6 +189,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [queryClient, renew],
   );
 
+  const enterPlatform = useCallback(async () => {
+    queryClient.clear();
+    await renew(PLATFORM);
+    rememberOrg(PLATFORM);
+    const admin = await request<PlatformAdmin>('/platform/me', {
+      token: token.current ?? undefined,
+    });
+    setState({ status: 'platform', admin });
+  }, [queryClient, renew]);
+
   const refreshMe = useCallback(async () => {
     setState({ status: 'ready', me: await api<Me>('/auth/me') });
   }, [api]);
@@ -188,8 +213,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setState({ status: 'anonymous' });
       return;
     }
-    enter(org).catch(() => forget());
-  }, [enter, forget]);
+    (org === PLATFORM ? enterPlatform() : enter(org)).catch(() => forget());
+  }, [enter, enterPlatform, forget]);
 
   useEffect(
     () => () => {
@@ -209,25 +234,38 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   /** After a login or an accepted invitation: straight in, or the choice of the organization. */
   const opened = useCallback(
-    async (session: { organizations: Organization[] }) => {
-      if (session.organizations.length === 0) {
+    async (session: { organizations: Organization[]; platform?: boolean }) => {
+      const { organizations, platform } = session;
+      if (organizations.length === 0 && platform) {
+        await enterPlatform();
+      } else if (organizations.length === 0) {
         setState({
           status: 'anonymous',
           notice: 'Il tuo account non è attivo in nessuna azienda: contatta un amministratore.',
         });
-      } else if (session.organizations.length === 1) {
-        await enter(session.organizations[0].orgId);
+      } else if (organizations.length === 1 && !platform) {
+        await enter(organizations[0].orgId);
       } else {
-        setState({ status: 'choosing', organizations: session.organizations });
+        setState({ status: 'choosing', organizations, platform });
       }
     },
-    [enter],
+    [enter, enterPlatform],
   );
+
+  const leavePlatform = useCallback(async () => {
+    if (state.status !== 'platform') return;
+    const { organizations } = state.admin;
+    if (organizations.length === 1) {
+      await enter(organizations[0].orgId);
+    } else {
+      setState({ status: 'choosing', organizations, platform: true });
+    }
+  }, [state, enter]);
 
   const verifyLogin = useCallback(
     async (challengeId: string, code: string) =>
       opened(
-        await request<{ organizations: Organization[] }>('/auth/login/verify', {
+        await request<{ organizations: Organization[]; platform?: boolean }>('/auth/login/verify', {
           method: 'POST',
           body: { challengeId, code },
         }),
@@ -252,10 +290,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       orgId.current = null;
       queryClient.clear();
       await opened(
-        await request<{ organizations: Organization[] }>('/auth/invitations/accept', {
-          method: 'POST',
-          body: { token: inviteToken, challengeId, code },
-        }),
+        await request<{ organizations: Organization[]; platform?: boolean }>(
+          '/auth/invitations/accept',
+          {
+            method: 'POST',
+            body: { token: inviteToken, challengeId, code },
+          },
+        ),
       );
     },
     [opened, queryClient],
@@ -279,6 +320,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startInvitation,
       acceptInvitation,
       enter,
+      enterPlatform,
+      leavePlatform,
       refreshMe,
       logout,
       logoutEverywhere,
@@ -292,6 +335,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startInvitation,
       acceptInvitation,
       enter,
+      enterPlatform,
+      leavePlatform,
       refreshMe,
       logout,
       logoutEverywhere,

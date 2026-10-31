@@ -62,7 +62,8 @@ export type AuditEvent = {
       | 'dueDate'
       | 'name'
       | 'frequency'
-      | 'scheduledExport',
+      | 'scheduledExport'
+      | 'byPlatform',
       string | number | boolean
     >
   >;
@@ -110,7 +111,15 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
     label: 'Export',
     types: ['EXPORT_GENERATED', 'EXPORT_DELIVERED', 'PRACTICE_EXPORT_GENERATED'],
   },
-  settings: { label: 'Impostazioni', types: ['ORGANIZATION_SETTINGS_CHANGED'] },
+  settings: {
+    label: 'Impostazioni e piattaforma',
+    types: [
+      'ORGANIZATION_SETTINGS_CHANGED',
+      'ORGANIZATION_CREATED',
+      'ORGANIZATION_SUSPENDED',
+      'ORGANIZATION_REACTIVATED',
+    ],
+  },
 };
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -151,7 +160,8 @@ function stateName(value: unknown): string {
 }
 
 /** Who did it: a person by email, a chat account, or SinfonIA by itself (scheduler, reminders). */
-export function actorLabel(event: Pick<AuditEvent, 'actor'>): string {
+export function actorLabel(event: Pick<AuditEvent, 'actor' | 'details'>): string {
+  if (event.details.byPlatform === true) return 'gestore della piattaforma';
   if (!event.actor) return 'SinfonIA (automatico)';
   return event.actor.email ?? 'account della chat';
 }
@@ -211,6 +221,12 @@ export function describeEvent(event: AuditEvent): string {
       return `Export pratiche${period}${channel}${rows}`;
     case 'EXPORT_DELIVERED':
       return `Export consegnato a ${target}${channel}${rows}`;
+    case 'ORGANIZATION_CREATED':
+      return 'Organizzazione creata dal gestore della piattaforma';
+    case 'ORGANIZATION_SUSPENDED':
+      return 'Organizzazione sospesa dal gestore della piattaforma';
+    case 'ORGANIZATION_REACTIVATED':
+      return 'Organizzazione riattivata dal gestore della piattaforma';
     case 'ORGANIZATION_SETTINGS_CHANGED': {
       const parts: string[] = [];
       if (typeof d.name === 'string') parts.push(`nome «${d.name}»`);
@@ -296,6 +312,7 @@ export type Frequency = 'daily' | 'weekly' | 'monthly';
 
 export type OrganizationType =
   | 'COMPANY'
+  | 'COOPERATIVE'
   | 'NETWORK'
   | 'CONSORTIUM'
   | 'TRADE_ASSOCIATION'
@@ -305,6 +322,7 @@ export type OrganizationType =
 
 export const ORGANIZATION_TYPE_LABELS: Record<OrganizationType, string> = {
   COMPANY: 'Azienda',
+  COOPERATIVE: 'Cooperativa',
   NETWORK: "Rete d'impresa",
   CONSORTIUM: 'Consorzio',
   TRADE_ASSOCIATION: 'Associazione di categoria',

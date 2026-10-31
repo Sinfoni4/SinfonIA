@@ -32,3 +32,14 @@ export function requirePrincipal(req: FastifyRequest): Principal {
 export function requirePermission(req: FastifyRequest, permission: Permission): Grant {
   return authorize(requirePrincipal(req), permission);
 }
+
+/** The platform administrator of a console request (G1); the hook has already checked it. */
+export function requirePlatform(req: FastifyRequest): {
+  userId: string;
+  sessionId: string;
+  email: string;
+} {
+  const platform = getRequestContext(req)?.platform;
+  if (!platform) throw new AuthError('Platform authentication required', 'MISSING_TOKEN');
+  return platform;
+}

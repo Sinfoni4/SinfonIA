@@ -21,6 +21,8 @@ export type AuthRoutesDeps = {
     authVersion: number;
   }) => string;
   accessTokenTtlSeconds: number;
+  /** Issues the 10-minute token of the platform console (G1). */
+  issuePlatformToken: (grant: { userId: string; sessionId: string; authVersion: number }) => string;
   /** Requests per address and minute on each login route. */
   perMinute: number;
 };
@@ -72,6 +74,8 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
       userId: session.userId,
       sessionId: session.sessionId,
       organizations: session.organizations,
+      // FE7: a platform administrator is offered the console too.
+      platform: session.platform,
     };
   };
 
@@ -105,6 +109,22 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
           sessionId: grant.sessionId,
           authVersion: grant.authVersion,
         }),
+        expiresIn: deps.accessTokenTtlSeconds,
+      };
+    }),
+  );
+  // The platform console (G1, G2): same session, a token of its own, only for a platform
+  // administrator with a recent login code.
+  app.post(
+    '/auth/platform-token',
+    { config: LIMIT },
+    handle(z.object({}).passthrough(), async (_b, req, reply) => {
+      const refreshToken = readRefreshCookie(req);
+      if (!refreshToken) throw new LoginError();
+      const grant = await deps.login.refreshPlatform(refreshToken);
+      setRefreshCookie(reply, grant.refreshToken, SESSION_TTL_SECONDS);
+      return {
+        accessToken: deps.issuePlatformToken(grant),
         expiresIn: deps.accessTokenTtlSeconds,
       };
     }),

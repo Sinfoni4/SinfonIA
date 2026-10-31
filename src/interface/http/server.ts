@@ -3,6 +3,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 
+import { resolvePlatformPrincipal } from '../../core/authz/platform.js';
 import { runtimeState } from '../../runtime/runtime.state.js';
 
 import { createAuthHook, isPublicPath } from './auth/auth.hook.js';
@@ -16,6 +17,7 @@ import { authRoutes } from './routes/auth.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
 import { membersRoutes } from './routes/members.routes.js';
 import { organizationRoutes } from './routes/organization.routes.js';
+import { platformRoutes } from './routes/platform.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
 import { webRoutes } from './routes/web.routes.js';
 import { whatsappRoutes, type WhatsAppRoutesOptions } from './routes/whatsapp.routes.js';
@@ -37,8 +39,11 @@ import type { PrismaClient } from '@prisma/client';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
-    /** Permission the route needs; "authenticated" = any signed-in user. Checked at startup. */
-    permission?: Permission | 'authenticated';
+    /**
+     * Permission the route needs; "authenticated" = any signed-in member; "platform" = the
+     * platform console (only under /platform/, G1). Checked at startup.
+     */
+    permission?: Permission | 'authenticated' | 'platform';
   }
 }
 
@@ -82,11 +87,26 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     audience: config.AUTH_AUDIENCE,
     defaultTtlSeconds: config.AUTH_TTL_SECONDS,
   });
-  app.addHook('onRequest', createAuthHook(authService, deps.principals));
+  const prisma = deps.prisma;
+  app.addHook(
+    'onRequest',
+    createAuthHook(
+      authService,
+      deps.principals,
+      prisma ? (identity) => resolvePlatformPrincipal(prisma, identity) : undefined,
+    ),
+  );
 
   // Every authenticated route must declare the permission it needs: a route without one does
   // not start, so none can be added without going through the authorization service.
   app.addHook('onRoute', (route) => {
+    const onConsole = route.url.startsWith('/platform/');
+    // The console and the organizations never share a route (G1).
+    if (onConsole !== (route.config?.permission === 'platform')) {
+      throw new Error(
+        `Route ${route.method.toString()} ${route.url}: "platform" is for /platform/ routes only`,
+      );
+    }
     if (isPublicPath(route.url) || route.config?.permission) return;
     throw new Error(`Route ${route.method.toString()} ${route.url} declares no permission`);
   });
@@ -178,9 +198,14 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(authRoutes, {
       login: deps.login,
       issueAccessToken: (grant) => issueAuthToken(grant, tokenConfig),
+      issuePlatformToken: (grant) => authService.issuePlatform(grant),
       accessTokenTtlSeconds: SESSION_ACCESS_TOKEN_TTL_SECONDS,
       perMinute: config.RATE_LIMIT_AUTH_PER_MINUTE,
     });
+    // The platform console needs the login service (confirmation codes, first invitations).
+    if (deps.prisma) {
+      void app.register(platformRoutes, { prisma: deps.prisma, login: deps.login });
+    }
   }
   if (deps.complianceService) {
     void app.register(complianceRoutes, { complianceService: deps.complianceService });

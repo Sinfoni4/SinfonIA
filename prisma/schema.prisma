@@ -404,6 +404,8 @@ enum OrganizationType {
   ASSOCIATION
   PROFESSIONAL_FIRM
   OTHER
+  /// G6: behaves like a company until it gets functions of its own.
+  COOPERATIVE
 }
 
 enum OrganizationStatus {
@@ -536,6 +538,8 @@ enum AuthChallengePurpose {
   INVITATION
   TELEGRAM_LINK
   EMAIL_ADD
+  /// A fresh code that confirms a critical action of the platform console (G2).
+  STEP_UP
 }
 
 /// One-time code (stored as a hash) for login, invitations and channel linking.
@@ -652,4 +656,19 @@ model AccessGrantBeneficiary {
 
   @@unique([grantId, userId])
   @@map("access_grant_beneficiary")
+}
+
+/// Every action of a platform administrator (B18). Append-only, without foreign keys: it outlives
+/// the people and organizations it names.
+model PlatformAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  orgId       String?  @map("org_id") @db.Uuid
+  payload     Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([orgId, createdAt])
+  @@map("platform_audit_log")
 }
