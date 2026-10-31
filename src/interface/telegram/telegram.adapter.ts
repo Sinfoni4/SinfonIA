@@ -24,6 +24,7 @@ import type {
   validateBeforeDecision,
   validateResolvedCommand,
 } from '../../ai/validation/pre-execution.validator.js';
+import type { ChatAnswer } from '../conversation/conversation.service.js';
 
 export class TelegramAdapter {
   constructor(
@@ -52,6 +53,11 @@ export class TelegramAdapter {
   private readonly memory: ConversationMemory;
 
   async handleMessage(input: string, identity: TelegramIdentity): Promise<string> {
+    return (await this.answer(input, identity)).text;
+  }
+
+  /** The reply, saying when it is a question back (the conversation then awaits the answer). */
+  async answer(input: string, identity: TelegramIdentity): Promise<ChatAnswer> {
     const { tenantId, userId: execUserId, role } = identity;
     const ctx: InterpreterContext = { tenantId, userId: execUserId, practices: [] };
 
@@ -116,6 +122,31 @@ export class TelegramAdapter {
       await memory.setLastPractice(tenantId, execUserId, id);
     }
 
-    return this.deps.formatResponse({ input, command, result });
+    const text = this.deps.formatResponse({ input, command, result });
+    const clarification = clarificationOf(command, result);
+    return clarification ? { text, clarification } : { text };
   }
+}
+
+/** The options of a question back of the AI, or null when the AI acted. */
+function clarificationOf(
+  command: ExecutorInput,
+  result: ExecutorResult<unknown>,
+): { options: string[] } | null {
+  const payload =
+    result && typeof result === 'object' && 'success' in result && result.success
+      ? (result as { success: true; result: unknown }).result
+      : null;
+  const asked =
+    command.action === 'clarification_required' ||
+    (typeof payload === 'object' &&
+      payload !== null &&
+      (payload as { type?: unknown }).type === 'clarification_required');
+  if (!asked) return null;
+  const options = (payload as { options?: unknown } | null)?.options;
+  return {
+    options: Array.isArray(options)
+      ? options.filter((o): o is string => typeof o === 'string')
+      : [],
+  };
 }
