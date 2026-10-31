@@ -1,9 +1,9 @@
 # SinfonIA — Architettura a tre livelli: valutazione e piano
 
-**Stato**: proposta da approvare · **Data**: 31/10/2026 · **Versione**: 1
+**Stato**: decisioni H1–H10 approvate il 31/10/2026 (H1 modificata: pilota TerreFVG, §4.6) · **Data**: 31/10/2026 · **Versione**: 2
 **Riferimenti**: `docs/PROGETTO_FRONTEND_V2.md` (console, sezioni per tipo, decisioni G1–G9), `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (permessi, deleghe, reti, conservazione), `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`, `docs/CRONOPROGRAMMA_EVOLUTIVO.md` (Fase 5)
 
-Questo documento confronta l'architettura a tre livelli proposta per SinfonIA con quanto esiste oggi, indica cosa manca, quali vincoli esterni vanno risolti e in che ordine procedere. Le scelte segnate **H1–H10** (§7) sono decisioni del proprietario: nulla viene sviluppato, installato o acquistato prima dell'approvazione.
+Questo documento confronta l'architettura a tre livelli proposta per SinfonIA con quanto esiste oggi, indica cosa manca, quali vincoli esterni vanno risolti e in che ordine procedere. Le scelte **H1–H10** (§7) sono state approvate dal proprietario il 31/10/2026; per H1 il proprietario ha scelto come pilota una **rete d'imprese agricole**, le aziende di **TerreFVG** (www.terrefvg.it), invece della cooperativa musicale proposta. Migrazioni, nuove dipendenze, fornitori e modifiche allo staging richiedono comunque un'approvazione separata al momento dell'esecuzione.
 
 ---
 
@@ -134,14 +134,24 @@ Uptime, SLA e monitoraggio dei server dipendono dall'hosting UE di produzione (F
 ### 4.4 Moduli verticali
 
 - Un modulo = tipi di pratica, campi, categorie di scadenza, modelli di documenti e istruzioni IA del settore, attivabile per organizzazione dalla console («funzioni attive», B15 rinviata in FE7).
-- Primo verticale da scegliere (H1). Esempi del documento di partenza:
-  - **cooperativa musicale e spettacolo**: agibilità ex ENPALS, borderò, rendicontazione ingaggi, note spese;
-  - **agricoltura e consorzi**: quaderno di campagna, fascicolo aziendale, carburante agevolato, certificazioni BIO;
+- Primo verticale (H1, approvato): **agricoltura**, per la rete d'imprese agricole TerreFVG (§4.6). Contenuti da definire con le aziende del pilota; dal documento di partenza: quaderno di campagna, fascicolo aziendale, carburante agevolato, certificazioni BIO (la categoria di scadenza «Certificazione biologica» esiste già).
+- Verticali successivi, come esempi:
+  - **cooperativa musicale e spettacolo**: agibilità ex ENPALS, borderò, rendicontazione ingaggi, note spese (il modulo `music` esiste già);
   - **artigianato e reti d'impresa**: formazione obbligatoria, bandi e finanziamenti, scadenze contributive.
 
 ### 4.5 Ruoli personalizzati
 
 Ruoli definiti dall'organizzazione come insiemi di permessi del catalogo esistente (mai permessi nuovi inventati dall'interfaccia), con regole di perimetro (proprie pratiche, assegnate, tutta l'organizzazione).
+
+### 4.6 Conseguenze del pilota TerreFVG (H1)
+
+Una rete d'imprese è fatta di **più aziende**, ciascuna con i propri dati, e di una **rete** che le coordina. Per il pilota questo comporta:
+
+1. **Struttura**: un'organizzazione di tipo «Rete d'impresa» (TerreFVG) e un'organizzazione di tipo «Azienda» per ogni impresa agricola, collegate da un'adesione confermata dall'azienda (piano fase 1, §1.2). Le aziende si creano dalla console (FE7).
+2. **Cosa vede la rete**: per principio approvato, **solo l'anagrafica minima delle aderenti e statistiche aggregate**, mai i dati delle singole aziende (§1.3 del piano). Se la rete deve lavorare sulle pratiche di un'azienda (es. una segreteria comune), serve una **delega** concessa dall'azienda.
+3. **Tappe che diventano necessarie per il pilota**: MF9 (reti, adesioni, aggregati) e MF8 (deleghe), con le pagine FE9 (aderenti, statistiche, adesioni, deleghe). Erano in attesa di **D4** (soglia e indicatori aggregati) e **D3** (durata delle deleghe): queste due decisioni vanno prese prima di avviare il pilota.
+4. **Modulo agricolo**: nuovo modulo (oggi il modulo predefinito delle nuove organizzazioni è `music`), con tipi di pratica, campi, scadenze e istruzioni IA del settore; da definire con TerreFVG.
+5. **Ordine aggiornato**: l'ondata A resta invariata; nell'ondata B il primo modulo verticale (B1) diventa agricolo e si aggiungono MF8, MF9 e FE9 (B5, §5).
 
 ---
 
@@ -154,10 +164,11 @@ Ruoli definiti dall'organizzazione come insiemi di permessi del catalogo esisten
 |        | A3 avvisi in chat ai cambi di stato delle pratiche                             |       1        | —                    |
 |        | A4 vista Kanban e assegnazione delle pratiche                                  |      3–4       | —                    |
 |        | A5 FE8: salute del sistema e consumi IA nella console                          |       3        | —                    |
-| **B**  | B1 primo modulo verticale                                                      |      8–12      | H1                   |
+| **B**  | B1 primo modulo verticale: agricoltura (TerreFVG)                              |      8–12      | H1                   |
 |        | B2 ruoli personalizzati                                                        |      4–5       | H6                   |
 |        | B3 misurazione dei consumi e pannello dei costi                                |      4–5       | H2                   |
 |        | B4 backup giornaliero automatico (punto 6)                                     |       1        | —                    |
+|        | B5 rete e deleghe per il pilota: MF9, MF8 e pagine FE9                         |     10–14      | D3, D4               |
 | **C**  | C1 MF7: riconoscimento in chat, link alla web app, collegamento chat–dashboard |      4–5       | D11                  |
 |        | C2 messaggi vocali                                                             |      2–3       | chiave Mistral       |
 |        | C3 WhatsApp attivo                                                             |      2–3       | H4, Meta             |
@@ -186,11 +197,11 @@ Le tappe già pianificate restano valide: FE5 (rifinitura e pubblicazione), FE9 
 
 ---
 
-## 7. Decisioni richieste
+## 7. Decisioni (approvate il 31/10/2026)
 
-| #   | Decisione                                         | Proposta                                                                                                              |
+| #   | Tema                                              | Decisione                                                                                                             |
 | :-- | :------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------- |
-| H1  | Primo verticale del pilota                        | cooperativa musicale e spettacolo (il modulo `music` e il tipo di pratica esistono già)                               |
+| H1  | Primo verticale del pilota                        | **rete d'imprese agricole TerreFVG** (www.terrefvg.it), modulo agricolo; conseguenze in §4.6                          |
 | H2  | Modello di prezzo                                 | canone per organizzazione più quota per socio attivo, con crediti IA inclusi e oltre soglia a consumo                 |
 | H3  | Fornitori di fatturazione elettronica e pagamenti | da scegliere all'avvio dell'ondata D, con contratto e nomina a responsabile del trattamento                           |
 | H4  | Canale principale del pilota                      | Telegram; WhatsApp in un secondo momento, dopo la configurazione su Meta e la stima dei costi                         |
