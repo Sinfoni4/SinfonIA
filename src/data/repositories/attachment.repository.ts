@@ -14,6 +14,9 @@ export type PracticeAttachmentDTO = {
   storagePath: string;
   ocrStatus: OcrStatus;
   ocrResult: unknown;
+  /** A1: the data confirmed by a person, and when; null until then. */
+  validatedData: unknown;
+  validatedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -28,6 +31,8 @@ function toAttachmentDTO(row: {
   storagePath: string;
   ocrStatus: OcrStatus;
   ocrResult: unknown;
+  validatedData?: unknown;
+  validatedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): PracticeAttachmentDTO {
@@ -41,6 +46,8 @@ function toAttachmentDTO(row: {
     storagePath: row.storagePath,
     ocrStatus: row.ocrStatus,
     ocrResult: row.ocrResult,
+    validatedData: row.validatedData ?? null,
+    validatedAt: row.validatedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

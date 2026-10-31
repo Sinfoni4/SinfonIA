@@ -643,3 +643,36 @@ ul.plain li:last-child {
 .topbar.console {
   background: var(--dev-bg);
 }
+
+/* Validation of document data (A1) */
+.review-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+form.validation {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1rem;
+  align-items: end;
+  margin-top: 0.75rem;
+}
+
+form.validation label {
+  margin-top: 0.5rem;
+}
+
+form.validation button {
+  justify-self: start;
+}
+
+.tabs button.link {
+  padding: 0.4rem 0;
+  text-decoration: none;
+}
+
+.tabs button.link.active {
+  font-weight: 600;
+  border-bottom: 3px solid var(--accent);
+}

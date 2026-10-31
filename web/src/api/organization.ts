@@ -63,7 +63,8 @@ export type AuditEvent = {
       | 'name'
       | 'frequency'
       | 'scheduledExport'
-      | 'byPlatform',
+      | 'byPlatform'
+      | 'outcome',
       string | number | boolean
     >
   >;
@@ -98,7 +99,12 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
   },
   practices: {
     label: 'Pratiche',
-    types: ['PRACTICE_CREATED', 'PRACTICE_STATE_CHANGED', 'PRACTICE_DELETED'],
+    types: [
+      'PRACTICE_CREATED',
+      'PRACTICE_STATE_CHANGED',
+      'PRACTICE_DELETED',
+      'ATTACHMENT_VALIDATED',
+    ],
   },
   deadlines: {
     label: 'Scadenze',
@@ -207,6 +213,8 @@ export function describeEvent(event: AuditEvent): string {
       return `Export pianificato in chat attivato per ${target}`;
     case 'SCHEDULED_EXPORT_DISABLED':
       return `Export pianificato in chat disattivato per ${target}`;
+    case 'ATTACHMENT_VALIDATED':
+      return `Dati di un documento ${d.outcome === 'corrected' ? 'corretti' : 'confermati'} (${practice})`;
     case 'PRACTICE_CREATED':
       return `Pratica ${practice} creata`;
     case 'PRACTICE_STATE_CHANGED':

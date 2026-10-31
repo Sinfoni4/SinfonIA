@@ -35,7 +35,15 @@ export type Attachment = {
   fileSize: number;
   ocrStatus: OcrStatus;
   ocrResult: Record<string, unknown> | null;
+  /** A1: the data confirmed or corrected by a person; the official ones when present. */
+  validatedData: ValidatedData | null;
+  validatedAt: string | null;
   createdAt: string;
+};
+
+export type ValidatedData = {
+  documentType: string;
+  fields: Record<string, string | number | null>;
 };
 
 export type PracticeFilters = {
@@ -91,7 +99,7 @@ export const OCR_LABELS: Record<OcrStatus, string> = {
   FAILED: 'Lettura non riuscita',
 };
 
-const DOCUMENT_TYPES: Record<string, string> = {
+export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   invoice: 'Fattura',
   delivery_note: 'Documento di trasporto',
   receipt: 'Ricevuta',
@@ -99,7 +107,7 @@ const DOCUMENT_TYPES: Record<string, string> = {
   generic: 'Documento',
 };
 
-const FIELD_LABELS: Record<string, string> = {
+export const FIELD_LABELS: Record<string, string> = {
   supplierName: 'Fornitore',
   supplierVat: 'P. IVA fornitore',
   merchantName: 'Esercente',
@@ -148,13 +156,18 @@ export function readFields(result: Record<string, unknown> | null): {
     });
   const type = typeof result.documentType === 'string' ? result.documentType : null;
   return {
-    documentType: type ? (DOCUMENT_TYPES[type] ?? type) : null,
+    documentType: type ? (DOCUMENT_TYPE_LABELS[type] ?? type) : null,
     fields,
     reviewRequired: result.reviewRequired === true,
     warnings: Array.isArray(result.warnings)
       ? result.warnings.filter((w): w is string => typeof w === 'string')
       : [],
   };
+}
+
+/** Confirmed data in the same shape as the read data, for the same display. */
+export function confirmedFields(data: ValidatedData): ReturnType<typeof readFields> {
+  return readFields({ documentType: data.documentType, ...data.fields });
 }
 
 /** The type of a practice in Italian (the API label is in English). */

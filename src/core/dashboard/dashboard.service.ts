@@ -55,10 +55,11 @@ export async function dashboardSummary(
     tenantId: input.tenantId,
     ...(input.practiceUserId ? { userId: input.practiceUserId } : {}),
   };
-  // A document needs a look when the reading failed or the reader asked for a check.
+  // A document needs a look when the reader asked for a check, until a person confirms it (A1).
   const review: Prisma.PracticeAttachmentWhereInput = {
     ocrStatus: 'COMPLETED',
     ocrResult: { path: ['reviewRequired'], equals: true },
+    validatedAt: null,
   };
   const attachmentWhere: Prisma.PracticeAttachmentWhereInput = {
     tenantId: input.tenantId,
@@ -74,9 +75,11 @@ export async function dashboardSummary(
       select: { id: true, status: true, payload: true, updatedAt: true },
     }),
     prisma.practiceAttachment.count({ where: { ...attachmentWhere, ...review } }),
-    prisma.practiceAttachment.count({ where: { ...attachmentWhere, ocrStatus: 'FAILED' } }),
+    prisma.practiceAttachment.count({
+      where: { ...attachmentWhere, ocrStatus: 'FAILED', validatedAt: null },
+    }),
     prisma.practiceAttachment.findMany({
-      where: { ...attachmentWhere, OR: [review, { ocrStatus: 'FAILED' }] },
+      where: { ...attachmentWhere, OR: [review, { ocrStatus: 'FAILED', validatedAt: null }] },
       orderBy: { createdAt: 'desc' },
       take: LIST_SIZE,
       select: {

@@ -72,10 +72,10 @@ export function HomePage({ me }: { me: Me }) {
             <li
               className={`card ${s.documents.toReview + s.documents.unreadable > 0 ? 'warn' : ''}`}
             >
-              <span>
+              <Link to="/verifica">
                 <strong>{s.documents.toReview + s.documents.unreadable}</strong> documenti da
                 controllare
-              </span>
+              </Link>
               <span className="muted">
                 {s.documents.toReview} da verificare · {s.documents.unreadable} non letti
               </span>
@@ -106,7 +106,9 @@ export function HomePage({ me }: { me: Me }) {
             </section>
 
             <section className="card" aria-labelledby="home-documents">
-              <h2 id="home-documents">Documenti da controllare</h2>
+              <h2 id="home-documents">
+                <Link to="/verifica">Documenti da controllare</Link>
+              </h2>
               {s.documents.items.length === 0 ? (
                 <p className="muted">Nessun documento da controllare.</p>
               ) : (

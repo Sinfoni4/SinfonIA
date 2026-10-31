@@ -16,6 +16,7 @@ export const PERMISSIONS = [
   'practice.delete',
   'attachment.create',
   'attachment.read',
+  'attachment.validate',
   'ai.execute',
   'ai.traces.read',
   'compliance.read',
@@ -41,6 +42,8 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
   // Attachments go only to the uploader's own practices, whatever the role.
   'attachment.create': 'own',
   'attachment.read': 'tenant',
+  // A1: confirming or correcting the data read from documents of the organization.
+  'attachment.validate': 'tenant',
   // The AI works on the caller's own practices, whatever the role.
   'ai.execute': 'own',
   'ai.traces.read': 'tenant',
@@ -66,6 +69,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
     'practice.delete': 'own',
     'attachment.create': 'own',
     'attachment.read': 'own',
+    'attachment.validate': 'own',
     'ai.execute': 'own',
     'compliance.read': 'own',
   },

@@ -49,6 +49,7 @@ export function Layout({ me }: { me: Me }) {
         <nav aria-label="Sezioni">
           <NavLink to="/pratiche">Pratiche</NavLink>
           <NavLink to="/scadenze">Scadenze</NavLink>
+          <NavLink to="/verifica">Da verificare</NavLink>
           <NavLink to="/export">Export</NavLink>
           {me.current.role === 'ADMIN' && (
             <>

@@ -258,17 +258,21 @@ enum OcrStatus {
 }
 
 model PracticeAttachment {
-  id          String    @id @default(uuid()) @db.Uuid
-  tenantId    String    @map("tenant_id") @db.Uuid
-  practiceId  String    @map("practice_id") @db.Uuid
-  fileName    String    @map("file_name")
-  mimeType    String    @map("mime_type")
-  fileSize    Int       @map("file_size")
-  storagePath String    @map("storage_path")
-  ocrStatus   OcrStatus @default(PENDING) @map("ocr_status")
-  ocrResult   Json?     @map("ocr_result")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  practiceId    String    @map("practice_id") @db.Uuid
+  fileName      String    @map("file_name")
+  mimeType      String    @map("mime_type")
+  fileSize      Int       @map("file_size")
+  storagePath   String    @map("storage_path")
+  ocrStatus     OcrStatus @default(PENDING) @map("ocr_status")
+  ocrResult     Json?     @map("ocr_result")
+  /// A1: the values confirmed or corrected by a person; ocrResult stays as read.
+  validatedData Json?     @map("validated_data")
+  validatedAt   DateTime? @map("validated_at")
+  validatedBy   String?   @map("validated_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
@@ -276,6 +280,7 @@ model PracticeAttachment {
   @@index([tenantId])
   @@index([practiceId])
   @@index([tenantId, ocrStatus])
+  @@index([tenantId, validatedAt])
   @@map("practice_attachment")
 }
 

@@ -27,6 +27,7 @@ import {
 } from '../../../core/index.js';
 import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
 import { PlatformActionError } from '../../../core/platform/platform.service.js';
+import { AttachmentValidationError } from '../../../core/practice/attachment-validation.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -46,7 +47,8 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof InvitationError ||
     err instanceof OrganizationSettingsError ||
     err instanceof PlatformAccessError ||
-    err instanceof PlatformActionError
+    err instanceof PlatformActionError ||
+    err instanceof AttachmentValidationError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }

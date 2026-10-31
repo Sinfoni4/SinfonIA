@@ -23,6 +23,7 @@ import { setScheduledExport } from './core/identity/member-access.service.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
+import { confirmReadDocument } from './core/practice/attachment-validation.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
@@ -194,6 +195,13 @@ async function main() {
     prisma,
     scheduledExport: (orgId: string, userId: string, enabled: boolean) =>
       setScheduledExport(prisma, orgId, userId, enabled, { userId }),
+    // A1: «conferma» in chat confirms the data of one's own document as read.
+    confirmDocument: (input: {
+      tenantId: string;
+      userId: string;
+      practiceId: string;
+      attachmentId: string;
+    }) => confirmReadDocument(prisma, input),
     memory: conversationMemory,
     practiceService,
     complianceService,

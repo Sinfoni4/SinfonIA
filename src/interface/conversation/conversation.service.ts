@@ -95,6 +95,16 @@ export type ConversationDeps = {
   complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
   /** The AI for free text; a ChatAnswer also says when it asked a question back. */
   handleMessage: (input: string, identity: ConversationIdentity) => Promise<string | ChatAnswer>;
+  /**
+   * A1: confirms the data read from one of the person's documents as they are (corrections are
+   * made in the dashboard).
+   */
+  confirmDocument?: (input: {
+    tenantId: string;
+    userId: string;
+    practiceId: string;
+    attachmentId: string;
+  }) => Promise<void>;
   /** Turns the scheduled export in chat on or off for the person (D5b); returns whether it changed. */
   scheduledExport?: (orgId: string, userId: string, enabled: boolean) => Promise<boolean>;
   /** Defaults to process memory; production passes the database one. */
@@ -215,6 +225,11 @@ export class ConversationService {
   private readonly pendingSuggestions = new Map<
     string,
     { tenantId: string; text: string; expiresAt: number }
+  >();
+  // A1: documents just read with doubts, waiting for «conferma» from the person who sent them.
+  private readonly pendingDocuments = new Map<
+    string,
+    { tenantId: string; practiceId: string; attachmentId: string; expiresAt: number }
   >();
   // The request the AI answered with a question, by person: a short reply completes it
   // («crea nuova pratica» → «come si chiama?» → «Scontrino 001»), instead of starting over.
@@ -359,9 +374,26 @@ export class ConversationService {
         });
         await this.memory.setLastPractice(tenant.id, dbUser.id, practice.id);
 
+        // Read with doubts: the person can confirm the data at once (A1, H9).
+        const askConfirmation =
+          Boolean(deps.confirmDocument) &&
+          uploadResult.attachment.ocrStatus === 'COMPLETED' &&
+          uploadResult.ocrResult?.reviewRequired === true;
+        if (askConfirmation) {
+          this.pendingDocuments.set(dbUser.id, {
+            tenantId: tenant.id,
+            practiceId: practice.id,
+            attachmentId: uploadResult.attachment.id,
+            expiresAt: Date.now() + CLARIFICATION_MS,
+          });
+        }
         await reply(
           `📁 Pratica: ${practice.name}\n` +
             formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult) +
+            (askConfirmation
+              ? '\nSe i dati sono giusti rispondi «conferma»; per correggerli usa la dashboard ' +
+                '(«Da verificare»).'
+              : '') +
             (file.compressedPhoto && uploadResult.ocrResult?.reviewRequired
               ? (this.channel.compressedPhotoTip ?? '')
               : ''),
@@ -430,6 +462,28 @@ export class ConversationService {
       if (chosen) {
         this.pendingAttachments.delete(dbUser.id);
         await uploadToPractice(pending.file, chosen);
+        return;
+      }
+    }
+
+    // A document just read with doubts: «conferma» or «sì» confirms its data; anything else leaves
+    // it to be verified later in the dashboard.
+    const pendingDocument = this.pendingDocuments.get(dbUser.id);
+    if (pendingDocument) {
+      this.pendingDocuments.delete(dbUser.id);
+      if (
+        CONFIRMATION.test(trimmed) &&
+        deps.confirmDocument &&
+        pendingDocument.tenantId === tenant.id &&
+        pendingDocument.expiresAt > Date.now()
+      ) {
+        await deps.confirmDocument({
+          tenantId: tenant.id,
+          userId: dbUser.id,
+          practiceId: pendingDocument.practiceId,
+          attachmentId: pendingDocument.attachmentId,
+        });
+        await reply('✅ Dati del documento confermati.');
         return;
       }
     }

@@ -25,6 +25,7 @@ const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
   'practice.delete': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'attachment.create': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'attachment.read': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
+  'attachment.validate': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
   'ai.execute': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'ai.traces.read': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'denied' },
   'compliance.read': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
