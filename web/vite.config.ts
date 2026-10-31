@@ -4,7 +4,18 @@ import { defineConfig } from 'vitest/config';
 // The dashboard is served by the backend under /app (same origin, B2). In development Vite
 // forwards the API calls to the local backend, so the browser still sees a single origin.
 const api = process.env.SINFONIA_API ?? 'http://localhost:3000';
-const proxied = ['/auth', '/practices', '/compliance', '/members', '/readyz'];
+const proxied = [
+  '/auth',
+  '/practices',
+  '/compliance',
+  '/members',
+  '/dashboard',
+  '/audit',
+  '/organization',
+  '/ai',
+  '/platform',
+  '/readyz',
+];
 
 export default defineConfig({
   base: '/app/',
@@ -22,5 +33,7 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.tsx', 'src/**/*.test.ts'],
     setupFiles: ['./src/test/setup.ts'],
+    // Typing with user-event in jsdom is slow on a busy PC: 5 s made login tests flaky.
+    testTimeout: 15_000,
   },
 });

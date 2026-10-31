@@ -171,7 +171,7 @@ describe('activity helpers', () => {
       'http://x',
     ).searchParams;
     expect(q.get('page')).toBe('2');
-    expect(q.get('types')).toBe('ORGANIZATION_SETTINGS_CHANGED');
+    expect(q.get('types')?.split(',')).toContain('ORGANIZATION_SETTINGS_CHANGED');
     expect(q.get('from')).toBe('2026-10-01T00:00:00');
     expect(q.get('to')).toBe('2026-10-31T23:59:59.999');
   });

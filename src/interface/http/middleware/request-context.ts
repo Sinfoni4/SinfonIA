@@ -10,6 +10,8 @@ export type RequestContext = {
   role: AuthRole | null;
   /** Extra scopes of the membership, read with the role at every request (D5). */
   extraPermissions?: readonly string[];
+  /** Platform console requests (G1): no organization and no role, never both. */
+  platform?: { userId: string; sessionId: string; email: string };
 };
 
 const CONTEXT_KEY = 'requestContext' as const;
@@ -46,6 +48,18 @@ export function attachAuthenticatedContext(
   ctx.userId = auth.userId;
   ctx.role = auth.role;
   ctx.extraPermissions = auth.extraPermissions ?? [];
+}
+
+export function attachPlatformContext(
+  req: FastifyRequest,
+  principal: { userId: string; sessionId: string; email: string },
+): void {
+  const ctx = getRequestContext(req);
+  if (!ctx) {
+    throw new Error('Request context must be created before authentication');
+  }
+  ctx.userId = principal.userId;
+  ctx.platform = principal;
 }
 
 export function requestContextHook(

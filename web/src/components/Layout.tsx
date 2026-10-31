@@ -6,7 +6,7 @@ import { useSession } from '../session/session';
 
 /** Header with the current organization (switchable), the profile and the exit. */
 export function Layout({ me }: { me: Me }) {
-  const { enter, logout } = useSession();
+  const { enter, enterPlatform, logout } = useSession();
   const [error, setError] = useState<string | null>(null);
   const current = me.organizations.find((o) => o.orgId === me.current.orgId);
 
@@ -59,6 +59,17 @@ export function Layout({ me }: { me: Me }) {
           )}
         </nav>
         <nav aria-label="Account">
+          {me.platform && (
+            <button
+              type="button"
+              className="link"
+              onClick={() =>
+                void enterPlatform().catch((err: unknown) => setError(describeError(err)))
+              }
+            >
+              Console
+            </button>
+          )}
           <NavLink to="/profilo">Profilo</NavLink>
           <button type="button" className="link" onClick={() => void logout()}>
             Esci

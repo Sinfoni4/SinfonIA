@@ -15,6 +15,7 @@ import { LLMDisabledError } from '../../../ai/providers/disabled.provider.js';
 import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
+import { PlatformAccessError } from '../../../core/authz/platform.js';
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
@@ -25,6 +26,7 @@ import {
   InvalidStateTransitionError,
 } from '../../../core/index.js';
 import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
+import { PlatformActionError } from '../../../core/platform/platform.service.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -42,7 +44,9 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof MemberAccessError ||
     err instanceof LoginError ||
     err instanceof InvitationError ||
-    err instanceof OrganizationSettingsError
+    err instanceof OrganizationSettingsError ||
+    err instanceof PlatformAccessError ||
+    err instanceof PlatformActionError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }

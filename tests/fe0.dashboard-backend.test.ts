@@ -186,6 +186,8 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
         userId: memberId,
         email: memberEmail,
         organizations: [expect.objectContaining({ orgId, role: 'MEMBER' })],
+        // FE7: whether the console is offered too.
+        platform: false,
         current: { orgId, role: 'MEMBER' },
       },
     });

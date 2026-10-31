@@ -22,6 +22,8 @@ const SHOWN_FIELDS = [
   'name',
   'frequency',
   'scheduledExport',
+  // Done by the platform console (FE7), whose administrator is not a member.
+  'byPlatform',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];
