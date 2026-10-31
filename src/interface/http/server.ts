@@ -15,6 +15,7 @@ import { aiRoutes } from './routes/ai.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
 import { membersRoutes } from './routes/members.routes.js';
+import { organizationRoutes } from './routes/organization.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
 import { webRoutes } from './routes/web.routes.js';
 import { whatsappRoutes, type WhatsAppRoutesOptions } from './routes/whatsapp.routes.js';
@@ -162,6 +163,10 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   }
   if (deps.prisma) {
     void app.register(membersRoutes, { prisma: deps.prisma, login: deps.login });
+    void app.register(organizationRoutes, {
+      prisma: deps.prisma,
+      complianceService: deps.complianceService,
+    });
   }
   if (deps.login) {
     const tokenConfig = {

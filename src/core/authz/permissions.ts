@@ -23,6 +23,7 @@ export const PERMISSIONS = [
   'audit.read',
   'members.read',
   'members.manage',
+  'organization.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -48,7 +49,14 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, PermissionScope>>> = {
-  ADMIN: { ...STAFF, 'audit.read': 'tenant', 'members.read': 'tenant', 'members.manage': 'tenant' },
+  ADMIN: {
+    ...STAFF,
+    'audit.read': 'tenant',
+    'members.read': 'tenant',
+    'members.manage': 'tenant',
+    // Name and scheduled export of the organization (P12); its type is the platform's.
+    'organization.manage': 'tenant',
+  },
   // D5: an OPERATOR exports its own practices; the organization only with an extra permission.
   OPERATOR: { ...STAFF, 'practice.export': 'own' },
   MEMBER: {

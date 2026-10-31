@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { Layout } from './components/Layout';
+import { ActivityPage, AssistantUsagePage } from './pages/ActivityPage';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
 import { ExportPage } from './pages/ExportPage';
@@ -12,6 +13,7 @@ import { PeoplePage } from './pages/PeoplePage';
 import { PracticeDetailPage } from './pages/PracticeDetailPage';
 import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { SettingsPage } from './pages/SettingsPage';
 import { useSession } from './session/session';
 
 /** The pages follow the session: login, choice of the organization, then the dashboard. */
@@ -44,6 +46,9 @@ export function App() {
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />
         <Route path="export" element={<ExportPage me={me} />} />
         <Route path="persone" element={<PeoplePage me={me} />} />
+        <Route path="attivita" element={<ActivityPage me={me} />} />
+        <Route path="attivita/assistente" element={<AssistantUsagePage me={me} />} />
+        <Route path="impostazioni" element={<SettingsPage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

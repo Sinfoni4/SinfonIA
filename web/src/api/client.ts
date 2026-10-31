@@ -30,7 +30,7 @@ type Envelope<T> =
   { success: true; data: T } | { success: false; error: { code: string; message: string } };
 
 export type RequestOptions = {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PATCH';
   /** JSON body. */
   body?: unknown;
   /** Multipart body (file uploads); the browser sets its content type. */

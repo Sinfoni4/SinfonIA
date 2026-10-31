@@ -50,7 +50,13 @@ export function Layout({ me }: { me: Me }) {
           <NavLink to="/pratiche">Pratiche</NavLink>
           <NavLink to="/scadenze">Scadenze</NavLink>
           <NavLink to="/export">Export</NavLink>
-          {me.current.role === 'ADMIN' && <NavLink to="/persone">Persone</NavLink>}
+          {me.current.role === 'ADMIN' && (
+            <>
+              <NavLink to="/persone">Persone</NavLink>
+              <NavLink to="/attivita">Attività</NavLink>
+              <NavLink to="/impostazioni">Impostazioni</NavLink>
+            </>
+          )}
         </nav>
         <nav aria-label="Account">
           <NavLink to="/profilo">Profilo</NavLink>

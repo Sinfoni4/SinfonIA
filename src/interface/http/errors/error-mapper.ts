@@ -24,6 +24,7 @@ import {
   ConcurrencyError,
   InvalidStateTransitionError,
 } from '../../../core/index.js';
+import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -40,7 +41,8 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof LastAdminError ||
     err instanceof MemberAccessError ||
     err instanceof LoginError ||
-    err instanceof InvitationError
+    err instanceof InvitationError ||
+    err instanceof OrganizationSettingsError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
