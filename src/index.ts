@@ -44,7 +44,7 @@ import { forceDatabaseConnect } from './runtime/runtime.db.connect.js';
 import { checkDatabaseHealth } from './runtime/runtime.db.health.js';
 import { startDbWatcher } from './runtime/runtime.dbWatcher.js';
 import { installLifecycleHooks } from './runtime/runtime.lifecycle.js';
-import { listenWithRetry } from './runtime/runtime.port.js';
+import { ALL_INTERFACES, listenWithRetry } from './runtime/runtime.port.js';
 import { acquireProcessLock } from './runtime/runtime.processLock.js';
 import { runtimeState } from './runtime/runtime.state.js';
 import { startBackgroundWorkers } from './runtime/runtime.workers.js';
@@ -266,8 +266,11 @@ async function main() {
   // HTTP transport is optional during hot-reload/degraded runtime.
   void (async () => {
     await app.ready();
-    await listenWithRetry(app.server, config.PORT);
-    logger.info({ port: config.PORT }, 'HTTP server listening');
+    // Login codes on screen: anyone who reaches the page could log in as anyone invited, so the
+    // page is reachable from this PC only, never from the local network.
+    const host = config.HOST ?? (config.AUTH_DEV_SHOW_CODE ? '127.0.0.1' : ALL_INTERFACES);
+    await listenWithRetry(app.server, config.PORT, host);
+    logger.info({ port: config.PORT, host }, 'HTTP server listening');
   })().catch((err) => {
     logger.error({ error: errorLabel(err) }, 'HTTP bind failed (async)');
   });

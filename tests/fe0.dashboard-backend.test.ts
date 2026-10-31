@@ -314,3 +314,10 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
     }
   });
 });
+
+describe('network address of the server', () => {
+  it('accepts an explicit host, absent by default', () => {
+    expect(config({}).HOST).toBeUndefined();
+    expect(config({ HOST: '127.0.0.1' }).HOST).toBe('127.0.0.1');
+  });
+});
