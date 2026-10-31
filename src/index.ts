@@ -198,7 +198,7 @@ async function main() {
     practiceService,
     complianceService,
     handleMessage: (input: string, identity: ConversationIdentity) =>
-      chatAdapter.handleMessage(input, identity),
+      chatAdapter.answer(input, identity),
     log: logger,
   };
 

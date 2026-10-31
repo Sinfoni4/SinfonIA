@@ -83,6 +83,9 @@ export interface ChannelIdentityProvider {
   tenantFor?(tenantId: string): Promise<Tenant>;
 }
 
+/** A reply of the AI; `clarification` when it asked something instead of acting. */
+export type ChatAnswer = { text: string; clarification?: { options: string[] } };
+
 export type ConversationDeps = {
   practiceService: Pick<PracticeApplicationService, 'executeCommand'> & {
     addAttachment?: PracticeApplicationService['addAttachment'];
@@ -90,7 +93,8 @@ export type ConversationDeps = {
     listPractices?: PracticeApplicationService['listPractices'];
   };
   complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
-  handleMessage: (input: string, identity: ConversationIdentity) => Promise<string>;
+  /** The AI for free text; a ChatAnswer also says when it asked a question back. */
+  handleMessage: (input: string, identity: ConversationIdentity) => Promise<string | ChatAnswer>;
   /** Turns the scheduled export in chat on or off for the person (D5b); returns whether it changed. */
   scheduledExport?: (orgId: string, userId: string, enabled: boolean) => Promise<boolean>;
   /** Defaults to process memory; production passes the database one. */
@@ -115,6 +119,20 @@ const ATTACHMENT_PRACTICE_LOOKUP_LIMIT = 20;
 
 // A transition of someone else's practice waits this long for the person's confirmation (C2).
 const TRANSITION_CONFIRMATION_MS = 5 * 60_000;
+/** How long the question of the AI waits for its answer. */
+const CLARIFICATION_MS = 10 * 60_000;
+/** An answer to a question of the AI is short: a name, a few words. */
+const MAX_ANSWER_LENGTH = 80;
+const MAX_ANSWER_WORDS = 10;
+
+function normalizedOption(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
 const CONFIRMATION = /^(s[iì]|conferm[ao])[.!]?$/i;
 
 type PendingTransition = {
@@ -197,6 +215,12 @@ export class ConversationService {
   private readonly pendingSuggestions = new Map<
     string,
     { tenantId: string; text: string; expiresAt: number }
+  >();
+  // The request the AI answered with a question, by person: a short reply completes it
+  // («crea nuova pratica» → «come si chiama?» → «Scontrino 001»), instead of starting over.
+  private readonly pendingClarifications = new Map<
+    string,
+    { tenantId: string; request: string; options: string[]; expiresAt: number }
   >();
 
   /** Whether a text is a command this channel handles without the AI. */
@@ -460,6 +484,35 @@ export class ConversationService {
       }
     }
 
+    // The answer to a question of the AI completes the request it asked about. Commands, greetings,
+    // a choice among the offered options and long sentences are new requests instead.
+    const clarification = this.pendingClarifications.get(dbUser.id);
+    if (clarification) {
+      this.pendingClarifications.delete(dbUser.id);
+      const isOption = clarification.options.some(
+        (o) => normalizedOption(o) === normalizedOption(trimmed),
+      );
+      const isAnswer =
+        clarification.tenantId === tenant.id &&
+        clarification.expiresAt > Date.now() &&
+        !isOption &&
+        trimmed.length <= MAX_ANSWER_LENGTH &&
+        trimmed.split(/\s+/).length <= MAX_ANSWER_WORDS &&
+        !trimmed.startsWith('/') &&
+        !CONFIRMATION.test(trimmed) &&
+        !isGreeting(trimmed) &&
+        !this.isCommand(trimmed) &&
+        !suggestCommand(trimmed, (candidate) => this.isCommand(candidate));
+      if (isAnswer) {
+        await this.process(
+          { senderId: message.senderId, text: `${clarification.request} ${trimmed}` },
+          reply,
+          requestId,
+        );
+        return;
+      }
+    }
+
     // Typing errors in a command: a certain one on a read-only command is corrected at once,
     // anything else is asked first. Never applied to sentences, which go to the AI.
     const suggestion = suggestCommand(trimmed, (candidate) => this.isCommand(candidate));
@@ -568,8 +621,20 @@ export class ConversationService {
       return;
     }
 
-    await reply(
-      await deps.handleMessage(text, { tenantId: tenant.id, userId: dbUser.id, role: dbUser.role }),
-    );
+    const raw = await deps.handleMessage(text, {
+      tenantId: tenant.id,
+      userId: dbUser.id,
+      role: dbUser.role,
+    });
+    const answer: ChatAnswer = typeof raw === 'string' ? { text: raw } : raw;
+    if (answer.clarification) {
+      this.pendingClarifications.set(dbUser.id, {
+        tenantId: tenant.id,
+        request: trimmed.slice(0, 300),
+        options: answer.clarification.options,
+        expiresAt: Date.now() + CLARIFICATION_MS,
+      });
+    }
+    await reply(answer.text);
   }
 }
