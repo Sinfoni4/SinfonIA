@@ -19,26 +19,26 @@ SinfonIA è una piattaforma per le cooperative e per le piccole aziende. Aiuta a
 
 **Dati trattati**
 
-| Categoria | Esempi | Note |
-| :--- | :--- | :--- |
-| Identità degli utenti | email, ID numerico Telegram, numero WhatsApp | |
-| Pratiche | nome della pratica (spesso nome e cognome di una persona), stato, dati compilati | |
-| Documenti caricati | foto o PDF di fatture, DDT, ricevute, certificati | contengono spesso **dati di persone diverse dall'utente** |
-| Dati estratti dai documenti | campi letti con l'OCR, svolto sul nostro server | |
-| Scadenze di conformità | tipo, data, titolo | il tipo «visita medica» riguarda la sorveglianza sanitaria dei lavoratori |
-| Registro delle operazioni (audit) | chi ha fatto cosa e quando | solo identificativi, senza contenuti |
-| Log tecnici | accessi, errori | dati di contatto e testi oscurati |
+| Categoria                         | Esempi                                                                           | Note                                                                      |
+| :-------------------------------- | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| Identità degli utenti             | email, ID numerico Telegram, numero WhatsApp                                     |                                                                           |
+| Pratiche                          | nome della pratica (spesso nome e cognome di una persona), stato, dati compilati |                                                                           |
+| Documenti caricati                | foto o PDF di fatture, DDT, ricevute, certificati                                | contengono spesso **dati di persone diverse dall'utente**                 |
+| Dati estratti dai documenti       | campi letti con l'OCR, svolto sul nostro server                                  |                                                                           |
+| Scadenze di conformità            | tipo, data, titolo                                                               | il tipo «visita medica» riguarda la sorveglianza sanitaria dei lavoratori |
+| Registro delle operazioni (audit) | chi ha fatto cosa e quando                                                       | solo identificativi, senza contenuti                                      |
+| Log tecnici                       | accessi, errori                                                                  | dati di contatto e testi oscurati                                         |
 
 **Fornitori esterni coinvolti o previsti**
 
-| Fornitore | Ruolo | Dati che riceve | Dove |
-| :--- | :--- | :--- | :--- |
-| Hosting e database (da scegliere per la produzione) | infrastruttura | tutti | UE (requisito) |
+| Fornitore                                                                                             | Ruolo                                               | Dati che riceve                                                                                                                                            | Dove                              |
+| :---------------------------------------------------------------------------------------------------- | :-------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------- |
+| Hosting e database (da scegliere per la produzione)                                                   | infrastruttura                                      | tutti                                                                                                                                                      | UE (requisito)                    |
 | Fornitore AI, uno a scelta: OpenAI, Azure OpenAI con regione UE, oppure Mistral AI (società francese) | interpretazione dei messaggi in linguaggio naturale | testo dei messaggi. Nomi, codici fiscali, IBAN, email e telefoni sono sostituiti da segnaposto prima dell'invio, ma il riconoscimento dei nomi è euristico | USA (OpenAI); UE (Azure, Mistral) |
-| Telegram | canale di chat | messaggi, file e allegati scambiati in chat | fuori UE **[da verificare]** |
-| Meta (WhatsApp Business) | canale di chat | come sopra | **[da verificare]** |
-| Fornitore email (non ancora scelto: SMTP Aruba, Brevo o altri) | codici di accesso, inviti, avvisi di sicurezza | indirizzo email e testo dell'avviso | Italia o UE |
-| Storage dei file (filesystem del server oppure S3 Milano) | allegati | file originali | UE |
+| Telegram                                                                                              | canale di chat                                      | messaggi, file e allegati scambiati in chat                                                                                                                | fuori UE **[da verificare]**      |
+| Meta (WhatsApp Business)                                                                              | canale di chat                                      | come sopra                                                                                                                                                 | **[da verificare]**               |
+| Fornitore email (non ancora scelto: SMTP Aruba, Brevo o altri)                                        | codici di accesso, inviti, avvisi di sicurezza      | indirizzo email e testo dell'avviso                                                                                                                        | Italia o UE                       |
+| Storage dei file (filesystem del server oppure S3 Milano)                                             | allegati                                            | file originali                                                                                                                                             | UE                                |
 
 ---
 
@@ -54,12 +54,14 @@ Per quali trattamenti SinfonIA è invece titolare? Ad esempio: account degli ute
 
 **A2. Contratto con le organizzazioni (DPA).**
 Quali contenuti minimi deve avere l'accordo sul trattamento dei dati con ciascuna organizzazione? Ci serve in particolare sapere:
+
 - come autorizzare in anticipo i sub-responsabili (fornitori della tabella sopra);
 - come comunicarne le variazioni.
-Avete un modello da proporre?
+  Avete un modello da proporre?
 
 **A3. Sub-responsabili.**
 Quali verifiche e quali contratti servono con ciascun fornitore della tabella? Ci interessano soprattutto:
+
 - **trasferimenti fuori UE**: OpenAI, Telegram, Meta. Bastano le clausole contrattuali standard o il quadro UE-USA per la privacy dei dati? Serve una valutazione d'impatto del trasferimento?
 - **Fornitore AI**: la piattaforma può usare in alternativa OpenAI, Azure OpenAI in regione UE o Mistral AI.
   - Con OpenAI, per rendere accettabile l'invio di testo dopo la sostituzione dei dati personali, basta il DPA standard?
@@ -72,14 +74,16 @@ Abbiamo già deciso: export in chat solo delle proprie pratiche; export pianific
 
 **A5. Informative.**
 Servono più informative, e chi le fornisce? Ad esempio:
+
 - alle persone che usano la piattaforma;
 - alle persone i cui dati compaiono nei documenti caricati (dati di terzi);
 - ai lavoratori per le scadenze di sorveglianza sanitaria.
-Quali informazioni deve mettere a disposizione SinfonIA come responsabile?
+  Quali informazioni deve mettere a disposizione SinfonIA come responsabile?
 
 **A6. Registro dei trattamenti e valutazione d'impatto.**
 SinfonIA deve tenere un registro come responsabile (art. 30.2)?
 Il trattamento richiede una valutazione d'impatto (DPIA)? Gli elementi da considerare sono:
+
 - uso di AI;
 - documenti con dati di terzi;
 - possibili dati sulla salute dei lavoratori;
@@ -93,6 +97,7 @@ Il titolo è libero: conviene vietare di scriverci nomi o informazioni sanitarie
 
 **B2. Documenti caricati.**
 I documenti possono contenere, anche senza che lo chiediamo, dati sanitari o giudiziari: certificati medici, documenti di identità, casellario. Dobbiamo:
+
 - limitare i tipi di documento accettati?
 - avvisare l'utente al caricamento?
 - applicare misure particolari (accesso, cifratura, durata)?
@@ -101,22 +106,23 @@ I documenti possono contenere, anche senza che lo chiediamo, dati sanitari o giu
 
 Le durate in tabella sono **nostre proposte**. Per ciascuna chiediamo se è ammissibile, chi la decide (titolare o responsabile) e come motivarla.
 
-| # | Dato | Proposta | Domanda |
-| :-: | :--- | :--- | :--- |
-| C1 | Pratiche, documenti, dati estratti | durata del contratto con l'organizzazione | La piattaforma deve rispettare gli obblighi civilistici e fiscali di conservazione (es. art. 2220 c.c., art. 22 DPR 600/1973, art. 39 DPR 633/1972), oppure spettano solo all'azienda? Non siamo un sistema di conservazione digitale a norma: come lo dichiariamo per non essere scambiati per un archivio legale? |
-| C2 | Pratiche inviate a enti (`SUBMITTED`/`COMPLETED`) | archiviazione invece di cancellazione | Devono restare come prova dell'adempimento? Per quanto e a carico di chi? |
-| C3 | Dati identificativi di persone non più attive | 12 mesi dopo la fine dell'ultima appartenenza, poi anonimizzazione | È ragionevole? |
-| C4 | Registro delle operazioni (audit) | 5 anni, solo identificativi | Esiste un obbligo o un termine di riferimento? Come lo si concilia con le richieste di cancellazione (art. 17)? |
-| C5 | Log di sicurezza e accessi degli amministratori | 12 mesi, inalterabili | Si applica il provvedimento del Garante sugli amministratori di sistema (log degli accessi conservati almeno 6 mesi)? Con quali requisiti? |
-| C6 | Backup | 30 giorni | Va bene che i dati cancellati restino nei backup fino alla loro scadenza, con accesso limitato e con la ripetizione delle cancellazioni dopo un eventuale ripristino? Cosa dire nell'informativa? |
-| C7 | Codici di accesso, inviti, sessioni | da 24 ore a 30 giorni dopo la scadenza | Nessuna osservazione prevista: confermare. |
-| C8 | Messaggi in coda per l'invio | 30 giorni dopo la consegna | Confermare. |
-| C9 | Dati di un'organizzazione che chiude il contratto | restituzione dei dati, 30 giorni di ripensamento, poi cancellazione | Tempi e modalità di restituzione (art. 28.3.g)? |
+|  #  | Dato                                              | Proposta                                                            | Domanda                                                                                                                                                                                                                                                                                                             |
+| :-: | :------------------------------------------------ | :------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C1  | Pratiche, documenti, dati estratti                | durata del contratto con l'organizzazione                           | La piattaforma deve rispettare gli obblighi civilistici e fiscali di conservazione (es. art. 2220 c.c., art. 22 DPR 600/1973, art. 39 DPR 633/1972), oppure spettano solo all'azienda? Non siamo un sistema di conservazione digitale a norma: come lo dichiariamo per non essere scambiati per un archivio legale? |
+| C2  | Pratiche inviate a enti (`SUBMITTED`/`COMPLETED`) | archiviazione invece di cancellazione                               | Devono restare come prova dell'adempimento? Per quanto e a carico di chi?                                                                                                                                                                                                                                           |
+| C3  | Dati identificativi di persone non più attive     | 12 mesi dopo la fine dell'ultima appartenenza, poi anonimizzazione  | È ragionevole?                                                                                                                                                                                                                                                                                                      |
+| C4  | Registro delle operazioni (audit)                 | 5 anni, solo identificativi                                         | Esiste un obbligo o un termine di riferimento? Come lo si concilia con le richieste di cancellazione (art. 17)?                                                                                                                                                                                                     |
+| C5  | Log di sicurezza e accessi degli amministratori   | 12 mesi, inalterabili                                               | Si applica il provvedimento del Garante sugli amministratori di sistema (log degli accessi conservati almeno 6 mesi)? Con quali requisiti?                                                                                                                                                                          |
+| C6  | Backup                                            | 30 giorni                                                           | Va bene che i dati cancellati restino nei backup fino alla loro scadenza, con accesso limitato e con la ripetizione delle cancellazioni dopo un eventuale ripristino? Cosa dire nell'informativa?                                                                                                                   |
+| C7  | Codici di accesso, inviti, sessioni               | da 24 ore a 30 giorni dopo la scadenza                              | Nessuna osservazione prevista: confermare.                                                                                                                                                                                                                                                                          |
+| C8  | Messaggi in coda per l'invio                      | 30 giorni dopo la consegna                                          | Confermare.                                                                                                                                                                                                                                                                                                         |
+| C9  | Dati di un'organizzazione che chiude il contratto | restituzione dei dati, 30 giorni di ripensamento, poi cancellazione | Tempi e modalità di restituzione (art. 28.3.g)?                                                                                                                                                                                                                                                                     |
 
 ### D. Cancellazione — riguarda le fasi MF10 e MF13
 
 **D1. Richieste di cancellazione degli interessati (art. 17).**
 Chi risponde e in quanto tempo?
+
 - Oggi riteniamo che risponda l'organizzazione come titolare, e che la piattaforma la assista.
 - Se la richiesta arriva direttamente a SinfonIA, come dobbiamo comportarci?
 
@@ -131,6 +137,7 @@ Per ripetere le cancellazioni dopo un ripristino da backup, teniamo un registro 
 
 **D5. File di pratiche già cancellate.**
 Sul server restano file di pratiche cancellate prima che correggessimo il difetto. Dobbiamo intervenire subito? Con quali tempi e quale documentazione?
+
 - Il numero di file va ancora accertato.
 - Non sono più collegati a nessuna pratica, quindi non sono accessibili dall'applicazione.
 
@@ -159,12 +166,30 @@ Il possesso di una casella email dimostra il controllo della casella, non l'iden
 
 **F2. Recupero dell'accesso dell'unico amministratore.**
 Se l'unico amministratore perde l'accesso, prevediamo:
+
 - una richiesta documentata del legale rappresentante, verificata fuori dalla piattaforma;
 - l'esecuzione con doppio controllo.
-È adeguato?
+  È adeguato?
 
 **F3. Violazioni dei dati.**
 Come responsabile dobbiamo avvisare il titolare «senza ingiustificato ritardo» (art. 33.2). Va fissato un termine nel DPA, ad esempio 24 o 48 ore? Cosa deve contenere la procedura?
+
+### G. Architettura a tre livelli — riguarda `docs/PROGETTO_ARCHITETTURA_3_LIVELLI.md`
+
+**G1. Storico dei messaggi in chat.**
+Oggi SinfonIA non conserva il testo dei messaggi scambiati con il bot. Per la chat dal vivo tra operatore e socio e per la scheda completa del socio servirebbe conservarlo. Con quale base giuridica, per quanto tempo, e cosa va aggiunto all'informativa? Serve una valutazione d'impatto?
+
+**G2. Etichette automatiche sui soci.**
+È stato proposto di assegnare etichette ai soci in base ai loro comportamenti o alle loro esigenze (es. «pratica in sospeso», «spesso in ritardo»). È profilazione ai sensi dell'art. 4.4? A quali condizioni è ammessa, e serve il consenso?
+
+**G3. Documenti d'identità letti automaticamente.**
+Il socio potrebbe fotografare la carta d'identità per far compilare i dati in automatico. Quali campi possiamo estrarre e conservare, per quanto tempo, e l'immagine va cancellata subito dopo la lettura?
+
+**G4. Comunicazioni massive.**
+L'organizzazione vorrebbe inviare messaggi a gruppi di soci (es. «chi ha una pratica in sospeso in provincia X»). Quando è comunicazione di servizio e quando promozionale? Che consenso serve su Telegram e su WhatsApp?
+
+**G5. Fatturazione e misurazione dei consumi.**
+Per fatturare alle organizzazioni conteremmo membri attivi, documenti letti e messaggi (solo numeri, senza contenuti). È un trattamento che va indicato nel contratto con l'organizzazione o nel DPA?
 
 ---
 
