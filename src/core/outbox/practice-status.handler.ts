@@ -1,3 +1,4 @@
+import { PRACTICE_ASSIGNED } from '../practice/practice-assignment.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
 
 import { chatDeliveriesTo } from './outbox.recipients.js';
@@ -5,6 +6,7 @@ import { chatDeliveriesTo } from './outbox.recipients.js';
 import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
+import type { PracticeAssignedPayload } from '../practice/practice-assignment.js';
 import type { PracticeState } from '../types/workflow.types.js';
 
 /** A3: someone else changed the state of a person's practice. */
@@ -59,6 +61,41 @@ export class PracticeStatusHandler implements OutboxEventHandler {
     const name = readPracticePayload(practice.payload).name ?? 'senza nome';
     const text = formatPracticeStatusNotice(name, payload.to);
     if (!text) return [];
+    return chatDeliveriesTo(
+      this.prisma,
+      message.tenantId,
+      this.channels,
+      (notifier, chatId) => notifier.sendMessage(chatId, text),
+      { userIds: [payload.userId] },
+    );
+  }
+}
+
+/**
+ * A4: the administrator or operator who was given a practice hears it in chat, with the link to
+ * it when the dashboard address is known. Nothing is sent if the practice moved on to someone else.
+ */
+export class PracticeAssignedHandler implements OutboxEventHandler {
+  readonly eventType = PRACTICE_ASSIGNED;
+
+  constructor(
+    private readonly prisma: PrismaLike,
+    private readonly channels: OutboxChannels,
+    /** Base address of the dashboard (`…/app`), when known. */
+    private readonly dashboardUrl?: string,
+  ) {}
+
+  async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
+    const payload = message.payload as PracticeAssignedPayload;
+    const practice = await this.prisma.practice.findFirst({
+      where: { id: payload.practiceId, tenantId: message.tenantId },
+      select: { payload: true, assignedTo: true },
+    });
+    if (!practice || practice.assignedTo !== payload.userId) return [];
+    const name = readPracticePayload(practice.payload).name ?? 'senza nome';
+    const text =
+      `📌 Ti è stata assegnata la pratica «${name}».` +
+      (this.dashboardUrl ? `\n${this.dashboardUrl}/pratiche/${payload.practiceId}` : '');
     return chatDeliveriesTo(
       this.prisma,
       message.tenantId,

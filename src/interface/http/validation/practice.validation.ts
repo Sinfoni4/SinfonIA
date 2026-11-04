@@ -31,6 +31,8 @@ export const PracticeListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   status: PracticeStateSchema.optional(),
   userId: z.string().uuid().optional(),
+  /** A4: `me`, `none` (followed by nobody) or a person. */
+  assignedTo: z.union([z.literal('me'), z.literal('none'), z.string().uuid()]).optional(),
   search: z.string().trim().optional(),
   sortBy: z.enum(['createdAt', 'updatedAt']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
@@ -46,6 +48,8 @@ export const PracticeExportBodySchema = z.object({
     ])
     .default({ type: 'all' }),
 });
+
+export const PracticeAssignBodySchema = z.object({ userId: z.string().uuid().nullable() }).strict();
 
 export const PracticeAttachmentParamsSchema = PracticeIdParamsSchema;
 

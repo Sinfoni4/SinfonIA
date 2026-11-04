@@ -676,3 +676,39 @@ form.validation button {
   font-weight: 600;
   border-bottom: 3px solid var(--accent);
 }
+
+/* A4: the board of practices, one column per state; columns stack on narrow screens. */
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.board-column h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+ul.board-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.board-card {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.board-card label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.board-card .actions {
+  flex-wrap: wrap;
+}

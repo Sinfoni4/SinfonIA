@@ -27,6 +27,7 @@ export const PERMISSIONS = [
   'organization.manage',
   'assistance.request',
   'assistance.manage',
+  'practice.assign',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -54,6 +55,8 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
   // H10: anyone asks an operator for help from the chat; staff handle the requests.
   'assistance.request': 'own',
   'assistance.manage': 'tenant',
+  // A4: who follows a practice of the organization.
+  'practice.assign': 'tenant',
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, PermissionScope>>> = {

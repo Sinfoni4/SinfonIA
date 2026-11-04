@@ -184,12 +184,14 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'POST /assistance/:id/close',
       'POST /assistance/:id/take',
       'POST /compliance/deadlines/:id/close',
+      'POST /practices/:id/assign',
       'POST /practices/:id/attachments',
       'POST /practices/:id/attachments/:attachmentId/validation',
       'POST /practices/:id/transition',
     ]);
     const payloads: Record<string, unknown> = {
       '/practices/:id/transition': { nextState: 'VALIDATED' },
+      '/practices/:id/assign': { userId: null },
       '/practices/:id/attachments/:attachmentId/validation': {
         documentType: 'generic',
         fields: {},

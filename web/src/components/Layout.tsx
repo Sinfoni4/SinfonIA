@@ -48,6 +48,7 @@ export function Layout({ me }: { me: Me }) {
         </div>
         <nav aria-label="Sezioni">
           <NavLink to="/pratiche">Pratiche</NavLink>
+          {me.current.role !== 'MEMBER' && <NavLink to="/bacheca">Bacheca</NavLink>}
           <NavLink to="/scadenze">Scadenze</NavLink>
           <NavLink to="/verifica">Da verificare</NavLink>
           {me.current.role !== 'MEMBER' && <NavLink to="/assistenza">Assistenza</NavLink>}

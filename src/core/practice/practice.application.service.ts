@@ -59,11 +59,14 @@ export type PracticeView = {
   payload: unknown;
   createdAt: Date;
   updatedAt: Date;
+  /** A4: who follows the practice, if anyone. */
+  assignedTo: string | null;
 };
 
 export type PracticePaginationParams = {
   tenantId: string;
   userId?: string;
+  assignedTo?: string;
   status?: PracticeState;
   search?: string;
   page?: number;
@@ -136,6 +139,7 @@ function toView(dto: PracticeDTO): PracticeView {
     payload: dto.payload,
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
+    assignedTo: dto.assignedTo ?? null,
   };
 }
 
@@ -236,6 +240,7 @@ export class PracticeApplicationService {
 
     const result = await this.repository.findPracticesPaginated(input.tenantId, {
       userId: input.userId,
+      assignedTo: input.assignedTo,
       status: input.status,
       search: input.search,
       page: input.page,

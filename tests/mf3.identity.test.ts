@@ -147,14 +147,20 @@ describe.runIf(Boolean(DATABASE_URL))('MF3 identity model (expand step)', () => 
     ).toBe('check');
   });
 
-  it('keeps the whole database consistent with the legacy columns', async () => {
-    const client = new pg.Client({ connectionString: DATABASE_URL });
-    await client.connect();
-    try {
-      const failed = (await verifyIdentityModel(client)).filter((c) => !c.ok);
-      expect(failed).toEqual([]);
-    } finally {
-      await client.end();
-    }
-  });
+  // It reads the whole test database, which grows with every run: under the load of the full
+  // suite it needs more than the default 20 s.
+  it(
+    'keeps the whole database consistent with the legacy columns',
+    { timeout: 90_000 },
+    async () => {
+      const client = new pg.Client({ connectionString: DATABASE_URL });
+      await client.connect();
+      try {
+        const failed = (await verifyIdentityModel(client)).filter((c) => !c.ok);
+        expect(failed).toEqual([]);
+      } finally {
+        await client.end();
+      }
+    },
+  );
 });

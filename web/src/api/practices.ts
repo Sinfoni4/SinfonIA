@@ -13,6 +13,8 @@ export type Practice = {
   summary: string;
   createdAt: string;
   updatedAt: string;
+  /** A4: the administrator or operator who follows the practice, if anyone. */
+  assignedTo: string | null;
 };
 
 export type PracticeDetail = Practice & { allowedTransitions: PracticeState[] };
@@ -67,6 +69,47 @@ export function practicesQuery(filters: PracticeFilters, userId: string): string
   if (filters.status) params.set('status', filters.status);
   if (filters.mine) params.set('userId', userId);
   return `/practices?${params.toString()}`;
+}
+
+/** A4: who can follow a practice. */
+export type Assignee = { userId: string; email: string | null; role: 'ADMIN' | 'OPERATOR' };
+
+/** Who the board shows: everything, the caller's practices, or those followed by nobody. */
+export type BoardFilter = 'all' | 'me' | 'none';
+
+/** The columns of the board, in the order of the lifecycle. */
+export const BOARD_STATES: PracticeState[] = [
+  'CREATED',
+  'VALIDATED',
+  'SUBMITTED',
+  'COMPLETED',
+  'FAILED',
+];
+
+/** Mirror of src/core/workflow/state-machine.ts: the board offers only valid moves. */
+export const NEXT_STATES: Record<PracticeState, PracticeState[]> = {
+  CREATED: ['VALIDATED', 'SUBMITTED'],
+  VALIDATED: ['SUBMITTED', 'COMPLETED'],
+  SUBMITTED: ['COMPLETED', 'FAILED'],
+  FAILED: [],
+  COMPLETED: [],
+};
+
+export const BOARD_COLUMN_SIZE = 50;
+
+export function boardQuery(state: PracticeState, filter: BoardFilter): string {
+  const params = new URLSearchParams({
+    status: state,
+    limit: String(BOARD_COLUMN_SIZE),
+    sortBy: 'updatedAt',
+    sortOrder: 'desc',
+  });
+  if (filter !== 'all') params.set('assignedTo', filter);
+  return `/practices?${params.toString()}`;
+}
+
+export function assigneeLabel(a: Pick<Assignee, 'email' | 'role'>): string {
+  return a.email ?? (a.role === 'ADMIN' ? 'amministratore (solo chat)' : 'operatore (solo chat)');
 }
 
 export const STATE_LABELS: Record<PracticeState, string> = {

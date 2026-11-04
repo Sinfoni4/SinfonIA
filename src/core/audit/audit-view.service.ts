@@ -28,6 +28,8 @@ const SHOWN_FIELDS = [
   'outcome',
   // H10: the topic of a request to an operator (a button, never free text).
   'topic',
+  // A4: a practice given back to nobody.
+  'unassigned',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];
