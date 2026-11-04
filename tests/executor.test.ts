@@ -20,6 +20,7 @@ function makePracticeView(): PracticeView {
     payload: {},
     createdAt: new Date(),
     updatedAt: new Date(),
+    assignedTo: null,
   };
 }
 

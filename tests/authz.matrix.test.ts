@@ -36,6 +36,7 @@ const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
   'organization.manage': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
   'assistance.request': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'assistance.manage': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'denied' },
+  'practice.assign': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'denied' },
 };
 
 const ROLES: UserRole[] = ['ADMIN', 'OPERATOR', 'MEMBER'];

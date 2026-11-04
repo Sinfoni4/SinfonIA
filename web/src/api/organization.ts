@@ -65,7 +65,8 @@ export type AuditEvent = {
       | 'scheduledExport'
       | 'byPlatform'
       | 'outcome'
-      | 'topic',
+      | 'topic'
+      | 'unassigned',
       string | number | boolean
     >
   >;
@@ -104,6 +105,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_CREATED',
       'PRACTICE_STATE_CHANGED',
       'PRACTICE_DELETED',
+      'PRACTICE_ASSIGNED',
       'ATTACHMENT_VALIDATED',
     ],
   },
@@ -243,6 +245,10 @@ export function describeEvent(event: AuditEvent): string {
       return `Pratica ${practice}: da ${stateName(d.from)} a ${stateName(d.to)}`;
     case 'PRACTICE_DELETED':
       return `Pratica ${practice} eliminata`;
+    case 'PRACTICE_ASSIGNED':
+      return d.unassigned === true
+        ? `Pratica ${practice} non più assegnata`
+        : `Pratica ${practice} assegnata a ${target}`;
     case 'COMPLIANCE_DEADLINE_CREATED':
       return `Nuova scadenza: ${category}`;
     case 'COMPLIANCE_DEADLINE_CLOSED':

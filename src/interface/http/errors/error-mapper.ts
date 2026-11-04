@@ -29,6 +29,7 @@ import {
 import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
 import { PlatformActionError } from '../../../core/platform/platform.service.js';
 import { AttachmentValidationError } from '../../../core/practice/attachment-validation.js';
+import { AssignmentError } from '../../../core/practice/practice-assignment.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -50,7 +51,8 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof PlatformAccessError ||
     err instanceof PlatformActionError ||
     err instanceof AttachmentValidationError ||
-    err instanceof AssistanceError
+    err instanceof AssistanceError ||
+    err instanceof AssignmentError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }

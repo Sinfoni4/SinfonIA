@@ -28,7 +28,10 @@ import {
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
-import { PracticeStatusHandler } from './core/outbox/practice-status.handler.js';
+import {
+  PracticeAssignedHandler,
+  PracticeStatusHandler,
+} from './core/outbox/practice-status.handler.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
@@ -331,6 +334,11 @@ async function main() {
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app/assistenza` : undefined,
       ),
       new AssistanceUpdatedHandler(prisma, outboxChannels),
+      new PracticeAssignedHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
+      ),
     ],
   });
   startBackgroundWorkers(

@@ -2,11 +2,13 @@ import { z } from 'zod';
 
 import { can, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
+import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
 import { allowedNextStates } from '../../../core/workflow/state-machine.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  PracticeAssignBodySchema,
   PracticeAttachmentBodySchema,
   PracticeAttachmentParamsSchema,
   PracticeCreateBodySchema,
@@ -18,6 +20,7 @@ import {
 } from '../validation/practice.validation.js';
 
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
+import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 
 const AttachmentDownloadParamsSchema = z.object({
@@ -28,6 +31,8 @@ const AttachmentDownloadParamsSchema = z.object({
 export type PracticeRoutesDeps = {
   practiceService: PracticeApplicationService;
   maxAttachmentBytes?: number;
+  /** A4: assignment of practices; without a database the routes are not registered. */
+  prisma?: PrismaClient;
 };
 
 type AttachmentUpload = { fileName: string; mimeType: string; content: Buffer; hint?: string };
@@ -109,6 +114,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       const result = await deps.practiceService.listPracticesPaginated({
         tenantId: auth.tenantId,
         userId: targetUserId,
+        assignedTo: query.assignedTo === 'me' ? auth.userId : query.assignedTo,
         status: query.status,
         search: query.search,
         page: query.page,
@@ -123,6 +129,47 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
     }
   });
+
+  const prisma = deps.prisma;
+  if (prisma) {
+    // A4: the administrators and operators a practice can be assigned to.
+    app.get(
+      '/practices/assignees',
+      { config: { permission: 'practice.assign' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.assign');
+          return reply.send(ok(await listAssignees(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // A4: assigns a practice to an administrator or operator, or to nobody (`userId: null`).
+    app.post(
+      '/practices/:id/assign',
+      { config: { permission: 'practice.assign' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.assign');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          const body = PracticeAssignBodySchema.parse(req.body);
+          const result = await assignPractice(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            assigneeUserId: body.userId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+  }
 
   // GET /practices/:id — Get single practice details
   app.get('/practices/:id', { config: { permission: 'practice.read' } }, async (req, reply) => {

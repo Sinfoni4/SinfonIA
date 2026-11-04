@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { Layout } from './components/Layout';
 import { ActivityPage, AssistantUsagePage } from './pages/ActivityPage';
 import { AssistancePage } from './pages/AssistancePage';
+import { BoardPage } from './pages/BoardPage';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
 import { ExportPage } from './pages/ExportPage';
@@ -45,6 +46,7 @@ export function App() {
       <Route element={<Layout me={me} />}>
         <Route index element={<HomePage me={me} />} />
         <Route path="pratiche" element={<PracticesPage me={me} />} />
+        <Route path="bacheca" element={<BoardPage me={me} />} />
         <Route path="pratiche/nuova" element={<NewPracticePage />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />

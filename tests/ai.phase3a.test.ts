@@ -37,6 +37,7 @@ function createMockPracticeView(overrides: Partial<PracticeView> = {}): Practice
     payload: overrides.payload ?? {},
     createdAt: overrides.createdAt ?? new Date(),
     updatedAt: overrides.updatedAt ?? new Date(),
+    assignedTo: overrides.assignedTo ?? null,
   };
 }
 

@@ -34,6 +34,8 @@ export type PracticeDTO = {
   payload: unknown;
   createdAt: Date;
   updatedAt: Date;
+  /** A4: who follows the practice (an administrator or operator), if anyone. */
+  assignedTo: string | null;
 };
 
 export type AuditLogDTO = {
