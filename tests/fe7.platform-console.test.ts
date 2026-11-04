@@ -361,4 +361,74 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       ).rejects.toThrow();
     });
   });
+
+  describe('state of the system and use of the AI (A5, FE8)', () => {
+    it('reports database, deliveries, scheduler and configured services', async () => {
+      const res = await get('/platform/health', bearer());
+      expect(res.statusCode).toBe(200);
+      const h = res.json<{
+        data: {
+          database: { reachable: boolean; latencyMs: number };
+          outbox: Record<string, number | null>;
+          services: Record<string, unknown>;
+        };
+      }>().data;
+      expect(h.database.reachable).toBe(true);
+      expect(h.database.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(Object.keys(h.outbox).sort()).toEqual(
+        [
+          'deadLetter',
+          'deadLetterLast24h',
+          'failed',
+          'oldestPendingMinutes',
+          'pending',
+          'processing',
+        ].sort(),
+      );
+      expect(h.services).toEqual({ telegram: false, whatsapp: false, webhook: false, ai: null });
+    });
+
+    it('counts the use of the AI by organization, without any error text', async () => {
+      const trace = (outcome: string, tokens: number | null, error: string | null = null) =>
+        prisma.aiTrace.create({
+          data: {
+            tenantId: orgId,
+            requestId: `fe8-${run}-${randomUUID()}`,
+            model: 'mistral-small-latest',
+            provider: 'mistral',
+            outcome,
+            latencyMs: 400,
+            totalTokens: tokens,
+            error,
+          },
+        });
+      await trace('SUCCESS', 120);
+      await trace('SUCCESS', 80);
+      await trace('ERROR', null, `dati riservati ${run}`);
+      const res = await get('/platform/ai-usage?days=1', bearer());
+      expect(res.statusCode).toBe(200);
+      expect(res.body).not.toContain(`dati riservati ${run}`);
+      const usage = res.json<{
+        data: {
+          byOrganization: Array<{
+            orgId: string;
+            requests: number;
+            tokens: number;
+            errors: number;
+          }>;
+        };
+      }>().data;
+      expect(usage.byOrganization.find((o) => o.orgId === orgId)).toMatchObject({
+        requests: 3,
+        tokens: 200,
+        errors: 1,
+      });
+      expect((await get('/platform/ai-usage?days=3', bearer())).statusCode).toBe(400);
+    });
+
+    it('is refused with an organization token', async () => {
+      const res = await get('/platform/health', authHeaders(orgId, adminId, 'ADMIN'));
+      expect([401, 403]).toContain(res.statusCode);
+    });
+  });
 });

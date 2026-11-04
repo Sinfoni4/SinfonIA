@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { aiUsage, systemHealth } from '../../../core/platform/platform-health.service.js';
 import {
   createOrganization,
   getOrganization,
@@ -12,10 +13,31 @@ import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
 import type { LoginService } from '../../../core/identity/login.service.js';
+import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
 
-export type PlatformRoutesDeps = { prisma: PrismaClient; login: LoginService };
+export type PlatformRoutesDeps = {
+  prisma: PrismaClient;
+  login: LoginService;
+  /** A5: which external services this process is configured for. */
+  services?: ConfiguredServices;
+};
+
+const NO_SERVICES: ConfiguredServices = {
+  telegram: false,
+  whatsapp: false,
+  webhook: false,
+  ai: null,
+};
+
+const UsageQuerySchema = z.object({
+  days: z.coerce
+    .number()
+    .int()
+    .pipe(z.union([z.literal(1), z.literal(7), z.literal(30)]))
+    .default(7),
+});
 
 const TYPES = [
   'COMPANY',
@@ -161,6 +183,27 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       const body = ReactivateBodySchema.parse(req.body);
       await deps.login.confirmStepUp(userId, body.verification.challengeId, body.verification.code);
       return reply.send(ok(await setOrganizationSuspended(deps.prisma, id, false, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // A5 / FE8: the state of the system (database, deliveries, scheduler, configured services).
+  app.get('/platform/health', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      return reply.send(ok(await systemHealth(deps.prisma, deps.services ?? NO_SERVICES)));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // A5 / FE8: use of the AI in the last 1, 7 or 30 days, by day, model and organization.
+  app.get('/platform/ai-usage', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const { days } = UsageQuerySchema.parse(req.query);
+      return reply.send(ok(await aiUsage(deps.prisma, days)));
     } catch (err: unknown) {
       return sendError(reply, err);
     }

@@ -208,7 +208,16 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     });
     // The platform console needs the login service (confirmation codes, first invitations).
     if (deps.prisma) {
-      void app.register(platformRoutes, { prisma: deps.prisma, login: deps.login });
+      void app.register(platformRoutes, {
+        prisma: deps.prisma,
+        login: deps.login,
+        services: {
+          telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN?.trim()),
+          whatsapp: Boolean(config.WHATSAPP_ACCESS_TOKEN),
+          webhook: Boolean(config.OUTBOX_WEBHOOK_SECRET),
+          ai: config.ENABLE_LLM ? config.LLM_PROVIDER : null,
+        },
+      });
     }
   }
   if (deps.complianceService) {

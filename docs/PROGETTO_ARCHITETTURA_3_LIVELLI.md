@@ -179,7 +179,7 @@ Una rete d'imprese è fatta di **più aziende**, ciascuna con i propri dati, e d
 |        | D3 primo connettore gestionale                                                 |      6–10      | H8                   |
 |        | D4 catalogo dei moduli e dei modelli IA                                        |   da stimare   | due verticali attivi |
 
-**Avanzamento dell'ondata A** (04/11/2026): A1 fatta (PR #41); A2 pulsanti e menu fatta (PR #42); A3 avvisi ai cambi di stato e «parla con un operatore» (H10: richiesta con argomento scelto da pulsante, nessun testo libero conservato, pagina «Assistenza» per amministratori e operatori) nella PR successiva; restano A4 e A5.
+**Avanzamento dell'ondata A** (05/11/2026): A1 fatta (PR #41); A2 pulsanti e menu (PR #42); A3 avvisi ai cambi di stato e «parla con un operatore» (H10: argomento scelto da pulsante, nessun testo libero conservato, pagina «Assistenza»; PR #43); A4 bacheca Kanban e assegnazione delle pratiche (PR #45); A5 salute del sistema e consumi IA nella console (FE8, solo dati tecnici e conteggi). Proposta per D3 e D4 in `docs/PROPOSTA_DECISIONI_D3_D4.md` (PR #44), da approvare per avviare B5.
 
 **Ondata A: circa 15–17 giorni**, nessuna decisione bloccante. Le stime sono indicative e non comprendono le attese esterne (Meta, fornitori, consulenza).
 
