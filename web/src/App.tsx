@@ -10,6 +10,7 @@ import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
 import { InvitationPage } from './pages/InvitationPage';
 import { LoginPage } from './pages/LoginPage';
+import { MembershipsPage, NetworkMembersPage, NetworkStatsPage } from './pages/NetworkPages';
 import { NewPracticePage } from './pages/NewPracticePage';
 import { PeoplePage } from './pages/PeoplePage';
 import { PlatformApp } from './pages/PlatformPages';
@@ -47,6 +48,9 @@ export function App() {
         <Route index element={<HomePage me={me} />} />
         <Route path="pratiche" element={<PracticesPage me={me} />} />
         <Route path="bacheca" element={<BoardPage me={me} />} />
+        <Route path="rete" element={<NetworkMembersPage me={me} />} />
+        <Route path="rete/statistiche" element={<NetworkStatsPage me={me} />} />
+        <Route path="adesioni" element={<MembershipsPage me={me} />} />
         <Route path="pratiche/nuova" element={<NewPracticePage />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />

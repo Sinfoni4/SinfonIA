@@ -41,6 +41,8 @@ const AuditQuerySchema = z
 const SettingsBodySchema = z
   .object({
     name: z.string().max(200).optional(),
+    municipality: z.string().max(200).nullable().optional(),
+    sector: z.string().max(200).nullable().optional(),
     scheduledExport: z
       .object({
         enabled: z.boolean(),

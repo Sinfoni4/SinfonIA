@@ -30,6 +30,9 @@ const SHOWN_FIELDS = [
   'topic',
   // A4: a practice given back to nobody.
   'unassigned',
+  // MF9: the other organization of a membership, and which side acted.
+  'organization',
+  'by',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

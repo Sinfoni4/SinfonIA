@@ -18,12 +18,17 @@ export type OrganizationSettings = {
   id: string;
   name: string;
   type: OrganizationType;
+  /** MF9: what a network sees of its members, with the name (I1). */
+  municipality: string | null;
+  sector: string | null;
   scheduledExport: { enabled: boolean; frequency: SchedulerFrequency };
   reminderDays: number[];
 };
 
 export type OrganizationSettingsChange = {
   name?: string;
+  municipality?: string | null;
+  sector?: string | null;
   scheduledExport?: { enabled: boolean; frequency?: SchedulerFrequency };
 };
 
@@ -52,6 +57,8 @@ export async function getOrganizationSettings(
       id: true,
       name: true,
       type: true,
+      municipality: true,
+      sector: true,
       schedulerEnabled: true,
       schedulerFrequency: true,
     },
@@ -61,6 +68,8 @@ export async function getOrganizationSettings(
     id: row.id,
     name: row.name,
     type: row.type,
+    municipality: row.municipality,
+    sector: row.sector,
     scheduledExport: {
       enabled: row.schedulerEnabled,
       frequency: frequencyOf(row.schedulerFrequency),
@@ -80,17 +89,47 @@ export async function updateOrganizationSettings(
   if (name !== undefined && (name.length < 2 || name.length > 120)) {
     throw new OrganizationSettingsError('Il nome deve avere da 2 a 120 caratteri');
   }
+  const profile = (value: string | null | undefined, label: string) => {
+    if (value === undefined) return undefined;
+    const clean = value?.trim().replace(/\s+/g, ' ') ?? '';
+    if (clean.length > 80) {
+      throw new OrganizationSettingsError(`${label}: al massimo 80 caratteri`);
+    }
+    return clean || null;
+  };
+  const municipality = profile(change.municipality, 'Comune');
+  const sector = profile(change.sector, 'Settore');
   await withTransaction(prisma, async (tx) => {
     const current = await tx.tenant.findUnique({
       where: { id: orgId },
-      select: { name: true, schedulerEnabled: true, schedulerFrequency: true },
+      select: {
+        name: true,
+        municipality: true,
+        sector: true,
+        schedulerEnabled: true,
+        schedulerFrequency: true,
+      },
     });
     if (!current) throw new NotFoundError('Organization not found');
-    const data: { name?: string; schedulerEnabled?: boolean; schedulerFrequency?: string } = {};
-    const changed: Record<string, string | boolean> = {};
+    const data: {
+      name?: string;
+      municipality?: string | null;
+      sector?: string | null;
+      schedulerEnabled?: boolean;
+      schedulerFrequency?: string;
+    } = {};
+    const changed: Record<string, string | boolean | null> = {};
     if (name !== undefined && name !== current.name) {
       data.name = name;
       changed.name = name;
+    }
+    if (municipality !== undefined && municipality !== current.municipality) {
+      data.municipality = municipality;
+      changed.municipality = municipality;
+    }
+    if (sector !== undefined && sector !== current.sector) {
+      data.sector = sector;
+      changed.sector = sector;
     }
     const exportChange = change.scheduledExport;
     if (exportChange) {

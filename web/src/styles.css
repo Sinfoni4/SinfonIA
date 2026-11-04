@@ -723,3 +723,19 @@ ul.board-cards {
 .board-card .actions {
   flex-wrap: wrap;
 }
+
+/* MF9: the cards of the statistics of a network. */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.stats-grid .card {
+  min-width: 0;
+}
+
+.stats-grid h2 {
+  font-size: 1rem;
+}

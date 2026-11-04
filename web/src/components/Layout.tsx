@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { describeError, ROLE_LABELS, type Me } from '../api/client';
+import { NETWORK_TYPES } from '../api/organization';
 import { useSession } from '../session/session';
 
 /** Header with the current organization (switchable), the profile and the exit. */
@@ -9,6 +10,8 @@ export function Layout({ me }: { me: Me }) {
   const { enter, enterPlatform, logout } = useSession();
   const [error, setError] = useState<string | null>(null);
   const current = me.organizations.find((o) => o.orgId === me.current.orgId);
+  // MF9: the sections of a network (G5); the backend refuses them to other types anyway.
+  const isNetwork = current?.type !== undefined && NETWORK_TYPES.includes(current.type);
 
   const switchTo = async (orgId: string) => {
     setError(null);
@@ -53,9 +56,14 @@ export function Layout({ me }: { me: Me }) {
           <NavLink to="/verifica">Da verificare</NavLink>
           {me.current.role !== 'MEMBER' && <NavLink to="/assistenza">Assistenza</NavLink>}
           <NavLink to="/export">Export</NavLink>
+          {isNetwork && me.current.role !== 'MEMBER' && (
+            <NavLink to="/rete/statistiche">Statistiche</NavLink>
+          )}
           {me.current.role === 'ADMIN' && (
             <>
               <NavLink to="/persone">Persone</NavLink>
+              {isNetwork && <NavLink to="/rete">Aderenti</NavLink>}
+              <NavLink to="/adesioni">Adesioni</NavLink>
               <NavLink to="/attivita">Attività</NavLink>
               <NavLink to="/impostazioni">Impostazioni</NavLink>
             </>

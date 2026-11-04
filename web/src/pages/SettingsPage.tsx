@@ -18,6 +18,8 @@ export function SettingsPage({ me }: { me: Me }) {
   const queryClient = useQueryClient();
   const isAdmin = me.current.role === 'ADMIN';
   const [name, setName] = useState('');
+  const [municipality, setMunicipality] = useState('');
+  const [sector, setSector] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [frequency, setFrequency] = useState<Frequency>('monthly');
 
@@ -31,6 +33,8 @@ export function SettingsPage({ me }: { me: Me }) {
   useEffect(() => {
     if (!query.data) return;
     setName(query.data.name);
+    setMunicipality(query.data.municipality ?? '');
+    setSector(query.data.sector ?? '');
     setEnabled(query.data.scheduledExport.enabled);
     setFrequency(query.data.scheduledExport.frequency);
   }, [query.data]);
@@ -39,7 +43,12 @@ export function SettingsPage({ me }: { me: Me }) {
     mutationFn: () =>
       api<Settings>('/organization', {
         method: 'PATCH',
-        body: { name: name.trim(), scheduledExport: { enabled, frequency } },
+        body: {
+          name: name.trim(),
+          municipality: municipality.trim() || null,
+          sector: sector.trim() || null,
+          scheduledExport: { enabled, frequency },
+        },
       }),
     onSuccess: async (data) => {
       queryClient.setQueryData(['organization', me.current.orgId], data);
@@ -63,6 +72,8 @@ export function SettingsPage({ me }: { me: Me }) {
   const changed =
     saved !== undefined &&
     (name.trim() !== saved.name ||
+      municipality.trim() !== (saved.municipality ?? '') ||
+      sector.trim() !== (saved.sector ?? '') ||
       enabled !== saved.scheduledExport.enabled ||
       frequency !== saved.scheduledExport.frequency);
 
@@ -93,6 +104,31 @@ export function SettingsPage({ me }: { me: Me }) {
               save.reset();
             }}
           />
+          <label htmlFor="org-municipality">Comune</label>
+          <input
+            id="org-municipality"
+            maxLength={80}
+            value={municipality}
+            onChange={(e) => {
+              setMunicipality(e.target.value);
+              save.reset();
+            }}
+          />
+          <label htmlFor="org-sector">Settore</label>
+          <input
+            id="org-sector"
+            maxLength={80}
+            value={sector}
+            placeholder="es. viticoltura, ortofrutta, allevamento"
+            onChange={(e) => {
+              setSector(e.target.value);
+              save.reset();
+            }}
+          />
+          <p className="muted">
+            Nome, comune e settore sono gli unici dati che vedono le reti a cui l&apos;azienda
+            aderisce.
+          </p>
           <p>
             <strong>Tipo:</strong> {ORGANIZATION_TYPE_LABELS[saved.type]}{' '}
             <span className="muted">(lo cambia solo il gestore della piattaforma)</span>

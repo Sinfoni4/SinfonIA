@@ -25,6 +25,9 @@ model Tenant {
   // Phase 1 (MF3): every tenant is an organization of a type (company, network, ...).
   type                OrganizationType   @default(COMPANY)
   status              OrganizationStatus @default(ACTIVE)
+  /// MF9: minimal profile a network sees of its member companies (D4, I1).
+  municipality        String?
+  sector              String?
   deactivatedAt       DateTime?          @map("deactivated_at")
   deletionScheduledAt DateTime?          @map("deletion_scheduled_at")
   createdAt           DateTime           @default(now()) @map("created_at")
@@ -517,6 +520,9 @@ model OrganizationRelation {
   confirmedBy  String?        @map("confirmed_by") @db.Uuid
   startedAt    DateTime?      @map("started_at")
   endedAt      DateTime?      @map("ended_at")
+  /// MF9: who ended or refused it, and whether it was refused before starting.
+  endedBy      String?        @map("ended_by") @db.Uuid
+  refused      Boolean        @default(false)
   createdAt    DateTime       @default(now()) @map("created_at")
 
   parent Tenant @relation("RelationParent", fields: [parentOrgId], references: [id], onDelete: Cascade)
@@ -524,6 +530,7 @@ model OrganizationRelation {
 
   @@unique([parentOrgId, childOrgId, relationType])
   @@index([childOrgId])
+  @@index([parentOrgId, status])
   @@map("organization_relation")
 }
 
