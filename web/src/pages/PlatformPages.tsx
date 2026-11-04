@@ -31,6 +31,8 @@ import {
 import { formatDate } from '../api/practices';
 import { useSession } from '../session/session';
 
+import { AiUsagePage, HealthPage } from './PlatformHealthPages';
+
 /**
  * FE7: the platform console (docs/PROGETTO_FRONTEND_V2.md §5): organizations, new organization,
  * suspension, platform audit log. It manages organizations and never shows their data (G3).
@@ -43,6 +45,8 @@ export function PlatformApp({ admin }: { admin: PlatformAdmin }) {
         <Route path="piattaforma/nuova" element={<NewOrganizationPage />} />
         <Route path="piattaforma/organizzazioni/:id" element={<OrganizationPage />} />
         <Route path="piattaforma/registro" element={<AuditPage />} />
+        <Route path="piattaforma/salute" element={<HealthPage />} />
+        <Route path="piattaforma/consumi-ia" element={<AiUsagePage />} />
         <Route path="*" element={<Navigate to="/piattaforma" replace />} />
       </Route>
     </Routes>
@@ -77,6 +81,8 @@ function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
             Organizzazioni
           </NavLink>
           <NavLink to="/piattaforma/registro">Registro</NavLink>
+          <NavLink to="/piattaforma/salute">Salute</NavLink>
+          <NavLink to="/piattaforma/consumi-ia">Consumi IA</NavLink>
         </nav>
         <nav aria-label="Account">
           {admin.organizations.length > 0 && (
