@@ -24,6 +24,8 @@ const SHOWN_FIELDS = [
   'scheduledExport',
   // Done by the platform console (FE7), whose administrator is not a member.
   'byPlatform',
+  // A1: «confirmed» or «corrected»; the values themselves are never in the audit.
+  'outcome',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

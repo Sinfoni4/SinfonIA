@@ -180,10 +180,15 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'GET /practices/:id/attachments/:attachmentId/download',
       'POST /compliance/deadlines/:id/close',
       'POST /practices/:id/attachments',
+      'POST /practices/:id/attachments/:attachmentId/validation',
       'POST /practices/:id/transition',
     ]);
     const payloads: Record<string, unknown> = {
       '/practices/:id/transition': { nextState: 'VALIDATED' },
+      '/practices/:id/attachments/:attachmentId/validation': {
+        documentType: 'generic',
+        fields: {},
+      },
       '/practices/:id/attachments': {
         fileName: 'nota.txt',
         mimeType: 'text/plain',

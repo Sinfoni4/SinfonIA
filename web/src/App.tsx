@@ -14,6 +14,7 @@ import { PlatformApp } from './pages/PlatformPages';
 import { PracticeDetailPage } from './pages/PracticeDetailPage';
 import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { useSession } from './session/session';
 
@@ -46,6 +47,7 @@ export function App() {
         <Route path="pratiche/nuova" element={<NewPracticePage />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />
+        <Route path="verifica" element={<ReviewPage me={me} />} />
         <Route path="export" element={<ExportPage me={me} />} />
         <Route path="persone" element={<PeoplePage me={me} />} />
         <Route path="attivita" element={<ActivityPage me={me} />} />

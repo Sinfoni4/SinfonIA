@@ -100,6 +100,8 @@ export function describeError(err: unknown): string {
     return 'Operazione non consentita per il ruolo di questa persona.';
   // The backend explains these in Italian (invalid or expired invitation, too many requests…).
   if (err.code === 'INVITATION_INVALID') return err.message;
+  // A1: which field of the document is wrong, in Italian.
+  if (err.code === 'INVALID_DOCUMENT_DATA') return err.message;
   if (err.status === 409) return 'Operazione non consentita nello stato attuale.';
   return 'Si è verificato un errore: riprova.';
 }

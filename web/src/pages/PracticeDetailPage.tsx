@@ -8,6 +8,7 @@ import {
   formatSize,
   kindLabel,
   OCR_LABELS,
+  confirmedFields,
   readFields,
   STATE_LABELS,
   TRANSITION_LABELS,
@@ -16,6 +17,8 @@ import {
   type PracticeDetail,
   type PracticeState,
 } from '../api/practices';
+import { VALIDATION_FIELDS, type DocumentType } from '../api/review';
+import { ValidationForm } from '../components/ValidationForm';
 import { useSession } from '../session/session';
 
 /** P4: one practice, its allowed state changes and its attachments. */
@@ -148,7 +151,10 @@ function AttachmentItem({
 }) {
   const { download } = useSession();
   const [error, setError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const read = readFields(attachment.ocrResult);
+  const confirmed = attachment.validatedData ? confirmedFields(attachment.validatedData) : null;
+  const known = readValues(attachment);
 
   // Saved as a file, never opened in the page (§6 of the frontend plan).
   const save = async () => {
@@ -182,7 +188,23 @@ function AttachmentItem({
           Scarica
         </button>
       </div>
-      {(read.documentType || read.fields.length > 0) && (
+      {confirmed && (
+        <details open>
+          <summary>
+            Dati confermati{confirmed.documentType ? `: ${confirmed.documentType}` : ''}{' '}
+            <span className="state state-completed">confermati</span>
+          </summary>
+          <dl className="facts">
+            {confirmed.fields.map((f) => (
+              <div key={f.label} className="fact">
+                <dt>{f.label}</dt>
+                <dd>{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+      {!confirmed && (read.documentType || read.fields.length > 0) && (
         <details>
           <summary>
             Dati letti{read.documentType ? `: ${read.documentType}` : ''}
@@ -205,6 +227,20 @@ function AttachmentItem({
           )}
         </details>
       )}
+      {(attachment.ocrStatus === 'COMPLETED' || attachment.ocrStatus === 'FAILED') && (
+        <button type="button" className="link" onClick={() => setVerifying((v) => !v)}>
+          {verifying ? 'Chiudi' : confirmed ? 'Correggi i dati' : 'Verifica i dati'}
+        </button>
+      )}
+      {verifying && (
+        <ValidationForm
+          practiceId={practiceId}
+          attachmentId={attachment.id}
+          documentType={known.documentType}
+          known={known.fields}
+          onDone={() => setVerifying(false)}
+        />
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -212,6 +248,28 @@ function AttachmentItem({
       )}
     </li>
   );
+}
+
+/** What the form starts from: the confirmed data, otherwise the read ones. */
+function readValues(attachment: Attachment): {
+  documentType: DocumentType | null;
+  fields: Record<string, string | number | null>;
+} {
+  if (attachment.validatedData) {
+    return {
+      documentType: attachment.validatedData.documentType as DocumentType,
+      fields: attachment.validatedData.fields,
+    };
+  }
+  const result = attachment.ocrResult ?? {};
+  const type = typeof result.documentType === 'string' ? result.documentType : null;
+  const documentType = type && type in VALIDATION_FIELDS ? (type as DocumentType) : null;
+  const fields: Record<string, string | number | null> = {};
+  for (const { key } of documentType ? VALIDATION_FIELDS[documentType] : []) {
+    const value = result[key];
+    fields[key] = typeof value === 'string' || typeof value === 'number' ? value : null;
+  }
+  return { documentType, fields };
 }
 
 function UploadForm({ practiceId }: { practiceId: string }) {
