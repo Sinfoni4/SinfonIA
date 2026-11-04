@@ -193,6 +193,8 @@ async function main() {
   });
   const conversationDeps = {
     prisma,
+    // A2: «Modifica» under a document points to the dashboard page of the documents to verify.
+    ...(config.WEB_PUBLIC_URL ? { reviewUrl: `${config.WEB_PUBLIC_URL}/app/verifica` } : {}),
     scheduledExport: (orgId: string, userId: string, enabled: boolean) =>
       setScheduledExport(prisma, orgId, userId, enabled, { userId }),
     // A1: «conferma» in chat confirms the data of one's own document as read.

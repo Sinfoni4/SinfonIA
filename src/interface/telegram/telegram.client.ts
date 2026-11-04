@@ -45,10 +45,29 @@ export type TelegramMessage = {
   };
 };
 
+/** A press on a button under a message (A2). */
+export type TelegramCallbackQuery = {
+  id: string;
+  from: { id: number; is_bot: boolean };
+  /** The message with the button; absent when it is too old. */
+  message?: { message_id: number; chat: { id: number; type: string } };
+  data?: string;
+};
+
 type TelegramUpdate = {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 };
+
+/** Buttons under a message (inline) or the menu at the bottom of the chat (reply keyboard). */
+export type ReplyMarkup =
+  | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+  | {
+      keyboard: Array<Array<{ text: string }>>;
+      resize_keyboard?: boolean;
+      is_persistent?: boolean;
+    };
 
 type TelegramResponse<T> = {
   ok: boolean;
@@ -70,12 +89,13 @@ export class TelegramApiError extends Error {
   }
 }
 
-type Listener = (value: TelegramMessage | Error) => void | Promise<void>;
+type Listener = (value: TelegramMessage | TelegramCallbackQuery | Error) => void | Promise<void>;
 
 export type SendMessageOptions = {
   parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
   disable_web_page_preview?: boolean;
   disable_notification?: boolean;
+  reply_markup?: ReplyMarkup;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -93,6 +113,10 @@ export class TelegramClient {
 
   on(event: 'message', listener: (message: TelegramMessage) => void | Promise<void>): this;
   on(
+    event: 'callback_query',
+    listener: (query: TelegramCallbackQuery) => void | Promise<void>,
+  ): this;
+  on(
     event: 'polling_error' | 'webhook_error' | 'error',
     listener: (error: Error) => void | Promise<void>,
   ): this;
@@ -100,6 +124,7 @@ export class TelegramClient {
     event: string,
     listener:
       | ((message: TelegramMessage) => void | Promise<void>)
+      | ((query: TelegramCallbackQuery) => void | Promise<void>)
       | ((error: Error) => void | Promise<void>),
   ): this {
     const bucket = this.listeners.get(event) ?? new Set<Listener>();
@@ -130,6 +155,32 @@ export class TelegramClient {
     });
 
     return this.parseResult<TelegramMessage>('sendMessage', response);
+  }
+
+  /** Stops the loading sign on a pressed button; `text` shows a short notice. */
+  async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, ...(text ? { text } : {}) }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    await this.parseResult<boolean>('answerCallbackQuery', response);
+  }
+
+  /** Removes the buttons under a message, so that an answer is given only once. */
+  async clearInlineKeyboard(chatId: number | string, messageId: number): Promise<void> {
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/editMessageReplyMarkup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [] },
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    await this.parseResult<unknown>('editMessageReplyMarkup', response);
   }
 
   /** Sends a file (e.g. a CSV export) as a document. */
@@ -227,6 +278,9 @@ export class TelegramClient {
           if (update.message) {
             await this.emit('message', update.message);
           }
+          if (update.callback_query) {
+            await this.emit('callback_query', update.callback_query);
+          }
         }
       } catch (error: unknown) {
         if (!this.polling) return;
@@ -257,7 +311,10 @@ export class TelegramClient {
     return payload.result;
   }
 
-  private async emit(event: string, value: TelegramMessage | Error): Promise<void> {
+  private async emit(
+    event: string,
+    value: TelegramMessage | TelegramCallbackQuery | Error,
+  ): Promise<void> {
     const bucket = this.listeners.get(event);
     if (!bucket) return;
 
