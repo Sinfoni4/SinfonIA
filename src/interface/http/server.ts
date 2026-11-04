@@ -13,6 +13,7 @@ import { issueAuthToken } from './auth/token.js';
 import { buildRateLimitOptions, createTenantLimiter } from './middleware/rate-limit.js';
 import { requestContextHook } from './middleware/request-context.js';
 import { aiRoutes } from './routes/ai.routes.js';
+import { assistanceRoutes } from './routes/assistance.routes.js';
 import { attachmentReviewRoutes } from './routes/attachment-review.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
@@ -185,6 +186,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   if (deps.prisma) {
     void app.register(membersRoutes, { prisma: deps.prisma, login: deps.login });
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
+    void app.register(assistanceRoutes, { prisma: deps.prisma });
     void app.register(organizationRoutes, {
       prisma: deps.prisma,
       complianceService: deps.complianceService,

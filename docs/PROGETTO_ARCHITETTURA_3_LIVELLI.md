@@ -179,6 +179,8 @@ Una rete d'imprese è fatta di **più aziende**, ciascuna con i propri dati, e d
 |        | D3 primo connettore gestionale                                                 |      6–10      | H8                   |
 |        | D4 catalogo dei moduli e dei modelli IA                                        |   da stimare   | due verticali attivi |
 
+**Avanzamento dell'ondata A** (04/11/2026): A1 fatta (PR #41); A2 pulsanti e menu fatta (PR #42); A3 avvisi ai cambi di stato e «parla con un operatore» (H10: richiesta con argomento scelto da pulsante, nessun testo libero conservato, pagina «Assistenza» per amministratori e operatori) nella PR successiva; restano A4 e A5.
+
 **Ondata A: circa 15–17 giorni**, nessuna decisione bloccante. Le stime sono indicative e non comprendono le attese esterne (Meta, fornitori, consulenza).
 
 Le tappe già pianificate restano valide: FE5 (rifinitura e pubblicazione), FE9 (sezioni per tipo, con MF8 e MF9), FE10 (accesso eccezionale).

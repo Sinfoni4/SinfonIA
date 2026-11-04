@@ -26,6 +26,8 @@ const SHOWN_FIELDS = [
   'byPlatform',
   // A1: «confirmed» or «corrected»; the values themselves are never in the audit.
   'outcome',
+  // H10: the topic of a request to an operator (a button, never free text).
+  'topic',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

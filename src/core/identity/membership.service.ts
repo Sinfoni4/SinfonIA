@@ -84,21 +84,37 @@ export async function chatRecipients(
   channel: ChannelType,
   extraUserIds: string[] = [],
 ): Promise<string[]> {
+  return chatRecipientsOf(prisma, tenantId, channel, {
+    roles: ['ADMIN'],
+    userIds: extraUserIds,
+  });
+}
+
+/** Who receives a chat message: active members with one of `roles`, and/or the given people. */
+export type ChatAudience = { roles?: UserRole[]; userIds?: string[] };
+
+/**
+ * External ids of the chosen active members of an organization, through their active links, each
+ * once. Checked at delivery time: a lost role, membership or link stops the message.
+ */
+export async function chatRecipientsOf(
+  prisma: PrismaLike,
+  tenantId: string,
+  channel: ChannelType,
+  audience: ChatAudience,
+): Promise<string[]> {
+  const who = [
+    ...(audience.roles?.length ? [{ role: { in: audience.roles } }] : []),
+    ...(audience.userIds?.length ? [{ userId: { in: audience.userIds } }] : []),
+  ];
+  if (who.length === 0) return [];
   const rows = await prisma.channelIdentity.findMany({
     where: {
       channel,
       revokedAt: null,
       user: {
         status: 'ACTIVE',
-        memberships: {
-          some: {
-            ...activeMembership(tenantId),
-            OR: [
-              { role: 'ADMIN' },
-              ...(extraUserIds.length ? [{ userId: { in: extraUserIds } }] : []),
-            ],
-          },
-        },
+        memberships: { some: { ...activeMembership(tenantId), OR: who } },
       },
     },
     orderBy: { createdAt: 'asc' },
