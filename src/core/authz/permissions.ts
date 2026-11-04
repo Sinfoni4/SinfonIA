@@ -25,6 +25,8 @@ export const PERMISSIONS = [
   'members.read',
   'members.manage',
   'organization.manage',
+  'assistance.request',
+  'assistance.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -49,6 +51,9 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
   'ai.traces.read': 'tenant',
   'compliance.read': 'tenant',
   'compliance.manage': 'tenant',
+  // H10: anyone asks an operator for help from the chat; staff handle the requests.
+  'assistance.request': 'own',
+  'assistance.manage': 'tenant',
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, PermissionScope>>> = {
@@ -72,6 +77,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
     'attachment.validate': 'own',
     'ai.execute': 'own',
     'compliance.read': 'own',
+    'assistance.request': 'own',
   },
 };
 

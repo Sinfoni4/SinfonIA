@@ -105,6 +105,16 @@ export type ConversationDeps = {
     practiceId: string;
     attachmentId: string;
   }) => Promise<void>;
+  /**
+   * H10: «parla con un operatore» records a request for the dashboard; `created: false` when the
+   * person already has one still to be handled.
+   */
+  requestAssistance?: (input: {
+    tenantId: string;
+    userId: string;
+    topic: AssistanceTopicChoice;
+    channel: 'TELEGRAM' | 'WHATSAPP';
+  }) => Promise<{ created: boolean; createdAt: Date }>;
   /** Turns the scheduled export in chat on or off for the person (D5b); returns whether it changed. */
   scheduledExport?: (orgId: string, userId: string, enabled: boolean) => Promise<boolean>;
   /** Defaults to process memory; production passes the database one. */
@@ -140,8 +150,31 @@ type Reply = (text: string, options?: ReplyOptions) => Promise<unknown>;
 export const MENU_BUTTONS: ReplyButton[] = [
   { label: '📁 Le mie pratiche', answer: 'lista pratiche' },
   { label: '⏰ Le mie scadenze', answer: 'scadenze' },
+  { label: '🙋 Operatore', answer: 'operatore' },
   { label: '❓ Aiuto', answer: 'aiuto' },
 ];
+
+export type AssistanceTopicChoice = 'PRACTICE' | 'DOCUMENT' | 'DEADLINE' | 'OTHER';
+
+/** «Parla con un operatore» (H10), also from the menu. */
+const ASSISTANCE_COMMAND = /^(?:\/?operatore|parla con (?:un )?operatore|assistenza)[.!]?$/i;
+
+/** The topics of a request, in the order of the buttons; a number or the word chooses one. */
+const ASSISTANCE_TOPICS: Array<{ topic: AssistanceTopicChoice; label: string; word: RegExp }> = [
+  { topic: 'PRACTICE', label: '📁 Una pratica', word: /pratic/ },
+  { topic: 'DOCUMENT', label: '📄 Un documento', word: /document/ },
+  { topic: 'DEADLINE', label: '⏰ Una scadenza', word: /scadenz/ },
+  { topic: 'OTHER', label: '💬 Altro', word: /altro/ },
+];
+
+function parseAssistanceTopic(text: string): AssistanceTopicChoice | 'cancel' | null {
+  const t = text.trim().toLowerCase();
+  if (/^annull/.test(t)) return 'cancel';
+  const byNumber = /^[1-4]$/.test(t) ? ASSISTANCE_TOPICS[Number(t) - 1] : undefined;
+  if (byNumber) return byNumber.topic;
+  if (t.split(/\s+/).length > 3) return null;
+  return ASSISTANCE_TOPICS.find((o) => o.word.test(t))?.topic ?? null;
+}
 
 const YES_NO: ReplyButton[] = [
   { label: 'Sì', answer: 'sì' },
@@ -173,6 +206,10 @@ function normalizedOption(text: string): string {
     .trim();
 }
 const CONFIRMATION = /^(s[iì]|conferm[ao])[.!]?$/i;
+
+function formatDay(date: Date): string {
+  return date.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
+}
 
 type PendingTransition = {
   tenantId: string;
@@ -227,6 +264,7 @@ Puoi:
 • completarle
 • controllarne lo stato
 • gestire le scadenze (DURC, sicurezza, bio, visite mediche, patentini)
+• chiedere aiuto a un operatore (scrivi "operatore")
 
 Prova a scrivere:
 "valida la pratica di Mario Rossi"
@@ -240,6 +278,7 @@ Puoi:
 • controllare lo stato
 • chiedere aggiornamenti
 • vedere le tue scadenze (scrivi "scadenze")
+• parlare con un operatore (scrivi "operatore")
 
 Prova a scrivere:
 "crea pratica per Mario Rossi"`;
@@ -266,6 +305,8 @@ export class ConversationService {
     string,
     { tenantId: string; request: string; options: string[]; expiresAt: number }
   >();
+  // H10: «operatore» asked, waiting for the topic of the request.
+  private readonly pendingAssistance = new Map<string, { tenantId: string; expiresAt: number }>();
 
   /** Whether a text is a command this channel handles without the AI. */
   private isCommand(text: string): boolean {
@@ -510,6 +551,60 @@ export class ConversationService {
         await uploadToPractice(pending.file, chosen);
         return;
       }
+    }
+
+    // The topic of a request to an operator; anything else drops the question and goes on.
+    const pendingAssistance = this.pendingAssistance.get(dbUser.id);
+    if (pendingAssistance) {
+      this.pendingAssistance.delete(dbUser.id);
+      const choice = parseAssistanceTopic(trimmed);
+      if (choice === 'cancel') {
+        await reply('Ok, nessuna richiesta inviata.');
+        return;
+      }
+      if (
+        choice &&
+        deps.requestAssistance &&
+        pendingAssistance.tenantId === tenant.id &&
+        pendingAssistance.expiresAt > Date.now()
+      ) {
+        const result = await deps.requestAssistance({
+          tenantId: tenant.id,
+          userId: dbUser.id,
+          topic: choice,
+          channel: this.channel.name === 'telegram' ? 'TELEGRAM' : 'WHATSAPP',
+        });
+        await reply(
+          result.created
+            ? '✅ Richiesta inviata. Un operatore la vedrà nella dashboard e ti contatterà.'
+            : `⏳ Hai già una richiesta di assistenza aperta dal ${formatDay(result.createdAt)}: ` +
+                'un operatore ti contatterà.',
+        );
+        return;
+      }
+    }
+
+    if (ASSISTANCE_COMMAND.test(trimmed) && deps.requestAssistance) {
+      if (!can(dbUser.role, 'assistance.request')) {
+        await reply('🔒 Non puoi inviare richieste di assistenza.');
+        return;
+      }
+      this.pendingAssistance.set(dbUser.id, {
+        tenantId: tenant.id,
+        expiresAt: Date.now() + CLARIFICATION_MS,
+      });
+      await reply(
+        '🙋 Su cosa ti serve aiuto? Scegli un argomento:\n' +
+          ASSISTANCE_TOPICS.map((o, i) => `${i + 1}. ${o.label}`).join('\n') +
+          '\n\nUn operatore vedrà la richiesta nella dashboard e ti contatterà.',
+        {
+          buttons: [
+            ...ASSISTANCE_TOPICS.map((o) => ({ label: o.label, answer: o.label })),
+            { label: 'Annulla', answer: 'annulla' },
+          ],
+        },
+      );
+      return;
     }
 
     // A document just read with doubts: «conferma» or «sì» confirms its data; anything else leaves

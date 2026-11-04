@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { Layout } from './components/Layout';
 import { ActivityPage, AssistantUsagePage } from './pages/ActivityPage';
+import { AssistancePage } from './pages/AssistancePage';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
 import { ExportPage } from './pages/ExportPage';
@@ -48,6 +49,7 @@ export function App() {
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />
         <Route path="verifica" element={<ReviewPage me={me} />} />
+        <Route path="assistenza" element={<AssistancePage me={me} />} />
         <Route path="export" element={<ExportPage me={me} />} />
         <Route path="persone" element={<PeoplePage me={me} />} />
         <Route path="attivita" element={<ActivityPage me={me} />} />

@@ -50,6 +50,7 @@ model Tenant {
   invitations         Invitation[]
   grantsGiven         AccessGrant[]          @relation("GrantGrantor")
   grantsReceived      AccessGrant[]          @relation("GrantGranteeOrg")
+  assistanceRequests  AssistanceRequest[]
 
   @@map("tenant")
 }
@@ -112,6 +113,7 @@ model User {
   authChallenges      AuthChallenge[]
   grantsReceived      AccessGrant[]            @relation("GrantGranteeUser")
   beneficiaryOf       AccessGrantBeneficiary[]
+  assistanceRequests  AssistanceRequest[]
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -676,4 +678,45 @@ model PlatformAuditLog {
   @@index([createdAt])
   @@index([orgId, createdAt])
   @@map("platform_audit_log")
+}
+
+// ---------------------------------------------------------------------------------------------
+// «Parla con un operatore» (H10, docs/PROGETTO_ARCHITETTURA_3_LIVELLI.md §4.3): a request from
+// the chat, seen in the dashboard, without live chat. Only the topic is kept, never free text
+// (saving messages waits for H5).
+// ---------------------------------------------------------------------------------------------
+
+enum AssistanceTopic {
+  PRACTICE
+  DOCUMENT
+  DEADLINE
+  OTHER
+}
+
+enum AssistanceStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+model AssistanceRequest {
+  id        String           @id @default(uuid()) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  topic     AssistanceTopic
+  channel   ChannelType
+  status    AssistanceStatus @default(OPEN)
+  takenBy   String?          @map("taken_by") @db.Uuid
+  takenAt   DateTime?        @map("taken_at")
+  closedBy  String?          @map("closed_by") @db.Uuid
+  closedAt  DateTime?        @map("closed_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, userId, status])
+  @@map("assistance_request")
 }

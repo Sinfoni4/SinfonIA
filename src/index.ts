@@ -15,14 +15,20 @@ import {
   validateResolvedCommand,
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
+import { requestAssistance } from './core/assistance/assistance.service.js';
 import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
 import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
+import {
+  AssistanceRequestedHandler,
+  AssistanceUpdatedHandler,
+} from './core/outbox/assistance.handler.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
+import { PracticeStatusHandler } from './core/outbox/practice-status.handler.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
@@ -204,6 +210,9 @@ async function main() {
       practiceId: string;
       attachmentId: string;
     }) => confirmReadDocument(prisma, input),
+    // H10: «parla con un operatore» records a request for the dashboard and tells the operators.
+    requestAssistance: (input: Parameters<typeof requestAssistance>[1]) =>
+      requestAssistance(prisma, input),
     memory: conversationMemory,
     practiceService,
     complianceService,
@@ -314,6 +323,14 @@ async function main() {
     handlers: [
       new PracticeExportHandler(prisma, outboxChannels),
       new ComplianceReminderHandler(prisma, outboxChannels),
+      // A3 and H10: chat notices of practice states and of assistance requests.
+      new PracticeStatusHandler(prisma, outboxChannels),
+      new AssistanceRequestedHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app/assistenza` : undefined,
+      ),
+      new AssistanceUpdatedHandler(prisma, outboxChannels),
     ],
   });
   startBackgroundWorkers(

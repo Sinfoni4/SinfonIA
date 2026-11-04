@@ -121,7 +121,7 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
   const routes: RouteOptions[] = [];
   let prisma: PrismaClient;
   let app: ReturnType<typeof buildServer>;
-  let ids: { practice: string; deadline: string };
+  let ids: { practice: string; deadline: string; assistance: string };
   let other: { tenantId: string; adminId: string };
 
   beforeAll(async () => {
@@ -152,7 +152,10 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       title: `DURC coverage ${run}`,
       dueDate: '2027-12-31',
     });
-    ids = { practice: practice.id, deadline: deadline.id };
+    const assistance = await prisma.assistanceRequest.create({
+      data: { tenantId: tenantA.id, userId: adminA.id, topic: 'OTHER', channel: 'TELEGRAM' },
+    });
+    ids = { practice: practice.id, deadline: deadline.id, assistance: assistance.id };
     other = { tenantId: tenantB.id, adminId: adminB.id };
     app = build(prisma, routes);
     await app.ready();
@@ -178,6 +181,8 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'GET /practices/:id',
       'GET /practices/:id/attachments',
       'GET /practices/:id/attachments/:attachmentId/download',
+      'POST /assistance/:id/close',
+      'POST /assistance/:id/take',
       'POST /compliance/deadlines/:id/close',
       'POST /practices/:id/attachments',
       'POST /practices/:id/attachments/:attachmentId/validation',
@@ -196,7 +201,11 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       },
     };
     for (const route of withId) {
-      const id = route.url.startsWith('/compliance') ? ids.deadline : ids.practice;
+      const id = route.url.startsWith('/compliance')
+        ? ids.deadline
+        : route.url.startsWith('/assistance')
+          ? ids.assistance
+          : ids.practice;
       const res = await app.inject({
         method: String(route.method) as 'GET' | 'POST',
         url: route.url.replace(':id', id).replace(':attachmentId', randomUUID()),

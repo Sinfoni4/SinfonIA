@@ -78,10 +78,12 @@ export function replyMarkup(options: ReplyOptions | undefined): ReplyMarkup | un
   }
   if (options?.menu) {
     return {
-      keyboard: [
-        [{ text: MENU_BUTTONS[0].label }, { text: MENU_BUTTONS[1].label }],
-        [{ text: MENU_BUTTONS[2].label }],
-      ],
+      // Two entries per row.
+      keyboard: MENU_BUTTONS.reduce<Array<Array<{ text: string }>>>((rows, b, i) => {
+        if (i % 2 === 0) rows.push([{ text: b.label }]);
+        else rows[rows.length - 1].push({ text: b.label });
+        return rows;
+      }, []),
       resize_keyboard: true,
       is_persistent: true,
     };

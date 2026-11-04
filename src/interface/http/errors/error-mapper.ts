@@ -14,6 +14,7 @@ import { NormalizationValidationError } from '../../../ai/normalization/normaliz
 import { LLMDisabledError } from '../../../ai/providers/disabled.provider.js';
 import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
+import { AssistanceError } from '../../../core/assistance/assistance.service.js';
 import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
 import { PlatformAccessError } from '../../../core/authz/platform.js';
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
@@ -48,7 +49,8 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof OrganizationSettingsError ||
     err instanceof PlatformAccessError ||
     err instanceof PlatformActionError ||
-    err instanceof AttachmentValidationError
+    err instanceof AttachmentValidationError ||
+    err instanceof AssistanceError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }

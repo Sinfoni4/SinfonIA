@@ -1,5 +1,5 @@
 import { AuditService } from '../../data/services/audit.service.js';
-import { chatRecipients, scheduledExportRecipients } from '../identity/membership.service.js';
+import { chatRecipientsOf, scheduledExportRecipients } from '../identity/membership.service.js';
 
 import { DeliveryError } from './outbox.delivery.js';
 
@@ -12,6 +12,7 @@ import type {
 } from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
+import type { ChatAudience } from '../identity/membership.service.js';
 
 /**
  * Telegram chats of the tenant ADMINs plus the given extra users (e.g. the member a deadline
@@ -23,9 +24,10 @@ export async function telegramDeliveries(
   telegram: TelegramNotifier | undefined,
   send: (telegram: TelegramNotifier, chatId: string) => Promise<void>,
   extraUserIds: string[] = [],
+  audience: ChatAudience = { roles: ['ADMIN'], userIds: extraUserIds },
 ): Promise<OutboxDelivery[]> {
   // Active ADMINs (and extra users) with an active Telegram link, checked at delivery time.
-  const chatIds = await chatRecipients(prisma, tenantId, 'TELEGRAM', extraUserIds);
+  const chatIds = await chatRecipientsOf(prisma, tenantId, 'TELEGRAM', audience);
 
   return chatIds.map((chatId) => ({
     target: `telegram:${chatId}`,
@@ -67,8 +69,9 @@ export async function whatsappDeliveries(
   whatsapp: ChatNotifier | undefined,
   send: (notifier: ChatNotifier, phone: string) => Promise<void>,
   extraUserIds: string[] = [],
+  audience: ChatAudience = { roles: ['ADMIN'], userIds: extraUserIds },
 ): Promise<OutboxDelivery[]> {
-  const phones = await chatRecipients(prisma, tenantId, 'WHATSAPP', extraUserIds);
+  const phones = await chatRecipientsOf(prisma, tenantId, 'WHATSAPP', audience);
   return chatTargets(
     'whatsapp',
     phones,
@@ -107,11 +110,25 @@ export async function chatDeliveries(
   send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
   extraUserIds: string[] = [],
 ): Promise<OutboxDelivery[]> {
+  return chatDeliveriesTo(prisma, tenantId, channels, send, {
+    roles: ['ADMIN'],
+    userIds: extraUserIds,
+  });
+}
+
+/** Telegram and WhatsApp deliveries to the chosen members only (e.g. the owner of a practice). */
+export async function chatDeliveriesTo(
+  prisma: PrismaLike,
+  tenantId: string,
+  channels: OutboxChannels,
+  send: (notifier: ChatNotifier, chatId: string) => Promise<void>,
+  audience: ChatAudience,
+): Promise<OutboxDelivery[]> {
   const held = await heldForInactiveOrganization(prisma, tenantId);
   if (held) return held;
   return [
-    ...(await telegramDeliveries(prisma, tenantId, channels.telegram, send, extraUserIds)),
-    ...(await whatsappDeliveries(prisma, tenantId, channels.whatsapp, send, extraUserIds)),
+    ...(await telegramDeliveries(prisma, tenantId, channels.telegram, send, [], audience)),
+    ...(await whatsappDeliveries(prisma, tenantId, channels.whatsapp, send, [], audience)),
   ];
 }
 

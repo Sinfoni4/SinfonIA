@@ -50,6 +50,7 @@ export function Layout({ me }: { me: Me }) {
           <NavLink to="/pratiche">Pratiche</NavLink>
           <NavLink to="/scadenze">Scadenze</NavLink>
           <NavLink to="/verifica">Da verificare</NavLink>
+          {me.current.role !== 'MEMBER' && <NavLink to="/assistenza">Assistenza</NavLink>}
           <NavLink to="/export">Export</NavLink>
           {me.current.role === 'ADMIN' && (
             <>

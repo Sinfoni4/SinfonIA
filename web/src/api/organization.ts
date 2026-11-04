@@ -64,7 +64,8 @@ export type AuditEvent = {
       | 'frequency'
       | 'scheduledExport'
       | 'byPlatform'
-      | 'outcome',
+      | 'outcome'
+      | 'topic',
       string | number | boolean
     >
   >;
@@ -105,6 +106,10 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_DELETED',
       'ATTACHMENT_VALIDATED',
     ],
+  },
+  assistance: {
+    label: 'Assistenza',
+    types: ['ASSISTANCE_REQUESTED', 'ASSISTANCE_TAKEN', 'ASSISTANCE_CLOSED'],
   },
   deadlines: {
     label: 'Scadenze',
@@ -158,6 +163,17 @@ function roleName(value: unknown): string {
   return typeof value === 'string' && value in ROLE_LABELS
     ? ROLE_LABELS[value as Role]
     : String(value);
+}
+
+const TOPIC_LABELS: Record<string, string> = {
+  PRACTICE: 'una pratica',
+  DOCUMENT: 'un documento',
+  DEADLINE: 'una scadenza',
+  OTHER: 'altro',
+};
+
+function topicName(value: unknown): string {
+  return typeof value === 'string' ? (TOPIC_LABELS[value] ?? value) : 'altro';
 }
 
 function stateName(value: unknown): string {
@@ -215,6 +231,12 @@ export function describeEvent(event: AuditEvent): string {
       return `Export pianificato in chat disattivato per ${target}`;
     case 'ATTACHMENT_VALIDATED':
       return `Dati di un documento ${d.outcome === 'corrected' ? 'corretti' : 'confermati'} (${practice})`;
+    case 'ASSISTANCE_REQUESTED':
+      return `Richiesta di assistenza su ${topicName(d.topic)}${channel}`;
+    case 'ASSISTANCE_TAKEN':
+      return 'Richiesta di assistenza presa in carico';
+    case 'ASSISTANCE_CLOSED':
+      return 'Richiesta di assistenza chiusa';
     case 'PRACTICE_CREATED':
       return `Pratica ${practice} creata`;
     case 'PRACTICE_STATE_CHANGED':

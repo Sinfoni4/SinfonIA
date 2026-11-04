@@ -1,10 +1,12 @@
 import { NotFoundError } from '../../data/errors/errors.js';
+import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { PracticeRepository } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { ConcurrencyError } from '../errors/concurrency.errors.js';
 import { InvalidStateTransitionError } from '../errors/workflow.errors.js';
+import { PRACTICE_STATUS_CHANGED } from '../outbox/practice-status.handler.js';
 import { buildPracticePayload } from '../practice/practice.payload.js';
 
 import { canTransition } from './state-machine.js';
@@ -97,6 +99,16 @@ export class PracticeWorkflow {
           to,
         },
       });
+
+      // A3: the owner hears in chat when someone else moves their practice, in the same
+      // transaction, so a rolled-back change sends nothing.
+      if (practice.userId !== input.userId) {
+        await new OutboxRepository(tx).createMessage({
+          tenantId: input.tenantId,
+          eventType: PRACTICE_STATUS_CHANGED,
+          payload: { practiceId: input.practiceId, userId: practice.userId, from, to },
+        });
+      }
 
       return updated;
     }).catch((err: unknown) => {
