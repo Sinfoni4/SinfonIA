@@ -1,6 +1,6 @@
 # SinfonIA — Proposta per le decisioni D3 e D4
 
-**Stato**: proposta da approvare · **Data**: 04/11/2026 · **Riferimenti**: `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` §1.3 e §2.4, `docs/PROGETTO_ARCHITETTURA_3_LIVELLI.md` §4.6 (pilota TerreFVG)
+**Stato**: **approvata** dal proprietario del progetto il 05/11/2026, tutti i punti come proposti · **Data**: 04/11/2026 · **Riferimenti**: `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` §1.3 e §2.4, `docs/PROGETTO_ARCHITETTURA_3_LIVELLI.md` §4.6 (pilota TerreFVG)
 
 Le due decisioni sbloccano l'ondata **B5** (MF8 deleghe, MF9 reti e aggregati, pagine FE9), necessaria al pilota con la rete d'imprese agricole **TerreFVG**. Quanto già confermato resta valido: una delega a un'organizzazione vale solo per i **beneficiari nominativi approvati** dall'azienda che concede; la rete, senza delega, vede solo l'anagrafica minima delle aderenti e statistiche aggregate.
 
@@ -55,9 +55,6 @@ Indicatori futuri (es. quaderno di campagna, carburante agevolato) si aggiungono
 
 ---
 
-## Cosa approvare
+## Esito
 
-1. **D3**: punti D3.1–D3.7 come proposti, oppure le alternative indicate.
-2. **D4**: regole D4.1–D4.6 e indicatori I1–I7 come proposti, oppure con modifiche.
-
-Dopo l'approvazione i valori vengono riportati in `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (§1.3, §2.4, §A) e si può avviare B5.
+Approvati il 05/11/2026, come proposti: **D3** punti D3.1–D3.7 e **D4** regole D4.1–D4.6 con gli indicatori I1–I7. Le alternative non sono state scelte. I valori sono riportati in `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (§A.17–A.18, §1.3, §2.4); B5 (MF8 deleghe, MF9 reti e aggregati, pagine FE9) può partire.

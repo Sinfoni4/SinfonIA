@@ -47,6 +47,8 @@ Confermate dal proprietario del progetto (messaggi del 29/10/2026):
 14. Il primo pilota non richiede un amministratore di rete reale; il modello lo deve supportare.
 15. **C2 (D6) approvata** (29/10/2026): in chat la vista predefinita sono le proprie pratiche; ADMIN e OPERATOR raggiungono l'organizzazione solo con richiesta esplicita, a pagine, con conferma per il cambio di stato di una pratica non propria; mai oltre il permesso (§3.4). Implementata in MF2b.
 16. **D5 approvata** (29/10/2026): perimetri di esportazione per ruolo e canale come da proposta di §3.3. **D5b**: opzione **b** (export pianificato su Telegram solo agli ORG_ADMIN che lo scelgono) fino alla disponibilità del login (MF6), poi opzione **d** (avviso con collegamento a download autenticato). Implementazione in MF8, con avviso agli ADMIN prima del cambio.
+17. **D3 approvata** (05/11/2026): deleghe con scadenza obbligatoria, massimo 12 mesi (3 mesi se includono `DELETE` o `EXPORT`), durata predefinita 12 mesi o più breve a scelta dell'azienda; rinnovo solo esplicito; avvisi 30 e 7 giorni prima; revoca immediata in ogni momento (`docs/PROPOSTA_DECISIONI_D3_D4.md`).
+18. **D4 approvata** (05/11/2026): statistiche delle reti calcolate su almeno 5 aziende, conteggi di 1–2 aziende mostrati come «meno di 3», periodi e categorie fissi, calcolo solo sul server, consultazioni registrate; elenco chiuso degli indicatori I1–I7 (`docs/PROPOSTA_DECISIONI_D3_D4.md`).
 
 ## B. Punti ancora da decidere
 
@@ -54,8 +56,8 @@ Confermate dal proprietario del progetto (messaggi del 29/10/2026):
 | :-: | :--- | :--- |
 | D1 | Organizzazione unica con tipo e relazioni (proposta) | §1 |
 | D2 | Consulente come persona con deleghe, senza appartenenza all'azienda cliente | §2.2 |
-| D3 | Beneficiari delle deleghe a organizzazioni: elenco nominativo approvato dal concedente (**confermato**); durata massima delle deleghe (**rinviata** all'avvio di MF8, proposta 12 mesi rinnovabili) | §2.4 |
-| D4 | Soglia minima ed elenco degli indicatori aggregati per le reti (**rinviata** all'avvio di MF9, proposta soglia 5 aziende) | §1.3 |
+| D3 | Beneficiari delle deleghe a organizzazioni: elenco nominativo approvato dal concedente (**confermato**); durata delle deleghe — **approvata** il 05/11/2026 (§A.17) | §2.4 |
+| D4 | Soglia minima ed elenco degli indicatori aggregati per le reti — **approvata** il 05/11/2026 (§A.18) | §1.3 |
 | D5 | Esportazione: perimetri per ruolo **e canale** — **approvata** il 29/10/2026 (§A.16) | §3.3 |
 | D6 | C2 — visibilità delle pratiche in chat — **approvata** il 29/10/2026 (§A.15) | §3.4 |
 | D6b | C3 — regole di cancellazione R1–R13 e correzione dei file orfani | §3.5 |
@@ -138,7 +140,9 @@ Una relazione abilita solo: anagrafica minima dell'aderente, inclusione negli ag
 ### 1.3 Statistiche aggregate — D4
 
 - Solo indicatori di un elenco chiuso approvato.
-- Soglia minima proposta: **5 aziende** per valore; sotto soglia «non disponibile».
+- Soglia minima **approvata (D4, 05/11/2026)**: **5 aziende** per valore; sotto soglia «non disponibile»; i conteggi di 1 o 2 aziende si mostrano come «meno di 3».
+- Indicatori approvati I1–I7: aziende aderenti attive (anagrafica minima), pratiche per stato e tipo, tempo medio di completamento, scadenze per categoria (scadute e entro 30 giorni), aziende con certificazione biologica valida, documenti caricati e quota letta senza verifica, uso dei canali (`docs/PROPOSTA_DECISIONI_D3_D4.md`).
+- Un'azienda che si ritira esce dagli aggregati dal periodo successivo; ogni consultazione è registrata.
 - Periodi e categorie fissi, nessun filtro libero che consenta differenze tra interrogazioni.
 - Calcolo lato server; nessun dato di dettaglio al client.
 
@@ -171,7 +175,7 @@ Il **consulente non ha appartenenza** all'azienda cliente: riceve deleghe. Può 
 | `grantee_user_id` / `grantee_org_id` | soggetto autorizzato |
 | `scope` | tipi di dato ed eventuale elenco di oggetti o categorie |
 | `operations` | `READ`, `CREATE`, `UPDATE`, `APPROVE`, `DELETE`, `EXPORT` (ciascuna esplicita) |
-| `valid_from`, `valid_until` | obbligatoria una scadenza; massimo proposto 12 mesi, rinnovabile |
+| `valid_from`, `valid_until` | obbligatoria una scadenza; massimo **12 mesi** (D3, approvata il 05/11/2026), **3 mesi** se include `DELETE` o `EXPORT`; rinnovo solo esplicito dal concedente, mai automatico |
 | `status` | `ACTIVE`, `SUSPENDED`, `REVOKED` (scadenza calcolata) |
 | `created_by`, `revoked_by`, `revoked_at`, `revocation_reason` | anche nell'audit |
 
@@ -190,7 +194,7 @@ Il **consulente non ha appartenenza** all'azienda cliente: riceve deleghe. Può 
    - solo chi ha `grant.issue` nell'organizzazione concedente;
    - nessuno può concedere a sé stesso;
    - un amministratore di rete non può creare deleghe sui dati di un'azienda in cui non è ORG_ADMIN.
-7. Avviso al concedente prima della scadenza; elenco delle deleghe attive consultabile dal concedente in ogni momento.
+7. Avviso al concedente **30 e 7 giorni** prima della scadenza (chat ed email), con l'elenco dei beneficiari; elenco delle deleghe attive consultabile dal concedente in ogni momento; alla scadenza l'accesso cessa subito e la delega resta nello storico come «scaduta».
 8. **Confermato dal proprietario del progetto (29/10/2026)**: le deleghe a organizzazioni restano limitate ai beneficiari nominativi approvati; nuovi membri o amministratori non acquisiscono accesso automaticamente.
 
 ### 2.5 Organizzazione attiva
@@ -1007,8 +1011,8 @@ Il primo pilota richiede MF0–MF8, MF10, MF11 e MF13; MF2b e MF9 possono seguir
 | MF5 Revoca, scheduler, outbox, download | **eseguita**; cambio di ruolo e identità di sistema dello scheduler in revisione | #16, #24 |
 | MF6 Login email, sessioni, inviti | **in parte**: codici, sessioni con rinnovo ruotato e inviti con invio **simulato**, disattivati (`AUTH_EMAIL_LOGIN`) e rifiutati in produzione fino alla scelta del fornitore (D11, rinviata) | #23 |
 | MF7 Collegamento Telegram/WhatsApp verificato | da fare, dopo MF6 | — |
-| MF8 Deleghe ed export | **in parte**: regole di export D5 e D5b opzione b (export pianificato solo a chi lo sceglie, audit di ogni export e consegna); deleghe in attesa di D3 | #21 |
-| MF9 Reti e aggregati | in attesa di D4 | — |
+| MF8 Deleghe ed export | **in parte**: regole di export D5 e D5b opzione b (export pianificato solo a chi lo sceglie, audit di ogni export e consegna); deleghe da fare, D3 approvata il 05/11/2026 | #21 |
+| MF9 Reti e aggregati | da fare, D4 approvata il 05/11/2026 | — |
 | MF10, MF13 Conservazione e cancellazione | in attesa della consulenza legale e privacy; disponibile il report in sola lettura dei file orfani (`npm run storage:orphans`) | #22 |
 | MF11 Applicazione allo staging | **eseguita** il 30/10/2026 per MF1–MF5, MF2b, MF8 in parte (vedi sotto) | `docs/AGGIORNAMENTO_STAGING_FASE1.md` |
 | MF12 Pulizia M3 | dopo il periodo di verifica | — |
@@ -1026,7 +1030,7 @@ Altre modifiche unite: Mistral AI come fornitore AI selezionabile, non attivo se
 
 **Prestazioni con la Fase 1 completa** (criterio di §11.5; mediana di 3 giri sul database di test, confronto con le misure di MF2 del 29/10, non giri alternati): elenco e dettaglio a 1 e 5 richieste simultanee entro +1,4 ms al p50 e +1,9 ms al p95. Criterio **rispettato**.
 
-**Decisioni**: C2, D5 e D5b approvate (§A.15–A.16); D11, D3 (durata), D4 rinviate; consulenza legale e privacy da avviare con `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`.
+**Decisioni**: C2, D5 e D5b approvate (§A.15–A.16); D3 e D4 approvate il 05/11/2026 (§A.17–A.18); D11 rinviata; consulenza legale e privacy da avviare con `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`.
 
 **Operazioni eseguite per preparare il piano (tutte in sola lettura)**: lettura del codice e degli schemi; conteggi, catalogo delle colonne, estensioni e impostazioni dei log sullo staging in transazioni di sola lettura; letture delle impostazioni del PC (sincronizzazione, indicizzazione, file di paging, dump di memoria, unità); consultazione di fonti web per i servizi email. Le attività operative precedenti di questa sessione (unione delle PR #6–#8, migrazioni e riavvio dello staging, test di carico sul database di test) sono anteriori alla Fase 1 e furono approvate allora.
 
