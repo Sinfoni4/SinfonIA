@@ -685,6 +685,17 @@ form.validation button {
   align-items: start;
 }
 
+/* Grid items keep their content width by default: let cards shrink to the column. */
+.board-column,
+.board-card {
+  min-width: 0;
+}
+
+.board-card select {
+  width: 100%;
+  min-width: 0;
+}
+
 .board-column h2 {
   font-size: 1rem;
   margin: 0 0 0.5rem;
