@@ -120,9 +120,38 @@ export type ChannelOptions = {
   maxDownloadBytes?: number;
   /** Added to the reply when a compressed photo gives a read that needs review. */
   compressedPhotoTip?: string;
+  /** Address of the dashboard page of the documents to verify, for «Modifica» (A2). */
+  reviewUrl?: string;
 };
 
-type Reply = (text: string) => Promise<unknown>;
+/** A button under a reply: pressing it is the same as writing `answer` (A2). */
+export type ReplyButton = { label: string; answer: string };
+
+export type ReplyOptions = {
+  /** Buttons under the message (Telegram); other channels show the text only. */
+  buttons?: ReplyButton[];
+  /** Shows the main menu at the bottom of the chat. */
+  menu?: boolean;
+};
+
+type Reply = (text: string, options?: ReplyOptions) => Promise<unknown>;
+
+/** The main menu of the chat (A2): each entry is a command already understood by the bot. */
+export const MENU_BUTTONS: ReplyButton[] = [
+  { label: '📁 Le mie pratiche', answer: 'lista pratiche' },
+  { label: '⏰ Le mie scadenze', answer: 'scadenze' },
+  { label: '❓ Aiuto', answer: 'aiuto' },
+];
+
+const YES_NO: ReplyButton[] = [
+  { label: 'Sì', answer: 'sì' },
+  { label: 'No', answer: 'no' },
+];
+
+/** Telegram limits the text of a button; longer options are cut, the answer stays whole. */
+function buttonLabel(text: string): string {
+  return text.length > 40 ? `${text.slice(0, 39)}…` : text;
+}
 
 // Most recent practices considered when choosing where a received file goes.
 const ATTACHMENT_PRACTICE_LOOKUP_LIMIT = 20;
@@ -318,7 +347,8 @@ export class ConversationService {
 
   private async process(message: InboundMessage, reply: Reply, requestId: string): Promise<void> {
     const { deps } = this;
-    const text = message.text;
+    const menuEntry = MENU_BUTTONS.find((b) => b.label === message.text.trim());
+    const text = menuEntry ? menuEntry.answer : message.text;
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
 
@@ -397,6 +427,14 @@ export class ConversationService {
             (file.compressedPhoto && uploadResult.ocrResult?.reviewRequired
               ? (this.channel.compressedPhotoTip ?? '')
               : ''),
+          askConfirmation
+            ? {
+                buttons: [
+                  { label: '✅ Conferma', answer: 'conferma' },
+                  { label: '✏️ Modifica', answer: 'modifica' },
+                ],
+              }
+            : undefined,
         );
       } catch (uploadErr) {
         if (uploadErr instanceof AttachmentRejectedError) {
@@ -443,7 +481,15 @@ export class ConversationService {
       }
       if (target.type === 'ask') {
         this.pendingAttachments.set(dbUser.id, file, target.candidates);
-        await reply(formatAttachmentQuestion(target.candidates));
+        await reply(formatAttachmentQuestion(target.candidates), {
+          buttons: [
+            ...target.candidates.map((c, i) => ({
+              label: buttonLabel(c.name),
+              answer: String(i + 1),
+            })),
+            { label: 'Annulla', answer: 'annulla' },
+          ],
+        });
         return;
       }
       await uploadToPractice(file, target.practice);
@@ -484,6 +530,13 @@ export class ConversationService {
           attachmentId: pendingDocument.attachmentId,
         });
         await reply('✅ Dati del documento confermati.');
+        return;
+      }
+      if (/^modifica$/i.test(trimmed)) {
+        await reply(
+          '✏️ Puoi correggere i dati dalla dashboard, nella pagina «Da verificare»' +
+            (this.channel.reviewUrl ? `:\n${this.channel.reviewUrl}` : '.'),
+        );
         return;
       }
     }
@@ -588,6 +641,7 @@ export class ConversationService {
       await reply(
         `❓ Intendevi «${suggestion.corrected}»? Rispondi «sì» per eseguirlo, ` +
           'oppure scrivi di nuovo la richiesta.',
+        { buttons: YES_NO },
       );
       return;
     }
@@ -644,7 +698,10 @@ export class ConversationService {
           expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
         });
       }
-      await reply(formatPracticeCommandResult(result));
+      await reply(
+        formatPracticeCommandResult(result),
+        result.type === 'confirm_transition' ? { buttons: YES_NO } : undefined,
+      );
       return;
     }
 
@@ -661,10 +718,17 @@ export class ConversationService {
       return;
     }
 
+    // «Aiuto» (also from the menu) always explains what the bot does.
+    if (/^(aiuto|\/help)$/i.test(trimmed)) {
+      await reply(onboardingMessage(dbUser.role), { menu: true });
+      return;
+    }
+
     if (lower.startsWith('/start') || isGreeting(text)) {
       const firstTime = await this.memory.markOnboarded(tenant.id, dbUser.id);
       await reply(
         firstTime ? onboardingMessage(dbUser.role) : '👋 Bentornato! Come posso aiutarti?',
+        { menu: true },
       );
       return;
     }
@@ -689,6 +753,12 @@ export class ConversationService {
         expiresAt: Date.now() + CLARIFICATION_MS,
       });
     }
-    await reply(answer.text);
+    const options = answer.clarification?.options ?? [];
+    await reply(
+      answer.text,
+      options.length > 0
+        ? { buttons: options.map((o) => ({ label: buttonLabel(o), answer: o })) }
+        : undefined,
+    );
   }
 }
