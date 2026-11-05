@@ -38,8 +38,15 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number];
 
-/** Objects a granted permission reaches: the caller's own ones, or the whole tenant. */
-export type PermissionScope = 'own' | 'tenant';
+/**
+ * Objects a granted permission reaches: the caller's own ones, or the whole tenant. B2: a custom
+ * role may also give `assigned` (own practices plus those assigned to the person) on the
+ * permissions in ASSIGNABLE; everywhere else `assigned` counts as `own`.
+ */
+export type PermissionScope = 'own' | 'assigned' | 'tenant';
+
+/** Permissions on which a custom role may use the `assigned` scope. */
+export const ASSIGNABLE: readonly Permission[] = ['practice.read', 'attachment.read'];
 
 const STAFF: Partial<Record<Permission, PermissionScope>> = {
   'practice.create': 'own',
@@ -118,7 +125,8 @@ export function tenantScopeKey(permission: Permission): string {
 /** The permissions of a custom role with their scope; what is missing is not granted. */
 export type CustomPermissions = Partial<Record<Permission, PermissionScope>>;
 
-const SCOPES: readonly PermissionScope[] = ['own', 'tenant'];
+const SCOPES: readonly PermissionScope[] = ['own', 'assigned', 'tenant'];
+const SCOPE_RANK: Record<PermissionScope, number> = { own: 0, assigned: 1, tenant: 2 };
 
 /**
  * Reads the stored permissions of a custom role (`<permission>:<scope>`). Unknown entries are
@@ -130,7 +138,8 @@ export function parseCustomPermissions(stored: readonly string[]): CustomPermiss
     const [permission, scope] = entry.split(':');
     if (
       (PERMISSIONS as readonly string[]).includes(permission ?? '') &&
-      (SCOPES as readonly string[]).includes(scope ?? '')
+      (SCOPES as readonly string[]).includes(scope ?? '') &&
+      (scope !== 'assigned' || ASSIGNABLE.includes(permission as Permission))
     ) {
       out[permission as Permission] = scope as PermissionScope;
     }
@@ -146,7 +155,7 @@ export function serializeCustomPermissions(permissions: CustomPermissions): stri
 
 /** The narrower of two scopes: a custom role never widens its base role. */
 export function narrowerScope(a: PermissionScope, b: PermissionScope): PermissionScope {
-  return a === 'own' || b === 'own' ? 'own' : 'tenant';
+  return SCOPE_RANK[a] <= SCOPE_RANK[b] ? a : b;
 }
 
 /**
@@ -161,7 +170,9 @@ export function customRoleProblems(baseRole: UserRole, permissions: CustomPermis
   >) {
     const allowed = ceiling[permission];
     if (!allowed) problems.push(`«${permission}» non fa parte del ruolo di base`);
-    else if (allowed === 'own' && scope === 'tenant') {
+    else if (scope === 'assigned' && !ASSIGNABLE.includes(permission)) {
+      problems.push(`«${permission}» non può valere per le pratiche assegnate`);
+    } else if (SCOPE_RANK[scope] > SCOPE_RANK[allowed]) {
       problems.push(`«${permission}» vale solo per le proprie pratiche nel ruolo di base`);
     }
   }

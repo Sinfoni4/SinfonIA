@@ -23,7 +23,10 @@ export type Member = {
 
 // --- B2: custom roles ---------------------------------------------------------------------------
 
-export type PermissionScope = 'own' | 'tenant';
+export type PermissionScope = 'own' | 'assigned' | 'tenant';
+
+/** Permissions that a custom role may give on own and assigned practices (as the backend). */
+export const ASSIGNABLE = ['practice.read', 'attachment.read'];
 
 export type CustomRole = {
   id: string;
@@ -68,6 +71,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
 
 export const SCOPE_LABELS: Record<PermissionScope, string> = {
   tenant: "tutta l'organizzazione",
+  assigned: 'proprie e assegnate',
   own: 'solo le proprie',
 };
 

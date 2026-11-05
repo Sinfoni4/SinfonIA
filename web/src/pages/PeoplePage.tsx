@@ -13,6 +13,7 @@ import {
   ROLE_NAMES,
   ROLES,
   SCOPE_LABELS,
+  ASSIGNABLE,
   type CustomRole,
   type Invitation,
   type Member,
@@ -369,7 +370,9 @@ function CustomRoles({ me }: { me: Me }) {
                     {Object.entries(r.permissions).map(([p, scope]) => (
                       <li key={p}>
                         {permissionLabel(p)}
-                        {scope === 'own' && <span className="muted"> ({SCOPE_LABELS.own})</span>}
+                        {scope !== 'tenant' && (
+                          <span className="muted"> ({SCOPE_LABELS[scope]})</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -435,6 +438,9 @@ function CustomRoles({ me }: { me: Me }) {
                   }
                 >
                   <option value="tenant">{SCOPE_LABELS.tenant}</option>
+                  {ASSIGNABLE.includes(permission) && (
+                    <option value="assigned">{SCOPE_LABELS.assigned}</option>
+                  )}
                   <option value="own">{SCOPE_LABELS.own}</option>
                 </select>
               )}

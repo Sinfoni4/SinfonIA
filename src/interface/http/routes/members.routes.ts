@@ -45,7 +45,7 @@ const InvitationParamsSchema = z.object({ invitationId: z.string().uuid() });
 
 // B2: custom roles. Permissions only from the catalog; the service checks them on the base role.
 const CustomPermissionsSchema = z
-  .partialRecord(z.enum(PERMISSIONS), z.enum(['own', 'tenant']))
+  .partialRecord(z.enum(PERMISSIONS), z.enum(['own', 'assigned', 'tenant']))
   .refine((p) => Object.keys(p).length <= PERMISSIONS.length);
 const RoleIdParamsSchema = z.object({ roleId: z.string().uuid() });
 const CreateRoleBodySchema = z

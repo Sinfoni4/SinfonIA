@@ -200,7 +200,14 @@ describe('people (FE4)', () => {
     await userEvent.type(screen.getByLabelText('Nome'), 'Accoglienza');
     expect(screen.queryByText('Gestire persone e ruoli')).toBeNull();
     await userEvent.click(screen.getByLabelText('Vedere le pratiche'));
-    await userEvent.selectOptions(screen.getByLabelText('Ambito di Vedere le pratiche'), 'own');
+    // Reading the practices may also cover those assigned to the person.
+    const scope = screen.getByLabelText('Ambito di Vedere le pratiche');
+    expect(
+      within(scope)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(["tutta l'organizzazione", 'proprie e assegnate', 'solo le proprie']);
+    await userEvent.selectOptions(scope, 'own');
     await userEvent.click(screen.getByLabelText('Creare pratiche'));
     await userEvent.click(screen.getByRole('button', { name: 'Crea il ruolo' }));
     await waitFor(() =>
