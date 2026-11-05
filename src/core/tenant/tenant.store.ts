@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireTenantId } from '../../data/guard/tenant.js';
 import { log } from '../../shared/log.js';
 
-import { TenantNotFoundError, TenantNotLinkedError } from './tenant.errors.js';
+import { TenantNotFoundError } from './tenant.errors.js';
 
 import type { TenantDTO } from '../../data/types/domain.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
@@ -97,34 +97,7 @@ export async function getTenantById(prisma: PrismaLike, tenantId: string): Promi
   return toTenantConfig(row);
 }
 
-export async function getTenantByUserAsync(prisma: PrismaLike, userId: string): Promise<Tenant> {
-  const user = await prisma.user.findFirst({
-    where: { id: userId },
-    select: { tenantId: true },
-  });
-  if (!user) {
-    throw new TenantNotLinkedError();
-  }
-  return getTenantById(prisma, user.tenantId);
-}
-
 export async function getAllTenants(prisma: PrismaLike): Promise<Tenant[]> {
   const rows = await prisma.tenant.findMany({ orderBy: { createdAt: 'asc' } });
   return rows.map(toTenantConfig);
-}
-
-export async function getTenantByTelegramUserAsync(
-  prisma: PrismaLike,
-  telegramId: string,
-): Promise<{ tenant: Tenant; userId: string; role: 'ADMIN' | 'OPERATOR' | 'MEMBER' }> {
-  const user = await prisma.user.findFirst({
-    where: { telegramId: telegramId.trim() },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, tenantId: true, role: true },
-  });
-  if (!user) {
-    throw new TenantNotLinkedError();
-  }
-  const tenant = await getTenantById(prisma, user.tenantId);
-  return { tenant, userId: user.id, role: user.role };
 }

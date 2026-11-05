@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 import { createPrismaClient } from '../../src/data/db/prisma.js';
+import { UserRepository } from '../../src/data/repositories/user.repository.js';
 import { AuditService } from '../../src/data/services/audit.service.js';
 
 function arg(name: string): string | undefined {
@@ -72,11 +73,9 @@ async function main() {
     if (people.length > 1) throw new Error('Several accounts share this email: merge them first');
 
     const userId = await prisma.$transaction(async (tx) => {
-      // Until the old columns are removed (MF12) a new account belongs to this organization.
+      // A new account gets its membership from the repository (MF12 step 3).
       const id =
-        people[0]?.id ??
-        (await tx.user.create({ data: { tenantId: org.id, email, role }, select: { id: true } }))
-          .id;
+        people[0]?.id ?? (await new UserRepository(tx).createUser(org.id, { email, role })).id;
       await tx.membership.upsert({
         where: { userId_orgId: { userId: id, orgId: org.id } },
         create: { userId: id, orgId: org.id, role },

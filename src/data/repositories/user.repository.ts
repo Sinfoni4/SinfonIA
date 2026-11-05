@@ -1,148 +1,136 @@
 import { randomUUID } from 'node:crypto';
 
-import { DatabaseError, NotFoundError } from '../errors/errors.js';
+import { DatabaseError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
 import type { UserDTO } from '../types/domain.js';
-import type { PrismaLike } from '../types/prisma.js';
-import type { UserRole } from '@prisma/client';
+import type { PrismaLike, PrismaTx } from '../types/prisma.js';
+import type { ChannelType, UserRole } from '@prisma/client';
 
-function toUserDTO(row: {
-  id: string;
-  tenantId: string;
-  email: string;
-  role: UserRole;
-  telegramId?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): UserDTO {
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    email: row.email,
-    role: row.role,
-    telegramId: row.telegramId ?? null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
+/**
+ * Links a chat account to a person (MF3, MF12): one active link per chat account and per person
+ * on a channel; an older link of either is revoked, as the legacy resolver let the most recent
+ * account win. `channel_identity` is the only place chat links are written.
+ */
+export async function linkChannelIdentity(
+  db: PrismaLike,
+  userId: string,
+  channel: ChannelType,
+  externalId: string,
+): Promise<void> {
+  const now = new Date();
+  await db.channelIdentity.updateMany({
+    where: {
+      channel,
+      revokedAt: null,
+      OR: [
+        { externalId, userId: { not: userId } },
+        { userId, externalId: { not: externalId } },
+      ],
+    },
+    data: { revokedAt: now },
+  });
+  const active = await db.channelIdentity.findFirst({
+    where: { channel, externalId, userId, revokedAt: null },
+    select: { id: true },
+  });
+  if (!active) await db.channelIdentity.create({ data: { userId, channel, externalId } });
 }
 
 export class UserRepository {
   constructor(private readonly prisma: PrismaLike) {}
 
+  /** Runs in the caller's transaction, or in a new one from a root client. */
+  private inTransaction<T>(fn: (tx: PrismaTx) => Promise<T>): Promise<T> {
+    return '$transaction' in this.prisma
+      ? this.prisma.$transaction((tx) => fn(tx))
+      : fn(this.prisma);
+  }
+
+  /**
+   * Creates a person with an active membership of the organization: the membership is what
+   * every check reads (MF4). Until the contraction migration (MF12 step 5) the old `user`
+   * columns are still filled, because `tenant_id` cannot be empty; nothing reads them.
+   * `telegramId` links a Telegram account through `channel_identity`.
+   */
   async createUser(
-    tenantId: string,
-    data: { email: string; role?: UserRole; telegramId?: string | null },
+    orgId: string,
+    data: {
+      email: string;
+      role?: UserRole;
+      telegramId?: string | null;
+      emailVerifiedAt?: Date | null;
+      invitedBy?: string | null;
+    },
   ): Promise<UserDTO> {
-    requireTenantId(tenantId);
+    requireTenantId(orgId);
+    const role = data.role ?? 'MEMBER';
     try {
-      const row = await this.prisma.user.create({
-        data: {
-          tenantId,
-          email: data.email,
-          role: data.role ?? 'MEMBER',
-          telegramId: data.telegramId ?? null,
-        },
+      return await this.inTransaction(async (tx) => {
+        const row = await tx.user.create({
+          data: {
+            tenantId: orgId,
+            email: data.email,
+            role,
+            emailVerifiedAt: data.emailVerifiedAt ?? null,
+          },
+          select: { id: true, email: true, createdAt: true, updatedAt: true },
+        });
+        await tx.membership.upsert({
+          where: { userId_orgId: { userId: row.id, orgId } },
+          create: { userId: row.id, orgId, role, invitedBy: data.invitedBy ?? null },
+          update: { role, status: 'ACTIVE', revokedAt: null, revokedBy: null },
+        });
+        const telegramId = data.telegramId?.trim();
+        if (telegramId) await linkChannelIdentity(tx, row.id, 'TELEGRAM', telegramId);
+        return { ...row, tenantId: orgId, role };
       });
-      return toUserDTO(row);
     } catch (err: unknown) {
       throw new DatabaseError('Failed to create user', err);
     }
   }
 
-  async getUserById(tenantId: string, id: string): Promise<UserDTO> {
-    requireTenantId(tenantId);
-    try {
-      const row = await this.prisma.user.findFirst({
-        where: { tenantId, id },
-      });
-      if (!row) throw new NotFoundError('User not found');
-      return toUserDTO(row);
-    } catch (err: unknown) {
-      if (err instanceof NotFoundError) throw err;
-      throw new DatabaseError('Failed to get user', err);
-    }
-  }
-
-  async ensureTelegramUser(tenantId: string, telegramId: string): Promise<UserDTO> {
-    requireTenantId(tenantId);
-    const normalizedTelegramId = telegramId.trim();
-    if (!normalizedTelegramId) {
+  /**
+   * The person behind a Telegram account in an organization, created the first time the
+   * account is linked there with an invite code (MF12 step 2: through `channel_identity`).
+   */
+  async ensureTelegramUser(orgId: string, telegramId: string): Promise<UserDTO> {
+    requireTenantId(orgId);
+    const externalId = telegramId.trim();
+    if (!externalId) {
       throw new DatabaseError('telegramId is required');
     }
-
     try {
-      const existing = await this.prisma.user.findFirst({
-        where: { tenantId, telegramId: normalizedTelegramId },
-      });
-      if (existing) return toUserDTO(existing);
-
-      const created = await this.prisma.user.create({
-        data: {
-          tenantId,
-          telegramId: normalizedTelegramId,
-          email: `telegram-${randomUUID()}@local.invalid`,
-          role: 'MEMBER',
+      const linked = await this.prisma.channelIdentity.findFirst({
+        where: {
+          channel: 'TELEGRAM',
+          externalId,
+          revokedAt: null,
+          user: { memberships: { some: { orgId } } },
+        },
+        select: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              createdAt: true,
+              updatedAt: true,
+              memberships: { where: { orgId }, select: { role: true } },
+            },
+          },
         },
       });
-      return toUserDTO(created);
-    } catch (err: unknown) {
-      if (isUniqueConstraintError(err)) {
-        const existing = await this.prisma.user.findFirst({
-          where: { tenantId, telegramId: normalizedTelegramId },
-        });
-        if (existing) return toUserDTO(existing);
+      if (linked) {
+        const { memberships, ...user } = linked.user;
+        return { ...user, tenantId: orgId, role: memberships[0]?.role ?? 'MEMBER' };
       }
-      throw new DatabaseError('Failed to ensure Telegram user', err);
-    }
-  }
-
-  async findByTelegramId(telegramId: string): Promise<UserDTO | null> {
-    const normalized = telegramId.trim();
-    if (!normalized) return null;
-    try {
-      const row = await this.prisma.user.findFirst({
-        where: { telegramId: normalized },
-        orderBy: { createdAt: 'desc' },
-      });
-      return row ? toUserDTO(row) : null;
     } catch (err: unknown) {
       throw new DatabaseError('Failed to find Telegram user', err);
     }
+    return this.createUser(orgId, {
+      email: `telegram-${randomUUID()}@local.invalid`,
+      role: 'MEMBER',
+      telegramId: externalId,
+    });
   }
-
-  async findFirstAdmin(tenantId: string): Promise<UserDTO | null> {
-    requireTenantId(tenantId);
-    try {
-      const row = await this.prisma.user.findFirst({
-        where: { tenantId, role: 'ADMIN' },
-        orderBy: { createdAt: 'asc' },
-      });
-      return row ? toUserDTO(row) : null;
-    } catch (err: unknown) {
-      throw new DatabaseError('Failed to find tenant admin', err);
-    }
-  }
-
-  async listUsers(tenantId: string): Promise<UserDTO[]> {
-    requireTenantId(tenantId);
-    try {
-      const rows = await this.prisma.user.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: 'asc' },
-      });
-      return rows.map(toUserDTO);
-    } catch (err: unknown) {
-      throw new DatabaseError('Failed to list users', err);
-    }
-  }
-}
-
-function isUniqueConstraintError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: unknown }).code === 'P2002'
-  );
 }

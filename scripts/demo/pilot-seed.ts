@@ -125,12 +125,12 @@ export async function seedPilotScenario(
   const isoDay = (offset: number) =>
     new Date(now.getTime() + offset * DAY_MS).toISOString().slice(0, 10);
 
-  const existing = await prisma.user.findFirst({
-    where: { email: email(PILOT_ACCOUNTS.network) },
-    select: { tenantId: true },
+  const existing = await prisma.membership.findFirst({
+    where: { user: { email: email(PILOT_ACCOUNTS.network) } },
+    select: { orgId: true },
   });
   if (existing) {
-    return { created: false, networkId: existing.tenantId, companyId: '', consultantOrgId: '' };
+    return { created: false, networkId: existing.orgId, companyId: '', consultantOrgId: '' };
   }
 
   const tenants = new TenantRepository(prisma);

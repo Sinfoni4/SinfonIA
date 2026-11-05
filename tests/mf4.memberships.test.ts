@@ -81,7 +81,12 @@ describe.runIf(Boolean(DATABASE_URL))('MF4 memberships', () => {
   it('joins a second organization with the same account: a membership, not a new person', async () => {
     const provider = createTelegramIdentityProvider(prisma);
     expect(await provider.link(inviteB, telegramId)).toBe(tenantB.id);
-    expect(await prisma.user.count({ where: { telegramId } })).toBe(1);
+    // One person behind the Telegram account (MF12: the link is in channel_identity).
+    const links = await prisma.channelIdentity.findMany({
+      where: { channel: 'TELEGRAM', externalId: telegramId, revokedAt: null },
+      select: { userId: true },
+    });
+    expect(links).toEqual([{ userId }]);
     const memberships = await prisma.membership.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' },

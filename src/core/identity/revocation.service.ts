@@ -170,8 +170,6 @@ export async function changeMemberRole(
         ...(can(role, 'members.manage') ? {} : { scheduledExportSince: null }),
       },
     });
-    // Legacy column (until the contract step M3): kept equal in the person's legacy organization.
-    await tx.user.updateMany({ where: { id: userId, tenantId: orgId }, data: { role } });
     await new AuditService(tx).logEvent({
       tenantId: orgId,
       userId: actor.userId,
