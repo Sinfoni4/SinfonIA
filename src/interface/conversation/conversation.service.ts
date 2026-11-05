@@ -1,6 +1,7 @@
 import { can } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
+import { featureEnabled, type Feature } from '../../core/features/features.js';
 import { MemberAccessError } from '../../core/identity/member-access.service.js';
 import {
   OrganizationChoiceRequiredError,
@@ -11,6 +12,7 @@ import {
   type PracticeCommand,
 } from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
+import { getModule } from '../../modules/registry.js';
 import { errorLabel } from '../../shared/errors.js';
 import {
   formatAttachmentRejection,
@@ -408,7 +410,9 @@ export class ConversationService {
         return;
       }
       deps.log?.info({ tenantId, requestId, channel: this.channel.name }, 'User linked to tenant');
-      await reply('🎵 Benvenuto! Sei stato collegato alla tua cooperativa.');
+      // A02: the welcome of the organization's module.
+      const linked = await this.channel.identity.tenantFor?.(tenantId).catch(() => null);
+      await reply(getModule(linked?.module).welcome);
       return;
     }
 
@@ -435,6 +439,15 @@ export class ConversationService {
 
     const tenant = identity.tenant;
     const dbUser = { id: identity.userId, role: identity.role };
+    // A03: who acts, with the functions the platform turned off for the organization.
+    const actor = {
+      tenantId: tenant.id,
+      userId: dbUser.id,
+      role: dbUser.role,
+      disabledFeatures: tenant.disabledFeatures,
+    };
+    const featureOn = (feature: Feature) => featureEnabled(tenant.disabledFeatures, feature);
+    const FEATURE_OFF = 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
 
     // Downloads the file and attaches it to the chosen practice (OCR included).
     const uploadToPractice = async (file: InboundFile, practice: AttachmentCandidate) => {
@@ -497,6 +510,10 @@ export class ConversationService {
     };
 
     if (message.file) {
+      if (!featureOn('documents')) {
+        await reply(FEATURE_OFF);
+        return;
+      }
       const file = message.file;
       // Reject oversized files before asking anything or downloading them.
       const maxBytes = Math.min(
@@ -592,6 +609,10 @@ export class ConversationService {
     }
 
     if (ASSISTANCE_COMMAND.test(trimmed) && deps.requestAssistance) {
+      if (!featureOn('assistance')) {
+        await reply(FEATURE_OFF);
+        return;
+      }
       if (!can(dbUser.role, 'assistance.request')) {
         await reply('🔒 Non puoi inviare richieste di assistenza.');
         return;
@@ -662,11 +683,9 @@ export class ConversationService {
                   nextState: pendingTransition.nextState,
                 },
               };
-        const result = await deps.practiceService.executeCommand(
-          confirmed,
-          { tenantId: tenant.id, userId: dbUser.id, role: dbUser.role },
-          { channel: this.channel.name },
-        );
+        const result = await deps.practiceService.executeCommand(confirmed, actor, {
+          channel: this.channel.name,
+        });
         await reply(formatPracticeCommandResult(result));
         return;
       }
@@ -782,6 +801,7 @@ export class ConversationService {
           tenantId: tenant.id,
           userId: dbUser.id,
           role: dbUser.role,
+          disabledFeatures: tenant.disabledFeatures,
         }),
       );
       return;
@@ -790,11 +810,9 @@ export class ConversationService {
     const command = parsePracticeCommand(trimmed);
     if (command) {
       // C2: the caller's own practices by default; the organization only with explicit commands.
-      const result = await deps.practiceService.executeCommand(
-        command,
-        { tenantId: tenant.id, userId: dbUser.id, role: dbUser.role },
-        { channel: this.channel.name },
-      );
+      const result = await deps.practiceService.executeCommand(command, actor, {
+        channel: this.channel.name,
+      });
       if (result.type === 'confirm_transition') {
         this.pendingTransitions.set(dbUser.id, {
           tenantId: tenant.id,
@@ -852,6 +870,15 @@ export class ConversationService {
     // Defensive layer: never let a slash command reach the AI pipeline.
     if (trimmed.startsWith('/')) {
       await reply(onboardingMessage(dbUser.role));
+      return;
+    }
+
+    // A03: with the AI off, free text gets the list of commands instead of an interpretation.
+    if (!featureOn('ai_chat')) {
+      await reply(
+        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser.role)}`,
+        { menu: true },
+      );
       return;
     }
 

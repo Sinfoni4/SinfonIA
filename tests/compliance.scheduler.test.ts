@@ -54,6 +54,8 @@ describeWithDb('compliance deadline reminders (Step 6)', () => {
   async function setupTenant() {
     const tenant = await new TenantRepository(prisma1).createTenant({
       name: `t-compliance-${randomUUID()}`,
+      // A02: the agricultural module, which uses every deadline category.
+      module: 'agri',
       // Scheduled exports disabled: compliance reminders must run anyway.
       schedulerEnabled: false,
     });

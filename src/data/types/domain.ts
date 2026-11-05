@@ -7,6 +7,8 @@ export type TenantDTO = {
   id: string;
   name: string;
   module: string;
+  /** A03: functions turned off for the organization. */
+  disabledFeatures?: string[];
   integrationType: string;
   schedulerEnabled: boolean;
   schedulerFrequency: string | null;

@@ -17,6 +17,11 @@ import { invitationLink } from '../api/members';
 import { formatDateTime } from '../api/organization';
 import {
   describePlatformAction,
+  FEATURE_LABELS,
+  FEATURES,
+  MODULE_LABELS,
+  MODULES,
+  moduleLabel,
   organizationsQuery,
   STATUS_LABELS,
   TYPE_LABELS,
@@ -25,6 +30,8 @@ import {
   type OrganizationPage,
   type OrganizationStatus,
   type OrganizationType,
+  type Feature,
+  type ModuleId,
   type PlatformAuditPage,
   type Verification,
 } from '../api/platform';
@@ -334,13 +341,14 @@ function NewOrganizationPage() {
   const confirm = useConfirmationCode();
   const [name, setName] = useState('');
   const [type, setType] = useState<OrganizationType>('COMPANY');
+  const [module, setModule] = useState<ModuleId>('generic');
   const [email, setEmail] = useState('');
 
   const create = useMutation({
     mutationFn: (verification: Verification) =>
       api<{ orgId: string; devToken?: string }>('/platform/organizations', {
         method: 'POST',
-        body: { name: name.trim(), type, firstAdminEmail: email.trim(), verification },
+        body: { name: name.trim(), type, module, firstAdminEmail: email.trim(), verification },
       }),
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['platform'] });
@@ -379,6 +387,18 @@ function NewOrganizationPage() {
           {TYPES.map((t) => (
             <option key={t} value={t}>
               {TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="org-module">Settore</label>
+        <select
+          id="org-module"
+          value={module}
+          onChange={(e) => setModule(e.target.value as ModuleId)}
+        >
+          {MODULES.map((m) => (
+            <option key={m} value={m}>
+              {MODULE_LABELS[m]}
             </option>
           ))}
         </select>
@@ -497,7 +517,11 @@ function OrganizationPage() {
             <dd>{org.scheduledExport ? 'attivo' : 'non attivo'}</dd>
             <dt>Integrazione esterna</dt>
             <dd>{org.webhook ? 'sì' : 'no'}</dd>
+            <dt>Settore</dt>
+            <dd>{moduleLabel(org.module)}</dd>
           </dl>
+
+          <ModulesCard key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}`} org={org} />
 
           <section className="card" aria-labelledby="admins-title">
             <h2 id="admins-title">Amministratori</h2>
@@ -589,6 +613,80 @@ function OrganizationPage() {
         </>
       )}
     </>
+  );
+}
+
+/** A03 (voce 16): the sector module and the functions on for one organization. */
+function ModulesCard({ org }: { org: OrganizationDetail }) {
+  const { api } = useSession();
+  const queryClient = useQueryClient();
+  const [module, setModule] = useState<ModuleId>(
+    (MODULES as readonly string[]).includes(org.module) ? (org.module as ModuleId) : 'generic',
+  );
+  const [off, setOff] = useState<Feature[]>(
+    FEATURES.filter((f) => (org.disabledFeatures ?? []).includes(f)),
+  );
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/platform/organizations/${org.id}/modules`, {
+        method: 'PATCH',
+        body: { module, disabledFeatures: off },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['platform'] });
+    },
+  });
+  const toggle = (feature: Feature, on: boolean) =>
+    setOff((current) => (on ? current.filter((f) => f !== feature) : [...current, feature]));
+
+  return (
+    <section className="card form" aria-labelledby="modules-title">
+      <h2 id="modules-title">Settore e funzioni</h2>
+      <p className="muted">
+        Valgono dalla prossima richiesta dei membri, su dashboard, API e chat. Spegnere una funzione
+        non cancella i dati: tornano visibili quando la si riaccende.
+      </p>
+      <label htmlFor="modules-module">Settore</label>
+      <select
+        id="modules-module"
+        value={module}
+        onChange={(e) => setModule(e.target.value as ModuleId)}
+      >
+        {MODULES.map((m) => (
+          <option key={m} value={m}>
+            {MODULE_LABELS[m]}
+          </option>
+        ))}
+      </select>
+      <fieldset>
+        <legend>Funzioni attive</legend>
+        {FEATURES.map((f) => (
+          <label key={f} className="checkbox">
+            <input
+              type="checkbox"
+              checked={!off.includes(f)}
+              onChange={(e) => toggle(f, e.target.checked)}
+            />{' '}
+            {FEATURE_LABELS[f]}
+          </label>
+        ))}
+      </fieldset>
+      <span className="actions">
+        <button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
+          Salva settore e funzioni
+        </button>
+      </span>
+      {save.isSuccess && (
+        <p className="notice" role="status">
+          Salvato.
+        </p>
+      )}
+      {save.isError && (
+        <p className="error" role="alert">
+          {describeError(save.error)}
+        </p>
+      )}
+    </section>
   );
 }
 

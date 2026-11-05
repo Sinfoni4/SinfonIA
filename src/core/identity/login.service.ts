@@ -265,7 +265,11 @@ export class LoginService {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, status: 'ACTIVE', org: { status: 'ACTIVE' } },
       orderBy: { createdAt: 'asc' },
-      select: { orgId: true, role: true, org: { select: { name: true, type: true } } },
+      select: {
+        orgId: true,
+        role: true,
+        org: { select: { name: true, type: true, module: true } },
+      },
     });
     const audit = new AuditService(this.prisma);
     for (const m of memberships) {
@@ -285,6 +289,7 @@ export class LoginService {
         name: m.org.name,
         role: m.role,
         type: m.org.type,
+        module: m.org.module,
       })),
       platform: isPlatformAdmin(user.platformRole),
     };
@@ -579,7 +584,14 @@ export class LoginService {
   async profile(userId: string): Promise<{
     userId: string;
     email: string | null;
-    organizations: Array<{ orgId: string; name: string; role: UserRole; type: OrganizationType }>;
+    organizations: Array<{
+      orgId: string;
+      name: string;
+      role: UserRole;
+      type: OrganizationType;
+      /** A02: the sector module of the organization. */
+      module: string;
+    }>;
     platform: boolean;
   }> {
     const user = await this.prisma.user.findUniqueOrThrow({
@@ -589,7 +601,11 @@ export class LoginService {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, status: 'ACTIVE', org: { status: 'ACTIVE' } },
       orderBy: { createdAt: 'asc' },
-      select: { orgId: true, role: true, org: { select: { name: true, type: true } } },
+      select: {
+        orgId: true,
+        role: true,
+        org: { select: { name: true, type: true, module: true } },
+      },
     });
     return {
       userId,
@@ -599,6 +615,7 @@ export class LoginService {
         name: m.org.name,
         role: m.role,
         type: m.org.type,
+        module: m.org.module,
       })),
       platform: isPlatformAdmin(user.platformRole),
     };

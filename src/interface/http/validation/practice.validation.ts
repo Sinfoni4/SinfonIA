@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { PRACTICE_KINDS } from '../../../modules/registry.js';
+
 export const PracticeStateSchema = z.enum([
   'CREATED',
   'VALIDATED',
@@ -8,7 +10,7 @@ export const PracticeStateSchema = z.enum([
   'COMPLETED',
 ]);
 
-export const PracticeKindSchema = z.enum(['artist', 'music', 'generic']);
+export const PracticeKindSchema = z.enum(PRACTICE_KINDS);
 
 export const PracticeIdParamsSchema = z.object({
   id: z.string().uuid(),
@@ -22,8 +24,16 @@ export const PracticeTransitionBodySchema = z.object({
 
 export const PracticeCreateBodySchema = z.object({
   name: z.string().trim().min(1, 'Practice name is required'),
-  kind: PracticeKindSchema.default('generic'),
+  /** Omitted: the default kind of the organization's module (A02). */
+  kind: PracticeKindSchema.optional(),
+  /** A04: the fields of the kind, checked against its module. */
+  fields: z.record(z.string(), z.unknown()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** A05: a sub-state of the practice type, or null to clear it. */
+export const PracticeSubStateBodySchema = z.object({
+  subState: z.string().trim().min(1).max(60).nullable(),
 });
 
 export const PracticeListQuerySchema = z.object({

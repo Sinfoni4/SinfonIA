@@ -1,8 +1,10 @@
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { FEATURES, type Feature } from '../features/features.js';
 
 import type { LoginService } from '../identity/login.service.js';
+import type { ModuleId } from '../modules/module.contract.js';
 import type { OrganizationStatus, OrganizationType, Prisma, PrismaClient } from '@prisma/client';
 
 /**
@@ -130,6 +132,8 @@ export async function listOrganizations(
 
 export type OrganizationDetail = OrganizationRow & {
   module: string;
+  /** A03: functions the platform turned off. */
+  disabledFeatures: string[];
   scheduledExport: boolean;
   webhook: boolean;
   deactivatedAt: Date | null;
@@ -152,6 +156,7 @@ export async function getOrganization(
       status: true,
       createdAt: true,
       module: true,
+      disabledFeatures: true,
       schedulerEnabled: true,
       integrationType: true,
       deactivatedAt: true,
@@ -181,6 +186,7 @@ export async function getOrganization(
     practices,
     lastActivityAt: last._max.createdAt,
     module: org.module,
+    disabledFeatures: org.disabledFeatures,
     scheduledExport: org.schedulerEnabled,
     webhook: org.integrationType === 'external',
     deactivatedAt: org.deactivatedAt,
@@ -197,7 +203,7 @@ export async function getOrganization(
 export async function createOrganization(
   prisma: PrismaClient,
   login: Pick<LoginService, 'createInvitation'>,
-  input: { name: string; type: OrganizationType; firstAdminEmail: string },
+  input: { name: string; type: OrganizationType; firstAdminEmail: string; module?: ModuleId },
   actor: PlatformActor,
 ): Promise<{ orgId: string; invitationId: string; devToken?: string }> {
   const name = input.name.trim().replace(/\s+/g, ' ');
@@ -210,14 +216,14 @@ export async function createOrganization(
   if (exists > 0) throw new PlatformActionError('Esiste già un’organizzazione con questo nome');
   const org = await withTransaction(prisma, async (tx) => {
     const created = await tx.tenant.create({
-      data: { name, type: input.type },
-      select: { id: true },
+      data: { name, type: input.type, ...(input.module ? { module: input.module } : {}) },
+      select: { id: true, module: true },
     });
     await logPlatform(tx, {
       actor,
       action: 'ORGANIZATION_CREATED',
       orgId: created.id,
-      payload: { name, type: input.type },
+      payload: { name, type: input.type, module: created.module },
     });
     await logInOrganization(tx, created.id, 'ORGANIZATION_CREATED');
     return created;
@@ -280,6 +286,46 @@ export async function setOrganizationSuspended(
   return { status: to };
 }
 
+// --- A03: module and functions of an organization -------------------------------------------
+
+/**
+ * Sets the module of an organization and the functions turned off for it. Takes effect at the
+ * next request of its members (the authorization reads them every time); no data is touched:
+ * deadlines or documents of a function turned off stay, unreachable, until it is turned on again.
+ */
+export async function setOrganizationModules(
+  prisma: PrismaClient,
+  orgId: string,
+  input: { module: ModuleId; disabledFeatures: Feature[] },
+  actor: PlatformActor,
+): Promise<{ module: ModuleId; disabledFeatures: Feature[] }> {
+  const disabledFeatures = FEATURES.filter((f) => input.disabledFeatures.includes(f));
+  await withTransaction(prisma, async (tx) => {
+    const org = await tx.tenant.findUnique({
+      where: { id: orgId },
+      select: { module: true, disabledFeatures: true },
+    });
+    if (!org) throw new NotFoundError('Organization not found');
+    const same =
+      org.module === input.module &&
+      org.disabledFeatures.length === disabledFeatures.length &&
+      disabledFeatures.every((f) => org.disabledFeatures.includes(f));
+    if (same) return;
+    await tx.tenant.update({
+      where: { id: orgId },
+      data: { module: input.module, disabledFeatures },
+    });
+    await logPlatform(tx, {
+      actor,
+      action: 'ORGANIZATION_MODULES_CHANGED',
+      orgId,
+      payload: { module: input.module, disabledFeatures },
+    });
+    await logInOrganization(tx, orgId, 'ORGANIZATION_MODULES_CHANGED');
+  });
+  return { module: input.module, disabledFeatures };
+}
+
 // --- A6: platform audit log ---------------------------------------------------------------------
 
 export type PlatformAuditRow = {
@@ -290,7 +336,9 @@ export type PlatformAuditRow = {
   organization: { id: string; name: string | null } | null;
   /** The person a role change is about (another platform administrator). */
   targetEmail: string | null;
-  details: Partial<Record<'name' | 'type' | 'reason' | 'via', string>>;
+  details: Partial<Record<'name' | 'type' | 'reason' | 'via' | 'module', string>> & {
+    disabledFeatures?: string[];
+  };
 };
 
 function recordOf(value: unknown): Record<string, unknown> {
@@ -338,8 +386,11 @@ export async function listPlatformAudit(
       const payload = recordOf(r.payload);
       const target = targetOf(r.payload);
       const details: PlatformAuditRow['details'] = {};
-      for (const key of ['name', 'type', 'reason', 'via'] as const) {
+      for (const key of ['name', 'type', 'reason', 'via', 'module'] as const) {
         if (typeof payload[key] === 'string') details[key] = payload[key];
+      }
+      if (Array.isArray(payload.disabledFeatures)) {
+        details.disabledFeatures = payload.disabledFeatures.filter((f) => typeof f === 'string');
       }
       return {
         id: r.id,

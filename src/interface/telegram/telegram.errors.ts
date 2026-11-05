@@ -20,6 +20,10 @@ export function mapTelegramErrorToMessage(err: unknown): string {
     return '⚠️ Ho trovato più pratiche simili.\nPuoi indicarmi meglio quale intendi?';
   }
 
+  if (msg.includes('FEATURE_DISABLED')) {
+    return 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
+  }
+
   if (msg.includes('PERMISSION_DENIED')) {
     return 'ℹ️ Questa operazione richiede un operatore o un amministratore della tua cooperativa.';
   }

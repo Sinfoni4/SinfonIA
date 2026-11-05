@@ -34,6 +34,7 @@ import {
   PracticeStatusHandler,
 } from './core/outbox/practice-status.handler.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
+import { moduleOfTenant } from './core/practice/practice-module.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { createPrismaClient } from './data/db/prisma.js';
@@ -181,7 +182,11 @@ async function main() {
     storageService: createStorageService(config),
   });
   const executorService = new ExecutorService({ practiceService });
-  const contextService = new ContextService(practiceService);
+  // A02: the AI gets the sector instructions of the organization's module.
+  const contextService = new ContextService(
+    practiceService,
+    async (tenantId) => (await moduleOfTenant(prisma, tenantId)).aiInstructions,
+  );
   const decisionEngine = new DecisionEngine();
   const normalizerService = new NormalizerService();
   const complianceService = new ComplianceService(prisma);

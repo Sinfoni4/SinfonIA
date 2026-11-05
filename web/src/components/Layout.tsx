@@ -52,6 +52,8 @@ export function Layout({ me }: { me: Me }) {
   const isNetwork = current?.type !== undefined && NETWORK_TYPES.includes(current.type);
   const staff = me.current.role !== 'MEMBER';
   const admin = me.current.role === 'ADMIN';
+  // A03: a function turned off for the organization is not offered (the backend refuses it).
+  const on = (feature: string) => !(me.current.disabledFeatures ?? []).includes(feature);
 
   const switchTo = async (orgId: string) => {
     setError(null);
@@ -115,12 +117,14 @@ export function Layout({ me }: { me: Me }) {
             >
               <Section to="/pratiche">Pratiche</Section>
               {staff && <Section to="/bacheca">Bacheca</Section>}
-              <Section to="/scadenze">Scadenze</Section>
-              <Section to="/verifica">Da verificare</Section>
-              {staff && <Section to="/assistenza">Assistenza</Section>}
-              <Section to="/export">Export</Section>
-              <Section to="/deleghe">Deleghe</Section>
-              {isNetwork && staff && <Section to="/rete/statistiche">Statistiche</Section>}
+              {on('deadlines') && <Section to="/scadenze">Scadenze</Section>}
+              {on('documents') && <Section to="/verifica">Da verificare</Section>}
+              {staff && on('assistance') && <Section to="/assistenza">Assistenza</Section>}
+              {on('exports') && <Section to="/export">Export</Section>}
+              {on('delegations') && <Section to="/deleghe">Deleghe</Section>}
+              {isNetwork && staff && on('network_stats') && (
+                <Section to="/rete/statistiche">Statistiche</Section>
+              )}
               {admin && (
                 <>
                   <Section to="/persone">Persone</Section>

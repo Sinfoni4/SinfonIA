@@ -36,6 +36,9 @@ const SHOWN_FIELDS = [
   // MF8: what a delegation allows and what was done through it (never data of the practices).
   'operations',
   'action',
+  // A05: the step of the module set on a practice, or cleared.
+  'subState',
+  'cleared',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

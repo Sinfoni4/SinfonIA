@@ -16,6 +16,8 @@ model Tenant {
   id                  String             @id @default(uuid()) @db.Uuid
   name                String
   module              String             @default("music")
+  /// A03: functions the platform turned off for this organization (src/core/features).
+  disabledFeatures    String[]           @default([]) @map("disabled_features")
   integrationType     String             @default("none") @map("integration_type")
   schedulerEnabled    Boolean            @default(false) @map("scheduler_enabled")
   schedulerFrequency  String?            @map("scheduler_frequency")

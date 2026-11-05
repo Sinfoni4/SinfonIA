@@ -47,6 +47,8 @@ export type InterpreterContext = {
   tenantId: string;
   userId?: string | null;
   practices?: PracticeContext['practices'];
+  /** A02: the sector instructions of the organization's module (never personal data). */
+  sector?: string;
 };
 
 export class InterpreterError extends Error {

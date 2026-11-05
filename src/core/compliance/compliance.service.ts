@@ -2,8 +2,10 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { ComplianceRepository } from '../../data/repositories/compliance.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { deadlineCategoriesOf } from '../../modules/registry.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { ComplianceValidationError } from '../errors/compliance.errors.js';
+import { moduleOfTenant } from '../practice/practice-module.js';
 
 import {
   addDays,
@@ -111,6 +113,14 @@ export class ComplianceService {
     if (!COMPLIANCE_CATEGORIES.includes(category)) {
       throw new ComplianceValidationError(
         `Unknown category: allowed values are ${COMPLIANCE_CATEGORIES.join(', ')}`,
+      );
+    }
+    // A02: the categories of the organization's module (ALTRO always).
+    const module = await moduleOfTenant(this.prisma, input.tenantId);
+    const allowed = deadlineCategoriesOf(module);
+    if (!allowed.includes(category)) {
+      throw new ComplianceValidationError(
+        `Category not used by the module ${module.label}: allowed values are ${allowed.join(', ')}`,
       );
     }
     const title = input.title.trim();

@@ -10,6 +10,7 @@ import { authorize, scopedUserId, type Principal } from '../authz/authorization.
 import { AttachmentRejectedError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
+import { moduleOfTenant, resolvePracticeCreation, visibleSubState } from './practice-module.js';
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
 import { readPracticePayload } from './practice.payload.js';
 
@@ -62,6 +63,8 @@ export type PracticeView = {
   updatedAt: Date;
   /** A4: who follows the practice, if anyone. */
   assignedTo: string | null;
+  /** A05: the sub-state of the module inside the common state, if any. */
+  subState: string | null;
 };
 
 export type PracticePaginationParams = {
@@ -143,6 +146,7 @@ function toView(dto: PracticeDTO): PracticeView {
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     assignedTo: dto.assignedTo ?? null,
+    subState: visibleSubState(payload, dto.status),
   };
 }
 
@@ -187,18 +191,30 @@ export class PracticeApplicationService {
     tenantId: string;
     userId: string;
     name: string;
+    /** Omitted: the default kind of the organization's module (A02). */
     kind?: PracticeKind;
+    /** A04: the fields the module declares for the kind. */
+    fields?: Record<string, unknown>;
     metadata?: Record<string, unknown>;
   }): Promise<PracticeView> {
     const name = input.name.trim();
     if (!name) throw new NotFoundError('Practice name is required');
 
+    const module = await moduleOfTenant(this.prisma, input.tenantId);
+    const { kind, fields } = resolvePracticeCreation(module, {
+      kind: input.kind,
+      fields: input.fields,
+    });
+    // Fields and sub-state go only through the module's checks, never through free metadata.
+    const metadata = { ...(input.metadata ?? {}) };
+    delete metadata.fields;
+    delete metadata.subState;
     const dto = await this.workflow.createPractice({
       tenantId: input.tenantId,
       userId: input.userId,
       name,
-      kind: input.kind ?? 'generic',
-      metadata: input.metadata,
+      kind,
+      metadata: fields ? { ...metadata, fields } : metadata,
     });
     return toView(dto);
   }
@@ -544,8 +560,8 @@ export class PracticeApplicationService {
           practice: await this.createPractice({
             tenantId: actor.tenantId,
             userId: actor.userId,
+            // The module of the organization decides the kind (A02).
             name: command.payload.name,
-            kind: 'music',
           }),
         };
 

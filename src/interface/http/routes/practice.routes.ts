@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { can, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
+import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
 import { allowedNextStates } from '../../../core/workflow/state-machine.js';
+import { deadlineCategoriesOf } from '../../../modules/registry.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -15,6 +17,7 @@ import {
   PracticeExportBodySchema,
   PracticeIdParamsSchema,
   PracticeListQuerySchema,
+  PracticeSubStateBodySchema,
   PracticeTransitionBodySchema,
   PracticeTransitionParamsSchema,
 } from '../validation/practice.validation.js';
@@ -91,6 +94,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         userId: auth.userId,
         name: body.name,
         kind: body.kind,
+        fields: body.fields,
         metadata: body.metadata,
       });
 
@@ -132,6 +136,51 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
 
   const prisma = deps.prisma;
   if (prisma) {
+    // A02: the module of the caller's organization, so the dashboard shows its kinds and fields.
+    app.get('/modules/current', { config: { permission: 'practice.read' } }, async (req, reply) => {
+      try {
+        const grant = requirePermission(req, 'practice.read');
+        const module = await moduleOfTenant(prisma, grant.principal.tenantId);
+        return reply.send(
+          ok({
+            id: module.id,
+            label: module.label,
+            description: module.description,
+            defaultKind: module.defaultKind,
+            practiceTypes: module.practiceTypes,
+            deadlineCategories: deadlineCategoriesOf(module),
+          }),
+        );
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    });
+
+    // A05: the sub-state of a practice inside its common state (whoever may move it).
+    app.post(
+      '/practices/:id/sub-state',
+      { config: { permission: 'practice.transition' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.transition');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          const body = PracticeSubStateBodySchema.parse(req.body);
+          const result = await setPracticeSubState(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            subState: body.subState,
+            actorUserId: grant.principal.userId,
+            ownerUserId: scopedUserId(grant),
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
     // A4: the administrators and operators a practice can be assigned to.
     app.get(
       '/practices/assignees',

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { SESSION_TTL_MS } from '../../../core/identity/login.service.js';
 import { LoginError } from '../../../core/identity/login.service.js';
-import { requireAuthContext } from '../auth/guards.js';
+import { requireAuthContext, requirePrincipal } from '../auth/guards.js';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from '../auth/refresh-cookie.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -142,9 +142,19 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
   // The person and the organizations they can switch to, plus the current one (B9).
   app.get('/auth/me', { config: { permission: 'authenticated' } }, async (req, reply) => {
     try {
-      const auth = requireAuthContext(req);
+      const auth = requirePrincipal(req);
       const profile = await deps.login.profile(auth.userId);
-      return reply.send(ok({ ...profile, current: { orgId: auth.tenantId, role: auth.role } }));
+      // A03: the functions turned off, so the dashboard hides them (the backend refuses them).
+      return reply.send(
+        ok({
+          ...profile,
+          current: {
+            orgId: auth.tenantId,
+            role: auth.role,
+            disabledFeatures: auth.disabledFeatures ?? [],
+          },
+        }),
+      );
     } catch (err: unknown) {
       const mapped = mapErrorToHttp(err);
       return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

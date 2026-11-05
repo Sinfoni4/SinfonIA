@@ -6,6 +6,7 @@ import {
 } from '../../core/compliance/compliance.dates.js';
 import { COMPLIANCE_CATEGORY_LABELS } from '../../core/compliance/compliance.service.js';
 import { ComplianceValidationError } from '../../core/errors/compliance.errors.js';
+import { featureEnabled } from '../../core/features/features.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 
 import type { ComplianceCommand } from '../../core/compliance/compliance.commands.js';
@@ -64,10 +65,15 @@ export async function executeComplianceCommand(
     tenantId: string;
     userId: string;
     role: UserRole;
+    /** A03: functions turned off for the organization. */
+    disabledFeatures?: readonly string[];
   },
 ): Promise<string> {
   if (command.type === 'INVALID_COMPLIANCE_COMMAND') {
     return `⚠️ ${command.reason}`;
+  }
+  if (!featureEnabled(ctx.disabledFeatures, 'deadlines')) {
+    return 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
   }
 
   if (command.type === 'LIST_DEADLINES') {

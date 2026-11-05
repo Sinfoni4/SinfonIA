@@ -514,7 +514,8 @@ export type DelegatedAccess = {
 
 /**
  * Whether the person may do `operation` through the delegation now (§2.4, point 5): delegation
- * active and not expired, organization of the grantor active, operation included; for a
+ * active and not expired, organization of the grantor active with delegations on (A03), operation
+ * included; for a
  * delegation to a person, that person; for one to an organization, an approved and active
  * beneficiary who works now for that organization. Anything else looks like a missing delegation.
  */
@@ -529,7 +530,8 @@ export async function resolveDelegatedAccess(
       status: 'ACTIVE',
       validFrom: { lte: now },
       validUntil: { gt: now },
-      grantor: { status: 'ACTIVE' },
+      // A03: a grantor that turned delegations off gives nothing through them, like a suspended one.
+      grantor: { status: 'ACTIVE', NOT: { disabledFeatures: { has: 'delegations' } } },
       OR: [
         { granteeType: 'USER', granteeUserId: input.userId, granteeUser: { status: 'ACTIVE' } },
         {

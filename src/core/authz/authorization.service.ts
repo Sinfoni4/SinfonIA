@@ -1,4 +1,5 @@
 import { poolOf } from '../../data/db/prisma.js';
+import { FeatureDisabledError, featureEnabled, featureOf } from '../features/features.js';
 
 import {
   GRANTABLE_TENANT_SCOPES,
@@ -17,6 +18,8 @@ export type Principal = {
   role: UserRole;
   /** Extra scopes granted by an ORG_ADMIN on the membership (D5), e.g. `practice.export:tenant`. */
   extraPermissions?: readonly string[];
+  /** A03: functions the platform turned off for the organization, read with the role. */
+  disabledFeatures?: readonly string[];
 };
 
 /**
@@ -29,7 +32,8 @@ export type Grant = { principal: Principal; permission: Permission; scope: Permi
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const MEMBERSHIP_SQL = `SELECT m."role", m."extra_permissions" FROM "membership" m
+const MEMBERSHIP_SQL = `SELECT m."role", m."extra_permissions", t."disabled_features"
+   FROM "membership" m
    JOIN "user" u ON u."id" = m."user_id"
    JOIN "tenant" t ON t."id" = m."org_id"
   WHERE m."user_id" = $1 AND m."org_id" = $2 AND m."status" = 'ACTIVE'
@@ -47,10 +51,17 @@ export function can(role: UserRole, permission: Permission): boolean {
   return ROLE_PERMISSIONS[role][permission] !== undefined;
 }
 
-/** Grants the permission with its scope, or throws PermissionDeniedError. */
+/**
+ * Grants the permission with its scope, or throws PermissionDeniedError (role) or
+ * FeatureDisabledError (A03: the function is off for the organization, whatever the role).
+ */
 export function authorize(principal: Principal, permission: Permission): Grant {
   const base = ROLE_PERMISSIONS[principal.role][permission];
   if (!base) throw new PermissionDeniedError(permission);
+  const feature = featureOf(permission);
+  if (feature && !featureEnabled(principal.disabledFeatures, feature)) {
+    throw new FeatureDisabledError(feature, permission);
+  }
   // An extra scope widens "own" to the organization only where the catalog allows it for the role.
   const widened =
     base === 'own' &&
@@ -92,7 +103,11 @@ export function createPrismaPrincipalResolver(
     ? async (userId: string, tenantId: string, authVersion: number, sessionId?: string) => {
         // One query (unique index on user_id, org_id): membership, statuses, token version and,
         // when present, the session.
-        const { rows } = await pool.query<{ role: UserRole; extra_permissions: string[] }>(
+        const { rows } = await pool.query<{
+          role: UserRole;
+          extra_permissions: string[];
+          disabled_features: string[];
+        }>(
           sessionId
             ? {
                 name: 'authz_membership_session',
@@ -109,7 +124,13 @@ export function createPrismaPrincipalResolver(
               },
         );
         const row = rows[0];
-        return row ? { role: row.role, extraPermissions: row.extra_permissions } : null;
+        return row
+          ? {
+              role: row.role,
+              extraPermissions: row.extra_permissions,
+              disabledFeatures: row.disabled_features,
+            }
+          : null;
       }
     : async (userId: string, tenantId: string, authVersion: number, sessionId?: string) => {
         const row = await prisma.membership.findFirst({
@@ -130,9 +151,19 @@ export function createPrismaPrincipalResolver(
             },
             org: { status: 'ACTIVE' },
           },
-          select: { role: true, extraPermissions: true },
+          select: {
+            role: true,
+            extraPermissions: true,
+            org: { select: { disabledFeatures: true } },
+          },
         });
-        return row ? { role: row.role, extraPermissions: row.extraPermissions } : null;
+        return row
+          ? {
+              role: row.role,
+              extraPermissions: row.extraPermissions,
+              disabledFeatures: row.org.disabledFeatures,
+            }
+          : null;
       };
 
   return async ({ tenantId, userId, authVersion = 0, sessionId }) => {

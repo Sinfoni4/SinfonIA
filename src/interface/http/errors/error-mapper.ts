@@ -18,6 +18,7 @@ import { AssistanceError } from '../../../core/assistance/assistance.service.js'
 import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
 import { PlatformAccessError } from '../../../core/authz/platform.js';
 import { DelegationError } from '../../../core/delegation/delegation.service.js';
+import { FeatureDisabledError } from '../../../core/features/features.js';
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
@@ -32,6 +33,7 @@ import { OrganizationSettingsError } from '../../../core/organization/organizati
 import { PlatformActionError } from '../../../core/platform/platform.service.js';
 import { AttachmentValidationError } from '../../../core/practice/attachment-validation.js';
 import { AssignmentError } from '../../../core/practice/practice-assignment.js';
+import { PracticeModuleError } from '../../../core/practice/practice-module.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -40,6 +42,13 @@ export type NormalizedError = { statusCode: number; code: string; message: strin
 export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof AuthError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
+  }
+  if (err instanceof FeatureDisabledError) {
+    return {
+      statusCode: 403,
+      code: 'FEATURE_DISABLED',
+      message: "Questa funzione non è attiva per l'organizzazione",
+    };
   }
   if (err instanceof PermissionDeniedError) {
     return { statusCode: 403, code: 'FORBIDDEN', message: 'Insufficient role for this operation' };
@@ -55,6 +64,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof AttachmentValidationError ||
     err instanceof AssistanceError ||
     err instanceof AssignmentError ||
+    err instanceof PracticeModuleError ||
     err instanceof NetworkError ||
     err instanceof DelegationError
   ) {

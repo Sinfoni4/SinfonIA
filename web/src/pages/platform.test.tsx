@@ -203,6 +203,7 @@ describe('platform console (FE7)', () => {
       expect(posted('/platform/organizations')[0]?.body).toEqual({
         name: 'Cooperativa Alfa',
         type: 'COOPERATIVE',
+        module: 'generic',
         firstAdminEmail: 'admin@alfa.it',
         verification: { challengeId: 'c-1', code: '654321' },
       }),
