@@ -51,6 +51,11 @@ describe('D3 durations', () => {
     expect(maxValidUntil(['READ', 'EXPORT'], now).toISOString().slice(0, 10)).toBe('2027-02-05');
     expect(checkDelegation(['READ', 'UPDATE', 'READ'], at(300), now)).toEqual(['READ', 'UPDATE']);
     expect(() => checkDelegation(['READ'], at(400), now)).toThrow(/12 mesi/);
+    // The dashboard sends the end of the chosen day: 12 months from today is allowed.
+    expect(checkDelegation(['READ'], new Date('2027-11-05T23:59:59+01:00'), now)).toEqual(['READ']);
+    expect(() => checkDelegation(['READ'], new Date('2027-11-07T00:00:00Z'), now)).toThrow(
+      /12 mesi/,
+    );
     expect(() => checkDelegation(['READ', 'EXPORT'], at(120), now)).toThrow(/3 mesi/);
     expect(() => checkDelegation(['UPDATE'], at(30), now)).toThrow(/lettura/);
     expect(() => checkDelegation(['READ', 'DELETE'], at(30), now)).toThrow(

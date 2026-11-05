@@ -49,10 +49,16 @@ function addMonths(date: Date, months: number): Date {
   return d;
 }
 
-/** The latest end date allowed for these operations, from `now` (D3.1, D3.7). */
+/**
+ * The latest end date allowed for these operations, from `now` (D3.1, D3.7): the whole last day,
+ * because a delegation ends at the end of the chosen day (12 months from today = that date).
+ */
 export function maxValidUntil(operations: readonly GrantOperation[], now = new Date()): Date {
   const sensitive = operations.some((o) => SENSITIVE.includes(o));
-  return addMonths(now, sensitive ? MAX_MONTHS_SENSITIVE : MAX_MONTHS);
+  const last = addMonths(now, sensitive ? MAX_MONTHS_SENSITIVE : MAX_MONTHS);
+  return new Date(
+    Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate(), 23, 59, 59, 999),
+  );
 }
 
 /** Checks operations and end date against D3; returns the operations without duplicates. */

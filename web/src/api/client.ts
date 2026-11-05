@@ -90,8 +90,24 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 /** A message the person can act on, in Italian, for an error of the API. */
+const EXPLAINED_CODES = new Set([
+  'DELEGATION_INVALID',
+  'UNKNOWN_GRANTEE',
+  'OPERATION_NOT_DELEGATED',
+  'NETWORK_INVALID',
+  'NOT_A_NETWORK',
+  'UNKNOWN_ORGANIZATION',
+  'ALREADY_MEMBER',
+  'MEMBERSHIP_CHANGED',
+  'ASSISTANCE_STATE',
+  'INVALID_ASSIGNEE',
+  'ORGANIZATION_SETTINGS_INVALID',
+]);
+
 export function describeError(err: unknown): string {
   if (!(err instanceof ApiError)) return 'Si è verificato un errore imprevisto.';
+  // The backend already explains these in Italian (delegations, networks, assistance…).
+  if (EXPLAINED_CODES.has(err.code)) return err.message;
   if (err.status === 0) return 'Servizio non raggiungibile: controlla la connessione e riprova.';
   if (err.status === 401) return 'Codice non valido o scaduto.';
   if (err.status === 403) return 'Non hai il permesso per questa operazione.';
