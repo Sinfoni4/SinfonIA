@@ -5,6 +5,7 @@
   "type": "module",
   "description": "SinfonIA web dashboard (docs/PROGETTO_FRONTEND_V1.md)",
   "scripts": {
+    "e2e": "playwright test",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p .",

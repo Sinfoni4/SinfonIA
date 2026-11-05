@@ -89,9 +89,26 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return envelope.data;
 }
 
+/** Codes whose message the backend already writes in Italian, for the person to read. */
+const EXPLAINED_CODES = new Set([
+  'DELEGATION_INVALID',
+  'UNKNOWN_GRANTEE',
+  'OPERATION_NOT_DELEGATED',
+  'NETWORK_INVALID',
+  'NOT_A_NETWORK',
+  'UNKNOWN_ORGANIZATION',
+  'ALREADY_MEMBER',
+  'MEMBERSHIP_CHANGED',
+  'ASSISTANCE_STATE',
+  'INVALID_ASSIGNEE',
+  'ORGANIZATION_SETTINGS_INVALID',
+]);
+
 /** A message the person can act on, in Italian, for an error of the API. */
 export function describeError(err: unknown): string {
   if (!(err instanceof ApiError)) return 'Si è verificato un errore imprevisto.';
+  // The backend already explains these in Italian (delegations, networks, assistance…).
+  if (EXPLAINED_CODES.has(err.code)) return err.message;
   if (err.status === 0) return 'Servizio non raggiungibile: controlla la connessione e riprova.';
   if (err.status === 401) return 'Codice non valido o scaduto.';
   if (err.status === 403) return 'Non hai il permesso per questa operazione.';

@@ -17,3 +17,7 @@ reports
 
 # Real documents for OCR accuracy tests (personal data): never commit
 ocr-samples
+
+# Playwright end-to-end runs (FE5)
+web/test-results/
+web/playwright-report/

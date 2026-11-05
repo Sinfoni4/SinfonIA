@@ -43,6 +43,7 @@
     "web:test": "npm test --prefix web",
     "web:typecheck": "npm run typecheck --prefix web",
     "web:demo": "tsx scripts/demo/start.ts",
+    "web:e2e": "npm run e2e --prefix web",
     "platform:admin": "tsx scripts/admin/platform-admin.ts",
     "secret:scan": "node scripts/secret-scan.mjs",
     "audit:prod": "npm audit --omit=dev",
