@@ -68,7 +68,9 @@ export type AuditEvent = {
       | 'topic'
       | 'unassigned'
       | 'organization'
-      | 'by',
+      | 'by'
+      | 'operations'
+      | 'action',
       string | number | boolean
     >
   >;
@@ -120,6 +122,19 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'NETWORK_MEMBERSHIP_REFUSED',
       'NETWORK_MEMBERSHIP_ENDED',
       'NETWORK_STATS_VIEWED',
+    ],
+  },
+  delegations: {
+    label: 'Deleghe',
+    types: [
+      'GRANT_ISSUED',
+      'GRANT_RECEIVED',
+      'GRANT_RENEWED',
+      'GRANT_REVOKED',
+      'GRANT_BENEFICIARY_PROPOSED',
+      'GRANT_BENEFICIARY_APPROVED',
+      'GRANT_BENEFICIARY_REMOVED',
+      'DELEGATED_ACCESS',
     ],
   },
   assistance: {
@@ -179,6 +194,13 @@ function roleName(value: unknown): string {
     ? ROLE_LABELS[value as Role]
     : String(value);
 }
+
+const DELEGATED_ACTIONS: Record<string, string> = {
+  list: 'elenco delle pratiche',
+  read: 'dettaglio di una pratica',
+  transition: 'cambio di stato',
+  export: 'export',
+};
 
 const TOPIC_LABELS: Record<string, string> = {
   PRACTICE: 'una pratica',
@@ -263,6 +285,24 @@ export function describeEvent(event: AuditEvent): string {
         : `Adesione chiusa dall'azienda (${org})`;
     case 'NETWORK_STATS_VIEWED':
       return 'Statistiche della rete consultate';
+    case 'GRANT_ISSUED':
+      return `Delega concessa a ${org}${d.dueDate ? ` fino al ${String(d.dueDate)}` : ''}`;
+    case 'GRANT_RECEIVED':
+      return `Delega ricevuta da ${org}${d.dueDate ? ` fino al ${String(d.dueDate)}` : ''}`;
+    case 'GRANT_RENEWED':
+      return `Delega rinnovata${d.dueDate ? ` fino al ${String(d.dueDate)}` : ''}`;
+    case 'GRANT_REVOKED':
+      return typeof d.organization === 'string' ? `Delega revocata da ${org}` : 'Delega revocata';
+    case 'GRANT_BENEFICIARY_PROPOSED':
+      return typeof d.organization === 'string'
+        ? `${org} propone una persona per una delega`
+        : `${target} proposto per una delega`;
+    case 'GRANT_BENEFICIARY_APPROVED':
+      return `${target} approvato per una delega`;
+    case 'GRANT_BENEFICIARY_REMOVED':
+      return `${target} rimosso da una delega`;
+    case 'DELEGATED_ACCESS':
+      return `Accesso per delega (${DELEGATED_ACTIONS[String(d.action)] ?? String(d.action)})`;
     case 'ASSISTANCE_REQUESTED':
       return `Richiesta di assistenza su ${topicName(d.topic)}${channel}`;
     case 'ASSISTANCE_TAKEN':

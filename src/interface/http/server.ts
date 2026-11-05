@@ -17,6 +17,7 @@ import { assistanceRoutes } from './routes/assistance.routes.js';
 import { attachmentReviewRoutes } from './routes/attachment-review.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { complianceRoutes } from './routes/compliance.routes.js';
+import { delegationRoutes } from './routes/delegation.routes.js';
 import { membersRoutes } from './routes/members.routes.js';
 import { networkRoutes } from './routes/network.routes.js';
 import { organizationRoutes } from './routes/organization.routes.js';
@@ -189,6 +190,10 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
     void app.register(assistanceRoutes, { prisma: deps.prisma });
     void app.register(networkRoutes, { prisma: deps.prisma });
+    void app.register(delegationRoutes, {
+      prisma: deps.prisma,
+      practiceService: deps.practiceService,
+    });
     void app.register(organizationRoutes, {
       prisma: deps.prisma,
       complianceService: deps.complianceService,

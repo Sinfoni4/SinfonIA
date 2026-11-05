@@ -31,6 +31,9 @@ export const PERMISSIONS = [
   'network.manage',
   'network.stats',
   'memberships.manage',
+  'grant.issue',
+  'grant.beneficiaries',
+  'grant.use',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -58,6 +61,8 @@ const STAFF: Partial<Record<Permission, PermissionScope>> = {
   // H10: anyone asks an operator for help from the chat; staff handle the requests.
   'assistance.request': 'own',
   'assistance.manage': 'tenant',
+  // MF8: using a delegation received; the delegation itself decides what is allowed.
+  'grant.use': 'own',
   // A4: who follows a practice of the organization.
   'practice.assign': 'tenant',
 };
@@ -74,6 +79,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
     'network.manage': 'tenant',
     'memberships.manage': 'tenant',
     'network.stats': 'tenant',
+    // MF8 (D3): delegations given by the organization, and the people named for those received.
+    'grant.issue': 'tenant',
+    'grant.beneficiaries': 'tenant',
   },
   // D5: an OPERATOR exports its own practices; the organization only with an extra permission.
   // MF9: operators of a network read its aggregate statistics (D4).
@@ -89,6 +97,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
     'ai.execute': 'own',
     'compliance.read': 'own',
     'assistance.request': 'own',
+    'grant.use': 'own',
   },
 };
 

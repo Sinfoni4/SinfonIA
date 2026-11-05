@@ -17,6 +17,7 @@ import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import { AssistanceError } from '../../../core/assistance/assistance.service.js';
 import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
 import { PlatformAccessError } from '../../../core/authz/platform.js';
+import { DelegationError } from '../../../core/delegation/delegation.service.js';
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
@@ -54,7 +55,8 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof AttachmentValidationError ||
     err instanceof AssistanceError ||
     err instanceof AssignmentError ||
-    err instanceof NetworkError
+    err instanceof NetworkError ||
+    err instanceof DelegationError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
