@@ -42,7 +42,21 @@ export class AuditRepository {
           where: { orgId: input.tenantId, userId: input.userId },
           select: { id: true },
         });
-        if (!owner) {
+        // MF8: or a person who acts through a delegation given by this organization (directly or
+        // as a named beneficiary), whatever its state now.
+        const delegate =
+          owner ??
+          (await this.prisma.accessGrant.findFirst({
+            where: {
+              grantorOrgId: input.tenantId,
+              OR: [
+                { granteeUserId: input.userId },
+                { beneficiaries: { some: { userId: input.userId } } },
+              ],
+            },
+            select: { id: true },
+          }));
+        if (!delegate) {
           throw new NotFoundError('User not found in tenant');
         }
       }

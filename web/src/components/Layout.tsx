@@ -56,6 +56,7 @@ export function Layout({ me }: { me: Me }) {
           <NavLink to="/verifica">Da verificare</NavLink>
           {me.current.role !== 'MEMBER' && <NavLink to="/assistenza">Assistenza</NavLink>}
           <NavLink to="/export">Export</NavLink>
+          <NavLink to="/deleghe">Deleghe</NavLink>
           {isNetwork && me.current.role !== 'MEMBER' && (
             <NavLink to="/rete/statistiche">Statistiche</NavLink>
           )}

@@ -641,6 +641,9 @@ model AccessGrant {
   revokedAt        DateTime?        @map("revoked_at")
   revokedBy        String?          @map("revoked_by") @db.Uuid
   revocationReason String?          @map("revocation_reason")
+  /// D3: the reminders to the grantor 30 and 7 days before the end, sent once per validity.
+  reminded30At     DateTime?        @map("reminded_30_at")
+  reminded7At      DateTime?        @map("reminded_7_at")
 
   grantor       Tenant                   @relation("GrantGrantor", fields: [grantorOrgId], references: [id], onDelete: Cascade)
   granteeUser   User?                    @relation("GrantGranteeUser", fields: [granteeUserId], references: [id], onDelete: Cascade)
@@ -648,6 +651,7 @@ model AccessGrant {
   beneficiaries AccessGrantBeneficiary[]
 
   @@index([grantorOrgId, status])
+  @@index([status, validUntil])
   @@index([granteeUserId])
   @@index([granteeOrgId])
   @@map("access_grant")

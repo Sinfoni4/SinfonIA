@@ -2,6 +2,7 @@ import { SchedulerRepository } from '../../data/repositories/scheduler.repositor
 import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
 import { ComplianceService } from '../compliance/compliance.service.js';
+import { GrantExpiryTask } from '../delegation/grant-reminders.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
 import { ComplianceDeadlinesTask, ExportPracticesTask } from './scheduler.tasks.js';
@@ -109,6 +110,8 @@ export function computeIdempotencyKey(
  */
 const SYSTEM_TASKS: Array<{ task: SchedulerTask; frequency: SchedulerFrequency }> = [
   { task: { type: 'CHECK_COMPLIANCE_DEADLINES' }, frequency: 'daily' },
+  // MF8 (D3.4): reminders of delegations that end within 30 or 7 days.
+  { task: { type: 'CHECK_GRANT_EXPIRY' }, frequency: 'daily' },
 ];
 const SYSTEM_TASK_TYPES = new Set<SchedulerTaskType>(SYSTEM_TASKS.map((s) => s.task.type));
 
@@ -129,6 +132,7 @@ export class SchedulerService {
     const handlers = options.handlers ?? [
       new ExportPracticesTask(prisma, practiceService),
       new ComplianceDeadlinesTask(options.complianceService ?? new ComplianceService(prisma)),
+      new GrantExpiryTask(prisma),
     ];
     this.handlers = new Map(handlers.map((h) => [h.type, h]));
   }

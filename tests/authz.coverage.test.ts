@@ -178,12 +178,21 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
   it('never opens an object of another tenant through a route with an id', async () => {
     const withId = routes.filter((r) => r.url.includes(':id') && r.method !== 'HEAD');
     expect(withId.map((r) => `${String(r.method)} ${r.url}`).sort()).toEqual([
+      'GET /grants/:id/practices',
+      'GET /grants/:id/practices/:practiceId',
       'GET /practices/:id',
       'GET /practices/:id/attachments',
       'GET /practices/:id/attachments/:attachmentId/download',
       'POST /assistance/:id/close',
       'POST /assistance/:id/take',
       'POST /compliance/deadlines/:id/close',
+      'POST /grants/:id/beneficiaries',
+      'POST /grants/:id/beneficiaries/approve',
+      'POST /grants/:id/beneficiaries/remove',
+      'POST /grants/:id/export',
+      'POST /grants/:id/practices/:practiceId/transition',
+      'POST /grants/:id/renew',
+      'POST /grants/:id/revoke',
       'POST /memberships/:id/confirm',
       'POST /memberships/:id/leave',
       'POST /memberships/:id/refuse',
@@ -196,6 +205,11 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
     const payloads: Record<string, unknown> = {
       '/practices/:id/transition': { nextState: 'VALIDATED' },
       '/practices/:id/assign': { userId: null },
+      '/grants/:id/renew': { validUntil: '2030-01-01' },
+      '/grants/:id/beneficiaries': { userId: randomUUID() },
+      '/grants/:id/beneficiaries/approve': { userId: randomUUID() },
+      '/grants/:id/beneficiaries/remove': { userId: randomUUID() },
+      '/grants/:id/practices/:practiceId/transition': { nextState: 'VALIDATED' },
       '/practices/:id/attachments/:attachmentId/validation': {
         documentType: 'generic',
         fields: {},
@@ -214,7 +228,7 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
           : ids.practice;
       const res = await app.inject({
         method: String(route.method) as 'GET' | 'POST',
-        url: route.url.replace(':id', id).replace(':attachmentId', randomUUID()),
+        url: route.url.replace(':id', id).replace(/:[a-zA-Z]+/g, () => randomUUID()),
         headers: authHeaders(other.tenantId, other.adminId, 'ADMIN'),
         ...(route.method === 'POST' ? { payload: payloads[route.url] ?? {} } : {}),
       });

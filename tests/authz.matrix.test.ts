@@ -40,6 +40,9 @@ const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
   'network.manage': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
   'network.stats': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'denied' },
   'memberships.manage': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
+  'grant.issue': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
+  'grant.beneficiaries': { ADMIN: 'tenant', OPERATOR: 'denied', MEMBER: 'denied' },
+  'grant.use': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
 };
 
 const ROLES: UserRole[] = ['ADMIN', 'OPERATOR', 'MEMBER'];

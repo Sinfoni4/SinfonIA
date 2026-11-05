@@ -11,7 +11,11 @@ import type { PrismaLike } from '../../data/types/prisma.js';
 export type IntegrationType = 'none' | 'external';
 export type SchedulerFrequency = 'daily' | 'weekly' | 'monthly';
 
-export const SCHEDULER_TASK_TYPES = ['EXPORT_PRACTICES', 'CHECK_COMPLIANCE_DEADLINES'] as const;
+export const SCHEDULER_TASK_TYPES = [
+  'EXPORT_PRACTICES',
+  'CHECK_COMPLIANCE_DEADLINES',
+  'CHECK_GRANT_EXPIRY',
+] as const;
 export type SchedulerTaskType = (typeof SCHEDULER_TASK_TYPES)[number];
 
 export type SchedulerTask = {

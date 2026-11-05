@@ -33,6 +33,9 @@ const SHOWN_FIELDS = [
   // MF9: the other organization of a membership, and which side acted.
   'organization',
   'by',
+  // MF8: what a delegation allows and what was done through it (never data of the practices).
+  'operations',
+  'action',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

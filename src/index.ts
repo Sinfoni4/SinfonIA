@@ -18,6 +18,7 @@ import { loadConfig } from './config/config.js';
 import { requestAssistance } from './core/assistance/assistance.service.js';
 import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
+import { GrantExpiringHandler } from './core/delegation/grant-reminders.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
 import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
@@ -334,6 +335,11 @@ async function main() {
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app/assistenza` : undefined,
       ),
       new AssistanceUpdatedHandler(prisma, outboxChannels),
+      new GrantExpiringHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app/deleghe` : undefined,
+      ),
       new PracticeAssignedHandler(
         prisma,
         outboxChannels,
