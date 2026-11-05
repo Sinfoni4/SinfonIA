@@ -71,7 +71,6 @@ describe('substitution', () => {
     expect(email).toMatch(/^u[0-9a-f]{10}@example\.invalid$/);
     expect(s.value('user', col('email', 'text'), 'mario.rossi@example.com')).toBe(email);
     expect(s.value('user', col('email', 'text'), 'altro@example.com')).not.toBe(email);
-    expect(s.value('user', col('telegram_id', 'text'), '123456789')).toMatch(/^[1-9]\d{9}$/);
     expect(s.value('whatsapp_identity', col('phone_number', 'text'), '393331234567')).toMatch(
       /^39\d{10}$/,
     );

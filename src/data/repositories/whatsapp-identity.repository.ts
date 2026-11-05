@@ -6,7 +6,6 @@ import { requireTenantId } from '../guard/tenant.js';
 import { UserRepository } from './user.repository.js';
 
 import type { PrismaLike } from '../types/prisma.js';
-import type { UserRole } from '@prisma/client';
 
 /** Digits only: "+39 333 123 4567" and "393331234567" are the same number. */
 export function normalizePhoneNumber(raw: string): string {
@@ -59,22 +58,6 @@ export class WhatsappIdentityRepository {
         if (linked) return linked;
       }
       throw new DatabaseError('Failed to link WhatsApp number', err);
-    }
-  }
-
-  /** The most recent link of a phone number (a number may be linked in several tenants). */
-  async findLatestByPhone(
-    phone: string,
-  ): Promise<{ tenantId: string; userId: string; role: UserRole } | null> {
-    try {
-      const row = await this.prisma.whatsappIdentity.findFirst({
-        where: { phoneNumber: normalizePhoneNumber(phone) },
-        orderBy: { createdAt: 'desc' },
-        select: { tenantId: true, userId: true, user: { select: { role: true } } },
-      });
-      return row ? { tenantId: row.tenantId, userId: row.userId, role: row.user.role } : null;
-    } catch (err: unknown) {
-      throw new DatabaseError('Failed to find WhatsApp identity', err);
     }
   }
 }

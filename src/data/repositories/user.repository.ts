@@ -68,12 +68,7 @@ export class UserRepository {
     try {
       return await this.inTransaction(async (tx) => {
         const row = await tx.user.create({
-          data: {
-            tenantId: orgId,
-            email: data.email,
-            role,
-            emailVerifiedAt: data.emailVerifiedAt ?? null,
-          },
+          data: { email: data.email, emailVerifiedAt: data.emailVerifiedAt ?? null },
           select: { id: true, email: true, createdAt: true, updatedAt: true },
         });
         await tx.membership.upsert({

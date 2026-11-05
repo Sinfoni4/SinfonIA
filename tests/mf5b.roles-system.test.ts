@@ -108,9 +108,6 @@ describe.runIf(Boolean(DATABASE_URL))('MF5 completion: roles and system identity
       { targetUserId: users.operator, from: 'OPERATOR', to: 'ADMIN' },
       { targetUserId: users.operator, from: 'ADMIN', to: 'OPERATOR' },
     ]);
-    // The legacy column stays equal in the person's legacy organization (until M3).
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: users.operator } });
-    expect(user.role).toBe('OPERATOR');
     // Same role: nothing changes, nothing is audited.
     const same = await setRole(users.operator, 'OPERATOR');
     expect(same.json<{ data: { changed: boolean } }>().data.changed).toBe(false);

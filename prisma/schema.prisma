@@ -35,7 +35,6 @@ model Tenant {
   createdAt           DateTime           @default(now()) @map("created_at")
   updatedAt           DateTime           @default(now()) @map("updated_at")
 
-  users               User[]
   practices           Practice[]
   auditLogs           AuditLog[]
   invites             InviteCode[]
@@ -94,11 +93,9 @@ enum UserRole {
 
 model User {
   id              String       @id @default(uuid()) @db.Uuid
-  tenantId        String       @map("tenant_id") @db.Uuid
   email           String
-  role            UserRole     @default(MEMBER)
-  telegramId      String?      @map("telegram_id")
-  // Phase 1 (MF3): global identity. tenantId/role/telegramId stay until the contract step (M3).
+  // MF12: the organizations and roles of a person are in `membership`, chat links in
+  // `channel_identity`; the old tenant_id, role and telegram_id columns are gone.
   status          UserStatus   @default(ACTIVE)
   emailVerifiedAt DateTime?    @map("email_verified_at")
   // Incremented at every global revocation: sessions of an older version are refused.
@@ -107,7 +104,6 @@ model User {
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
-  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   practices           Practice[]
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
@@ -122,9 +118,6 @@ model User {
   assistanceRequests  AssistanceRequest[]
   assignedPractices   Practice[]               @relation("PracticeAssignee")
 
-  @@unique([tenantId, telegramId])
-  @@index([tenantId])
-  @@index([tenantId, id])
   @@map("user")
 }
 
