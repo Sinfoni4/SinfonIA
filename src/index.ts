@@ -190,8 +190,14 @@ async function main() {
   const conversationMemory = new PrismaConversationMemory(prisma);
 
   // Natural-language messages from any chat channel go through the same AI pipeline.
+  // AI traces are kept in memory and persisted, so they survive restarts.
+  const aiTraceRepository = new AiTraceRepository(prisma);
+  const tracer = new AITracer(200, { store: aiTraceRepository, log: logger });
+
   const chatAdapter = new TelegramAdapter({
     memory: conversationMemory,
+    // S08: the AI calls from the chat are traced too (they were not before).
+    tracer,
     interpreter: interpreterService,
     normalizer: normalizerService,
     decisionEngine,
@@ -240,10 +246,6 @@ async function main() {
     { enabled: Boolean(whatsappChannel) },
     whatsappChannel ? 'WhatsApp channel enabled' : 'WhatsApp channel disabled (WHATSAPP_* not set)',
   );
-
-  // AI traces are kept in memory and persisted, so they survive restarts.
-  const aiTraceRepository = new AiTraceRepository(prisma);
-  const tracer = new AITracer(200, { store: aiTraceRepository, log: logger });
 
   const app = buildServer(config, logger, {
     principals: createPrismaPrincipalResolver(prisma),

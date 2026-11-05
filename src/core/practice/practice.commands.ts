@@ -14,8 +14,11 @@ export type PracticeCommand =
   | { type: 'LIST_ORG_PRACTICES'; payload: { page: number } }
   | { type: 'GET_ORG_PRACTICE_STATUS'; payload: { name: string } }
   | { type: 'TRANSITION_ORG_PRACTICE'; payload: { name: string; nextState: ChatTransition } }
-  // Never parsed from text: sent by the chat after the person confirms a transition (C2).
-  | { type: 'CONFIRM_TRANSITION'; payload: { practiceId: string; nextState: ChatTransition } };
+  // Never parsed from text: sent by the chat after the person confirms a transition, asked by a
+  // command on another person's practice (C2) or proposed by the AI (S02).
+  | { type: 'CONFIRM_TRANSITION'; payload: { practiceId: string; nextState: PracticeState } }
+  // Never parsed from text: sent by the chat after the person confirms a deletion (S05).
+  | { type: 'CONFIRM_DELETE'; payload: { practiceId: string } };
 
 /** States a practice can be moved to with a chat command. */
 export type ChatTransition = Extract<PracticeState, 'VALIDATED' | 'COMPLETED'>;

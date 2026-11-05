@@ -539,7 +539,11 @@ export async function runHarness(args: {
       const normalized = enforceIdPriority(normalizerService.normalize(interpreted));
       if (normalized.action === 'create_practice') {
         const cmd = { action: 'create_practice', data: { artistName: normalized.artistName } };
-        const execution = await executor.execute(cmd, { tenantId: tenant.id, userId: user.id });
+        const execution = await executor.execute(cmd, {
+          tenantId: tenant.id,
+          userId: user.id,
+          role: 'ADMIN',
+        });
         row.executionResult = execution;
         row.classification = classify({
           interpreted,
@@ -557,7 +561,11 @@ export async function runHarness(args: {
         practices: contextPractices,
       });
       validateResolvedCommand(resolved, contextPractices);
-      const execution = await executor.execute(resolved, { tenantId: tenant.id, userId: user.id });
+      const execution = await executor.execute(resolved, {
+        tenantId: tenant.id,
+        userId: user.id,
+        role: 'ADMIN',
+      });
       row.executionResult = execution;
 
       // Hit HTTP path too (for stability). Do not fail scenario on 400; classification is on executor result.

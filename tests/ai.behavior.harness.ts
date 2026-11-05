@@ -488,7 +488,11 @@ async function main(): Promise<void> {
         if (normalized.action === 'create_practice') {
           const cmd = { action: 'create_practice', data: { artistName: normalized.artistName } };
           console.log('[ai-flow]', { step: 'decision', input: normalized, output: cmd });
-          const execution = await executor.execute(cmd, { tenantId: tenant.id, userId: user.id });
+          const execution = await executor.execute(cmd, {
+            tenantId: tenant.id,
+            userId: user.id,
+            role: 'ADMIN',
+          });
           row.executionResult = execution;
           console.log('[ai-flow]', { step: 'execute', input: cmd, output: execution });
           row.classification = classify({
@@ -513,6 +517,7 @@ async function main(): Promise<void> {
 
         const execution = await executor.execute(resolved, {
           tenantId: tenant.id,
+          role: 'ADMIN',
           userId: user.id,
         });
         row.executionResult = execution;

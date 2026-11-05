@@ -8,7 +8,6 @@ import {
 } from '../../core/identity/membership.service.js';
 import {
   parsePracticeCommand,
-  type ChatTransition,
   type PracticeCommand,
 } from '../../core/practice/practice.commands.js';
 import { TenantNotLinkedError } from '../../core/tenant/tenant.errors.js';
@@ -36,6 +35,7 @@ import { InMemoryConversationMemory, type ConversationMemory } from './conversat
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { Tenant } from '../../core/tenant/tenant.store.js';
+import type { PracticeState } from '../../core/types/workflow.types.js';
 import type { UserRole } from '@prisma/client';
 
 /**
@@ -84,7 +84,12 @@ export interface ChannelIdentityProvider {
 }
 
 /** A reply of the AI; `clarification` when it asked something instead of acting. */
-export type ChatAnswer = { text: string; clarification?: { options: string[] } };
+export type ChatAnswer = {
+  text: string;
+  clarification?: { options: string[] };
+  /** S02: a change of state the AI proposes; the chat asks «sì» before doing it. */
+  confirmTransition?: { practiceId: string; nextState: PracticeState };
+};
 
 export type ConversationDeps = {
   practiceService: Pick<PracticeApplicationService, 'executeCommand'> & {
@@ -214,7 +219,9 @@ function formatDay(date: Date): string {
 type PendingTransition = {
   tenantId: string;
   practiceId: string;
-  nextState: ChatTransition;
+  /** S05: a deletion waiting for «sì»; otherwise a transition to `nextState`. */
+  kind?: 'transition' | 'delete';
+  nextState?: PracticeState;
   expiresAt: number;
 };
 
@@ -645,13 +652,16 @@ export class ConversationService {
         pendingTransition.expiresAt > Date.now() &&
         CONFIRMATION.test(trimmed)
       ) {
-        const confirmed: PracticeCommand = {
-          type: 'CONFIRM_TRANSITION',
-          payload: {
-            practiceId: pendingTransition.practiceId,
-            nextState: pendingTransition.nextState,
-          },
-        };
+        const confirmed: PracticeCommand =
+          pendingTransition.kind === 'delete' || !pendingTransition.nextState
+            ? { type: 'CONFIRM_DELETE', payload: { practiceId: pendingTransition.practiceId } }
+            : {
+                type: 'CONFIRM_TRANSITION',
+                payload: {
+                  practiceId: pendingTransition.practiceId,
+                  nextState: pendingTransition.nextState,
+                },
+              };
         const result = await deps.practiceService.executeCommand(
           confirmed,
           { tenantId: tenant.id, userId: dbUser.id, role: dbUser.role },
@@ -789,13 +799,24 @@ export class ConversationService {
         this.pendingTransitions.set(dbUser.id, {
           tenantId: tenant.id,
           practiceId: result.practice.id,
+          kind: 'transition',
           nextState: result.nextState,
+          expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
+        });
+      }
+      if (result.type === 'confirm_delete') {
+        this.pendingTransitions.set(dbUser.id, {
+          tenantId: tenant.id,
+          practiceId: result.practice.id,
+          kind: 'delete',
           expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
         });
       }
       await reply(
         formatPracticeCommandResult(result),
-        result.type === 'confirm_transition' ? { buttons: YES_NO } : undefined,
+        result.type === 'confirm_transition' || result.type === 'confirm_delete'
+          ? { buttons: YES_NO }
+          : undefined,
       );
       return;
     }
@@ -840,6 +861,18 @@ export class ConversationService {
       role: dbUser.role,
     });
     const answer: ChatAnswer = typeof raw === 'string' ? { text: raw } : raw;
+    // S02: a change of state proposed by the AI is done only after «sì».
+    if (answer.confirmTransition) {
+      this.pendingTransitions.set(dbUser.id, {
+        tenantId: tenant.id,
+        practiceId: answer.confirmTransition.practiceId,
+        kind: 'transition',
+        nextState: answer.confirmTransition.nextState,
+        expiresAt: Date.now() + TRANSITION_CONFIRMATION_MS,
+      });
+      await reply(answer.text, { buttons: YES_NO });
+      return;
+    }
     if (answer.clarification) {
       this.pendingClarifications.set(dbUser.id, {
         tenantId: tenant.id,

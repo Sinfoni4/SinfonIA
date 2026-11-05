@@ -301,6 +301,7 @@ describe('Step 3B: Structured Output, Versioned Schema, Retry & Clarification Fl
 
       const result = await executor.execute(clarificationCmd, {
         tenantId: '11111111-1111-4111-8111-111111111111',
+        role: 'ADMIN',
         userId: '22222222-2222-4222-8222-222222222222',
       });
 
