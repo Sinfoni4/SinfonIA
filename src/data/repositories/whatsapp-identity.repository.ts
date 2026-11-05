@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
+import { UserRepository } from './user.repository.js';
+
 import type { PrismaLike } from '../types/prisma.js';
 import type { UserRole } from '@prisma/client';
 
@@ -40,12 +42,9 @@ export class WhatsappIdentityRepository {
     }
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            tenantId,
-            email: `whatsapp-${randomUUID()}@local.invalid`,
-            role: 'MEMBER',
-          },
+        const user = await new UserRepository(tx).createUser(tenantId, {
+          email: `whatsapp-${randomUUID()}@local.invalid`,
+          role: 'MEMBER',
         });
         await tx.whatsappIdentity.create({ data: { tenantId, userId: user.id, phoneNumber } });
         return { userId: user.id };

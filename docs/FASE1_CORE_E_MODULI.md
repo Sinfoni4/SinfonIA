@@ -71,9 +71,9 @@ Regole: un'organizzazione alla volta e solo se attivato dalla piattaforma; ciò 
 
 Colonne del modello precedente su `user`: `tenant_id`, `role`, `telegram_id` (vincolo unico `tenant_id, telegram_id`). Le autorizzazioni usano già `membership`; restano usi in `user.repository.ts` (13 riferimenti a `telegramId`), `tenant.store.ts`, `tenant.provisioning.ts`, `telegram.bot.ts` e nelle creazioni di utenti dei test e dei seed.
 
-1. **Inventario automatico** degli usi (test che fallisce se ne compaiono di nuovi).
-2. **Chat**: leggere il collegamento Telegram solo da `channel_identity` (come WhatsApp); copiare i collegamenti rimasti su `user.telegram_id`.
-3. **Creazione utenti**: `createUser` scrive la membership e non più `tenant_id`/`role` come fonte; i test e i seed passano dal nuovo percorso.
+1. **Inventario automatico** degli usi (test che fallisce se ne compaiono di nuovi). *Fatto*: `tests/mf12.legacy-columns.test.ts`; resta un solo uso, la creazione in `UserRepository.createUser`, che riempie ancora `tenant_id` (obbligatoria fino alla contrazione).
+2. **Chat**: leggere il collegamento Telegram solo da `channel_identity` (come WhatsApp); copiare i collegamenti rimasti su `user.telegram_id`. *Fatto*: i nuovi collegamenti si scrivono solo in `channel_identity`; tolte le letture per `telegram_id` (`getTenantByTelegramUserAsync` e i metodi del repository non più usati). Sullo staging la verifica `scripts/db/mf3-verify.ts` (sola lettura, 05/11/2026) non trova collegamenti da copiare.
+3. **Creazione utenti**: `createUser` scrive la membership e non più `tenant_id`/`role` come fonte; i test e i seed passano dal nuovo percorso. *Fatto*: tutte le creazioni (invito, chat, WhatsApp, script) passano da `createUser`, che scrive la membership in modo esplicito; tolto l'allineamento di `user.role` al cambio di ruolo.
 4. **Periodo di verifica** sullo staging con le colonne ancora presenti e un controllo che confronta i due modelli.
 5. **Migrazione di contrazione** (con backup e script di ritorno): rimozione del vincolo, delle colonne e dei trigger che le usano. Da approvare a parte, prima per lo staging e poi per la produzione.
 

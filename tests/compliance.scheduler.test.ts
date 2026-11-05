@@ -76,7 +76,7 @@ describeWithDb('compliance deadline reminders (Step 6)', () => {
       role: 'MEMBER',
       telegramId: `o-${tag}`,
     });
-    return { tenantId: tenant.id, admin, member, otherMember };
+    return { tenantId: tenant.id, admin, member, otherMember, tag };
   }
 
   async function remindersOf(deadlineId: string) {
@@ -172,7 +172,7 @@ describeWithDb('compliance deadline reminders (Step 6)', () => {
   });
 
   it('delivers reminders on Telegram to the admins and the member concerned only', async () => {
-    const { tenantId, admin, member } = await setupTenant();
+    const { tenantId, admin, member, tag } = await setupTenant();
     const deadline = await new ComplianceService(prisma1, () => DAY0).createDeadline({
       tenantId,
       createdBy: admin.id,
@@ -198,7 +198,7 @@ describeWithDb('compliance deadline reminders (Step 6)', () => {
     );
     for (const delivery of deliveries) await delivery.send();
 
-    expect(sent.map((s) => s.chatId).sort()).toEqual([admin.telegramId, member.telegramId].sort());
+    expect(sent.map((s) => s.chatId).sort()).toEqual([`a-${tag}`, `m-${tag}`].sort());
     expect(sent[0]?.text).toContain('scade tra 7 giorni');
     expect(sent[0]?.text).toContain('Aggiornamento formazione sicurezza');
     expect(sent[0]?.text).toContain(`chiudi scadenza ${deadline.shortId}`);
