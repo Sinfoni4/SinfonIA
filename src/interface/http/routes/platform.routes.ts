@@ -19,6 +19,7 @@ import { fail, ok } from '../errors/http.errors.js';
 
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
+import type { HealthLocations } from '../../../core/platform/platform-storage.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
 
@@ -27,6 +28,8 @@ export type PlatformRoutesDeps = {
   login: LoginService;
   /** A5: which external services this process is configured for. */
   services?: ConfiguredServices;
+  /** Attachment folder and backup folder, for the system health (never shown). */
+  locations?: HealthLocations;
 };
 
 const NO_SERVICES: ConfiguredServices = {
@@ -251,7 +254,9 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
   app.get('/platform/health', { config }, async (req, reply) => {
     try {
       requirePlatform(req);
-      return reply.send(ok(await systemHealth(deps.prisma, deps.services ?? NO_SERVICES)));
+      return reply.send(
+        ok(await systemHealth(deps.prisma, deps.services ?? NO_SERVICES, deps.locations)),
+      );
     } catch (err: unknown) {
       return sendError(reply, err);
     }

@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
@@ -224,6 +226,14 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
           webhook: Boolean(config.OUTBOX_WEBHOOK_SECRET),
           ai: config.ENABLE_LLM ? config.LLM_PROVIDER : null,
         },
+        locations: {
+          storageDir:
+            config.STORAGE_DRIVER === 'local'
+              ? path.resolve(config.STORAGE_LOCAL_DIR ?? path.join('.runtime', 'storage'))
+              : null,
+          backupDir: config.BACKUP_DIR ? path.resolve(config.BACKUP_DIR) : null,
+          databaseName: databaseNameOf(config.DATABASE_URL),
+        },
       });
     }
   }
@@ -236,4 +246,13 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
 
   // Future-ready: auth middleware, rate limiting (structure only).
   return app;
+}
+
+/** The database name of a connection URL, without anything else of it. */
+function databaseNameOf(url: string): string | null {
+  try {
+    return decodeURIComponent(new URL(url).pathname.replace(/^\//, '')) || null;
+  } catch {
+    return null;
+  }
 }
