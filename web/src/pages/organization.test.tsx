@@ -182,8 +182,8 @@ describe('home (P11)', () => {
     api('ADMIN', {});
     openAt('/');
     const kpis = await screen.findByRole('list', { name: 'Indicatori' });
-    expect(within(kpis).getByText(/pratiche in corso/).textContent).toContain('3');
-    expect(within(kpis).getByText(/scadenza scaduta/).textContent).toContain('1');
+    expect(within(kpis).getByRole('link', { name: '3 pratiche in corso' })).toBeTruthy();
+    expect(within(kpis).getByRole('link', { name: '1 scadenza scaduta' })).toBeTruthy();
     expect(screen.getByText('scaduta da 3 giorni')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'fattura.pdf' }).getAttribute('href')).toBe(
       '/app/pratiche/p1',
@@ -226,7 +226,7 @@ describe('settings (P12)', () => {
       }),
     );
     expect(await screen.findByRole('status')).toBeTruthy();
-    expect(await screen.findByText('Cooperativa Nuova', { selector: '.org span' })).toBeTruthy();
+    expect(await screen.findByText('Cooperativa Nuova', { selector: 'header span' })).toBeTruthy();
     expect(screen.getByText(/30, 15, 7, 1 giorni prima/)).toBeTruthy();
   });
 

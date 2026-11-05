@@ -3,7 +3,9 @@
  *
  * 1. the PostgreSQL cluster of staging and tests (.runtime/pgdata_test, port 5433) if it is down;
  * 2. a check that the staging port is free (a process already there is reported, never stopped);
- * 3. the application with the least-privilege role (sinfonia_staging_app) and the staging
+ * 3. the dashboard built from the current code (web/dist), so it never lags behind the backend
+ *    (FE5); `--no-build` keeps the existing build;
+ * 4. the application with the least-privilege role (sinfonia_staging_app) and the staging
  *    attachment folder, in the foreground: Ctrl+C stops it.
  *
  * Host and port come from DATABASE_URL in .env.test, the password from DB_APP_PASSWORD in .env;
@@ -12,7 +14,7 @@
  * `--dashboard-login`: the dashboard login with the code shown on screen, while emails are
  * simulated (no provider yet, D11). The server then answers on this PC only (127.0.0.1): anyone
  * who reached the page could log in as anyone invited.
- * Usage: npm run staging:start [-- --check] [-- --dashboard-login]
+ * Usage: npm run staging:start [-- --check] [-- --dashboard-login] [-- --no-build]
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -28,6 +30,7 @@ const WEB_DIST = path.resolve('web/dist');
 const PORT = Number(process.env.STAGING_PORT ?? 3110);
 const checkOnly = process.argv.includes('--check');
 const dashboardLogin = process.argv.includes('--dashboard-login');
+const skipBuild = process.argv.includes('--no-build');
 
 function envValue(file: string, key: string): string {
   if (!existsSync(file)) throw new Error(`${file} not found (run from the repository folder)`);
@@ -96,7 +99,7 @@ async function main() {
   }
   console.log(`Porta ${PORT}: libera`);
 
-  // 3. Application with the least-privilege role and its own attachment folder.
+  // Application settings: least-privilege role and its own attachment folder.
   const appUrl = new URL(testUrl);
   appUrl.pathname = `/${DATABASE}`;
   appUrl.username = APP_ROLE;
@@ -108,6 +111,16 @@ async function main() {
     console.log(`Applicazione: pronta per l'avvio con ${APP_ROLE} e allegati in ${STORAGE_DIR}`);
     return;
   }
+  // 3. The dashboard from the current code: a merge that changes it is never served stale.
+  if (!skipBuild) {
+    console.log('Dashboard: compilazione...');
+    const build = spawnSync(process.execPath, ['--run', 'web:build'], { stdio: 'inherit' });
+    if (build.status !== 0 || !existsSync(path.join(WEB_DIST, 'index.html'))) {
+      throw new Error('Dashboard build failed (npm run web:build)');
+    }
+  }
+
+  // 4. The application.
   console.log(`Applicazione: avvio sulla porta ${PORT} con ${APP_ROLE} (Ctrl+C per fermarla)`);
   if (dashboardLogin) {
     console.log(

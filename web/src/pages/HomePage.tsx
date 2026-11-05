@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { ArrowRight, CalendarClock, FileSearch, FolderOpen } from 'lucide-react';
 import { Link } from 'react-router';
 
 import { describeError, ROLE_LABELS, type Me } from '../api/client';
@@ -14,6 +15,13 @@ import {
 } from '../api/organization';
 import { formatDate, STATE_LABELS } from '../api/practices';
 import { useSession } from '../session/session';
+
+import type * as React from 'react';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 /**
  * P11: the numbers of the organization (G7): practices in progress, overdue and upcoming
@@ -37,143 +45,235 @@ export function HomePage({ me }: { me: Me }) {
   });
   const s = summary.data;
 
+  const toCheck = s ? s.documents.toReview + s.documents.unreadable : 0;
+
   return (
-    <>
-      <h1>{current?.name}</h1>
-      <p className="muted">
-        Accesso come {ROLE_LABELS[me.current.role]}
-        {own ? ': qui vedi le tue pratiche e le tue scadenze.' : '.'}
-      </p>
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="m-0">{current?.name}</h1>
+        <p className="m-0 text-sm text-muted-foreground">
+          Accesso come {ROLE_LABELS[me.current.role]}
+          {own ? ': qui vedi le tue pratiche e le tue scadenze.' : '.'}
+        </p>
+      </div>
       {summary.isError && (
-        <p className="error" role="alert">
+        <p className="error m-0" role="alert">
           {describeError(summary.error)}
         </p>
       )}
-      {summary.isPending && <p className="muted">Caricamento…</p>}
+      {summary.isPending && <p className="m-0 text-muted-foreground">Caricamento…</p>}
       {s && (
         <>
-          <ul className="kpis" aria-label="Indicatori">
-            <li className="card">
-              <Link to="/pratiche">
-                <strong>{openPractices(s)}</strong> pratiche in corso
-              </Link>
-              <span className="muted">
-                {s.practices.byStatus.COMPLETED} completate · {s.practices.byStatus.FAILED} non
-                riuscite
-              </span>
-            </li>
-            <li className={`card ${s.deadlines.overdue > 0 ? 'alert' : ''}`}>
-              <Link to="/scadenze">
-                <strong>{s.deadlines.overdue}</strong>{' '}
-                {s.deadlines.overdue === 1 ? 'scadenza scaduta' : 'scadenze scadute'}
-              </Link>
-              <span className="muted">{s.deadlines.dueSoon} nei prossimi 30 giorni</span>
-            </li>
-            <li
-              className={`card ${s.documents.toReview + s.documents.unreadable > 0 ? 'warn' : ''}`}
-            >
-              <Link to="/verifica">
-                <strong>{s.documents.toReview + s.documents.unreadable}</strong> documenti da
-                controllare
-              </Link>
-              <span className="muted">
-                {s.documents.toReview} da verificare · {s.documents.unreadable} non letti
-              </span>
-            </li>
+          <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-3" aria-label="Indicatori">
+            <Kpi
+              to="/pratiche"
+              icon={<FolderOpen aria-hidden />}
+              value={openPractices(s)}
+              label="pratiche in corso"
+              detail={`${s.practices.byStatus.COMPLETED} completate · ${s.practices.byStatus.FAILED} non riuscite`}
+            />
+            <Kpi
+              to="/scadenze"
+              icon={<CalendarClock aria-hidden />}
+              value={s.deadlines.overdue}
+              label={s.deadlines.overdue === 1 ? 'scadenza scaduta' : 'scadenze scadute'}
+              detail={`${s.deadlines.dueSoon} nei prossimi 30 giorni`}
+              tone={s.deadlines.overdue > 0 ? 'alert' : undefined}
+            />
+            <Kpi
+              to="/verifica"
+              icon={<FileSearch aria-hidden />}
+              value={toCheck}
+              label="documenti da controllare"
+              detail={`${s.documents.toReview} da verificare · ${s.documents.unreadable} non letti`}
+              tone={toCheck > 0 ? 'warn' : undefined}
+            />
           </ul>
 
-          <div className="panels">
-            <section className="card" aria-labelledby="home-deadlines">
-              <h2 id="home-deadlines">Prossime scadenze</h2>
+          <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <Panel
+              id="home-deadlines"
+              title="Prossime scadenze"
+              more={{ to: '/scadenze', label: 'Tutte le scadenze' }}
+            >
               {s.deadlines.upcoming.length === 0 ? (
-                <p className="muted">Nessuna scadenza nei prossimi 30 giorni.</p>
+                <Empty>Nessuna scadenza nei prossimi 30 giorni.</Empty>
               ) : (
-                <ul className="plain">
+                <Rows>
                   {s.deadlines.upcoming.map((d) => (
-                    <li key={d.id}>
-                      <span className={`state ${d.daysLeft < 0 ? 'state-failed' : ''}`}>
-                        {daysLabel(d.daysLeft)}
-                      </span>{' '}
-                      {d.title}
-                      <div className="muted">
+                    <li key={d.id} className="flex flex-col gap-1 py-2">
+                      <span className="flex items-center gap-2">
+                        <Badge variant={d.daysLeft < 0 ? 'warning' : 'secondary'}>
+                          {daysLabel(d.daysLeft)}
+                        </Badge>
+                        <span className="font-medium">{d.title}</span>
+                      </span>
+                      <span className="text-sm text-muted-foreground">
                         {CATEGORY_LABELS[d.category]} · {isoToItalian(d.dueDate)}
-                      </div>
+                      </span>
                     </li>
                   ))}
-                </ul>
+                </Rows>
               )}
-              <Link to="/scadenze">Tutte le scadenze</Link>
-            </section>
+            </Panel>
 
-            <section className="card" aria-labelledby="home-documents">
-              <h2 id="home-documents">
-                <Link to="/verifica">Documenti da controllare</Link>
-              </h2>
+            <Panel
+              id="home-documents"
+              title="Documenti da controllare"
+              more={{ to: '/verifica', label: 'Apri «Da verificare»' }}
+            >
               {s.documents.items.length === 0 ? (
-                <p className="muted">Nessun documento da controllare.</p>
+                <Empty>Nessun documento da controllare.</Empty>
               ) : (
-                <ul className="plain">
+                <Rows>
                   {s.documents.items.map((doc) => (
-                    <li key={doc.attachmentId}>
-                      <Link to={`/pratiche/${doc.practiceId}`}>{doc.fileName}</Link>
-                      <div className="muted">
+                    <li key={doc.attachmentId} className="flex flex-col gap-0.5 py-2">
+                      <Link to={`/pratiche/${doc.practiceId}`} className="truncate">
+                        {doc.fileName}
+                      </Link>
+                      <span className="text-sm text-muted-foreground">
                         {doc.practiceName} ·{' '}
                         {doc.reason === 'unreadable' ? 'non letto' : 'dati da verificare'}
-                      </div>
+                      </span>
                     </li>
                   ))}
-                </ul>
+                </Rows>
               )}
-            </section>
+            </Panel>
 
-            <section className="card" aria-labelledby="home-practices">
-              <h2 id="home-practices">Ultime pratiche</h2>
+            <Panel
+              id="home-practices"
+              title="Ultime pratiche"
+              more={{ to: '/pratiche', label: 'Tutte le pratiche' }}
+            >
               {s.recentPractices.length === 0 ? (
-                <p className="muted">Ancora nessuna pratica.</p>
+                <Empty>Ancora nessuna pratica.</Empty>
               ) : (
-                <ul className="plain">
+                <Rows>
                   {s.recentPractices.map((p) => (
-                    <li key={p.id}>
+                    <li key={p.id} className="flex flex-col gap-0.5 py-2">
                       <Link to={`/pratiche/${p.id}`}>{p.name}</Link>
-                      <div className="muted">
+                      <span className="text-sm text-muted-foreground">
                         {STATE_LABELS[p.status]} · {formatDate(p.updatedAt)}
-                      </div>
+                      </span>
                     </li>
                   ))}
-                </ul>
+                </Rows>
               )}
-              <Link to="/pratiche">Tutte le pratiche</Link>
-            </section>
+            </Panel>
 
             {isAdmin && (
-              <section className="card" aria-labelledby="home-activity">
-                <h2 id="home-activity">Ultime attività</h2>
+              <Panel
+                id="home-activity"
+                title="Ultime attività"
+                more={{ to: '/attivita', label: 'Tutto il registro' }}
+              >
                 {activity.isError && (
-                  <p className="error" role="alert">
+                  <p className="error m-0" role="alert">
                     {describeError(activity.error)}
                   </p>
                 )}
                 {activity.data && activity.data.items.length === 0 && (
-                  <p className="muted">Nessuna attività registrata.</p>
+                  <Empty>Nessuna attività registrata.</Empty>
                 )}
                 {activity.data && activity.data.items.length > 0 && (
-                  <ul className="plain">
+                  <Rows>
                     {activity.data.items.map((e) => (
-                      <li key={e.id}>
-                        {describeEvent(e)}
-                        <div className="muted">
+                      <li key={e.id} className="flex flex-col gap-0.5 py-2">
+                        <span className="text-sm">{describeEvent(e)}</span>
+                        <span className="text-xs text-muted-foreground">
                           {formatDateTime(e.at)} · {actorLabel(e)}
-                        </div>
+                        </span>
                       </li>
                     ))}
-                  </ul>
+                  </Rows>
                 )}
-                <Link to="/attivita">Tutto il registro</Link>
-              </section>
+              </Panel>
             )}
           </div>
         </>
       )}
-    </>
+    </div>
   );
+}
+
+/** An indicator of the home: icon, number and what it counts, the whole card a link. */
+function Kpi({
+  to,
+  icon,
+  value,
+  label,
+  detail,
+  tone,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+  detail: string;
+  tone?: 'alert' | 'warn';
+}) {
+  return (
+    <li>
+      <Card
+        className={cn(
+          'h-full gap-2 transition-colors hover:border-primary',
+          tone === 'warn' && 'border-warning/30 bg-warning-background',
+          tone === 'alert' && 'border-destructive/30 bg-destructive/5',
+        )}
+      >
+        <Link to={to} className="flex items-center gap-3 text-foreground no-underline">
+          <span
+            className={cn(
+              'flex size-10 items-center justify-center rounded-md bg-secondary text-primary [&_svg]:size-5',
+              tone === 'warn' && 'bg-card text-warning',
+              tone === 'alert' && 'bg-card text-destructive',
+            )}
+          >
+            {icon}
+          </span>
+          <span className="flex flex-col">
+            <strong className="text-2xl leading-none">{value}</strong>{' '}
+            <span className="text-sm font-medium">{label}</span>
+          </span>
+        </Link>
+        <span className="text-sm text-muted-foreground">{detail}</span>
+      </Card>
+    </li>
+  );
+}
+
+function Panel({
+  id,
+  title,
+  more,
+  children,
+}: {
+  id: string;
+  title: string;
+  more: { to: string; label: string };
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="gap-2" role="region" aria-labelledby={id}>
+      <CardHeader>
+        <CardTitle id={id}>{title}</CardTitle>
+      </CardHeader>
+      {children}
+      <Button asChild variant="link" size="sm" className="self-start px-0">
+        <Link to={more.to}>
+          {more.label}
+          <ArrowRight aria-hidden />
+        </Link>
+      </Button>
+    </Card>
+  );
+}
+
+function Rows({ children }: { children: React.ReactNode }) {
+  return <ul className="m-0 list-none divide-y divide-border p-0">{children}</ul>;
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p className="m-0 text-sm text-muted-foreground">{children}</p>;
 }

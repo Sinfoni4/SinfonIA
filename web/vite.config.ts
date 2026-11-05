@@ -1,3 +1,6 @@
+import { fileURLToPath } from 'node:url';
+
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
@@ -14,12 +17,21 @@ const proxied = [
   '/organization',
   '/ai',
   '/platform',
+  '/assistance',
+  '/network',
+  '/memberships',
+  '/grants',
+  '/attachments',
   '/readyz',
 ];
 
 export default defineConfig({
   base: '/app/',
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    // shadcn/ui components import from '@/...'.
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   server: {
     port: 5173,
     strictPort: true,

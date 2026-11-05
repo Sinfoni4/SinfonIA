@@ -739,3 +739,209 @@ ul.board-cards {
 .stats-grid h2 {
   font-size: 1rem;
 }
+
+/* FE5: fields of a form one under the other, the action below them. */
+.form select {
+  display: block;
+  max-width: 100%;
+}
+
+.form > button[type='submit'] {
+  display: block;
+  margin-top: 1rem;
+}
+
+/* FE5: a link to skip the header, visible only when reached with the keyboard. */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+main.content:focus {
+  outline: none;
+}
+
+/*
+ * FE5: the shared elements of every page in the look of shadcn/ui (sizes, corners, shadows,
+ * states), so pages not yet rewritten with the components match the ones that are.
+ */
+h1 {
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+label {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+input,
+select,
+textarea {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.875rem;
+  border-color: var(--border);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  min-height: 0;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 90%, black);
+}
+
+button.secondary {
+  border-color: var(--border);
+}
+
+button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 90%, black);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--notice-bg);
+}
+
+button.link,
+button.link:hover:not(:disabled) {
+  min-height: 0;
+  box-shadow: none;
+  background: none;
+  text-underline-offset: 4px;
+}
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.35rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+a.button.secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.card {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.badge,
+.state {
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+}
+
+.notice,
+.dev-code {
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+.dev-code {
+  border-color: color-mix(in srgb, #8a5a00 30%, transparent);
+}
+
+p.error,
+ul.error {
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+table.list {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  font-size: 0.875rem;
+}
+
+table.list th {
+  background: var(--bg);
+  font-weight: 500;
+}
+
+table.list tbody tr:hover {
+  background: color-mix(in srgb, var(--notice-bg) 50%, var(--surface));
+}
+
+table.list tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Tabs as a segmented control, like the shadcn/ui tabs. */
+.tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--notice-bg);
+}
+
+.tabs a,
+.tabs button.link {
+  margin: 0;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tabs a.active,
+.tabs button.link.active {
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+.pager span {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
