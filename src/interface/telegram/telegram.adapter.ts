@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { LLMDisabledError } from '../../ai/providers/disabled.provider.js';
 import { enforceIdPriority } from '../../ai/validation/pre-execution.validator.js';
-import { can } from '../../core/authz/authorization.service.js';
+import { permits } from '../../core/authz/authorization.service.js';
 import {
   InMemoryConversationMemory,
   type ConversationMemory,
@@ -115,7 +115,7 @@ export class TelegramAdapter {
     identity: TelegramIdentity,
     trace: ChatTrace | null,
   ): Promise<ChatAnswer> {
-    const { tenantId, userId: execUserId, role } = identity;
+    const { tenantId, userId: execUserId, role, customPermissions } = identity;
     const ctx: InterpreterContext = { tenantId, userId: execUserId, practices: [] };
 
     const memory = this.memory;
@@ -143,7 +143,7 @@ export class TelegramAdapter {
     const normalized = enforceIdPriority(this.deps.normalizer.normalize(interpreted));
     if (trace) trace.action = normalized.action;
 
-    const canAdvance = can(role, 'practice.transition');
+    const canAdvance = permits(identity, 'practice.transition');
     if (normalized.action === 'transition_practice' && !canAdvance) {
       if (normalized.nextState === 'VALIDATED') {
         throw new Error('PERMISSION_DENIED:VALIDATED');
@@ -184,7 +184,7 @@ export class TelegramAdapter {
       }
     }
 
-    const execCtx: ExecutorContext = { tenantId, userId: execUserId, role };
+    const execCtx: ExecutorContext = { tenantId, userId: execUserId, role, customPermissions };
     const result = await this.deps.executor.execute(command, execCtx);
 
     const maybeId =

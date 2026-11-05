@@ -37,5 +37,5 @@ export function authHeaders(
 export function testPrincipals(prisma?: Pick<PrismaClient, 'membership'>): PrincipalResolver {
   if (prisma) return createPrismaPrincipalResolver(prisma);
   return ({ tenantId, userId, tokenRole }) =>
-    Promise.resolve({ tenantId, userId, role: tokenRole });
+    Promise.resolve({ tenantId, userId, role: tokenRole, customPermissions: null });
 }

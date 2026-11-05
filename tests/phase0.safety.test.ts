@@ -47,6 +47,7 @@ function chat(deps: { handleMessage?: Fake; executeCommand?: Fake }) {
             tenant: { id: 't-1', name: 'Azienda' } as Tenant,
             userId: 'u-1',
             role: 'OPERATOR',
+            customPermissions: null,
           }),
       },
     },
@@ -80,7 +81,7 @@ describe('S02: a change of state proposed by the AI', () => {
     await c.say('sì');
     expect(c.executeCommand).toHaveBeenCalledWith(
       { type: 'CONFIRM_TRANSITION', payload: { practiceId: PRACTICE_ID, nextState: 'COMPLETED' } },
-      { tenantId: 't-1', userId: 'u-1', role: 'OPERATOR' },
+      { tenantId: 't-1', userId: 'u-1', role: 'OPERATOR', customPermissions: null },
       { channel: 'telegram' },
     );
   });
@@ -177,7 +178,12 @@ describe.runIf(Boolean(DATABASE_URL))('phase 0 with PostgreSQL', () => {
         userId: people.adminB,
         name: `Segreto B ${run}`,
       });
-      const actorA = { tenantId: org.a, userId: people.adminA, role: 'ADMIN' as const };
+      const actorA = {
+        tenantId: org.a,
+        userId: people.adminA,
+        role: 'ADMIN' as const,
+        customPermissions: null,
+      };
       const status = await practices.executeCommand(
         { type: 'GET_ORG_PRACTICE_STATUS', payload: { name: `Segreto B ${run}` } },
         actorA,
@@ -299,7 +305,12 @@ describe.runIf(Boolean(DATABASE_URL))('phase 0 with PostgreSQL', () => {
         userId: people.adminA,
         name: `Elimina due volte ${run}`,
       });
-      const actor = { tenantId: org.a, userId: people.adminA, role: 'ADMIN' as const };
+      const actor = {
+        tenantId: org.a,
+        userId: people.adminA,
+        role: 'ADMIN' as const,
+        customPermissions: null,
+      };
       const confirm = () =>
         practices.executeCommand(
           { type: 'CONFIRM_DELETE', payload: { practiceId: practice.id } },

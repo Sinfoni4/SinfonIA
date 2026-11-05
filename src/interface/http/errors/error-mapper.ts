@@ -16,6 +16,7 @@ import { OpenAIProviderError } from '../../../ai/providers/openai.provider.js';
 import { ValidationError } from '../../../ai/validation/validation.errors.js';
 import { AssistanceError } from '../../../core/assistance/assistance.service.js';
 import { PermissionDeniedError } from '../../../core/authz/authorization.service.js';
+import { CustomRoleError } from '../../../core/authz/custom-roles.service.js';
 import { PlatformAccessError } from '../../../core/authz/platform.js';
 import { DelegationError } from '../../../core/delegation/delegation.service.js';
 import { FeatureDisabledError } from '../../../core/features/features.js';
@@ -55,6 +56,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
   }
   if (
     err instanceof LastAdminError ||
+    err instanceof CustomRoleError ||
     err instanceof MemberAccessError ||
     err instanceof LoginError ||
     err instanceof InvitationError ||

@@ -73,6 +73,7 @@ describe.runIf(Boolean(DATABASE_URL))('export rules D5 and D5b', () => {
             tenant: await getTenantById(prisma, tenantId),
             userId: users[who],
             role,
+            customPermissions: null,
           }),
         },
       },

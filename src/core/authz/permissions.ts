@@ -112,3 +112,59 @@ export const GRANTABLE_TENANT_SCOPES: Partial<Record<Permission, readonly UserRo
 export function tenantScopeKey(permission: Permission): string {
   return `${permission}:tenant`;
 }
+
+// --- B2 (H6): roles defined by an organization ----------------------------------------------
+
+/** The permissions of a custom role with their scope; what is missing is not granted. */
+export type CustomPermissions = Partial<Record<Permission, PermissionScope>>;
+
+const SCOPES: readonly PermissionScope[] = ['own', 'tenant'];
+
+/**
+ * Reads the stored permissions of a custom role (`<permission>:<scope>`). Unknown entries are
+ * dropped: a permission removed from the catalog can never be granted by an old row.
+ */
+export function parseCustomPermissions(stored: readonly string[]): CustomPermissions {
+  const out: CustomPermissions = {};
+  for (const entry of stored) {
+    const [permission, scope] = entry.split(':');
+    if (
+      (PERMISSIONS as readonly string[]).includes(permission ?? '') &&
+      (SCOPES as readonly string[]).includes(scope ?? '')
+    ) {
+      out[permission as Permission] = scope as PermissionScope;
+    }
+  }
+  return out;
+}
+
+export function serializeCustomPermissions(permissions: CustomPermissions): string[] {
+  return PERMISSIONS.filter((p) => permissions[p] !== undefined).map(
+    (p) => `${p}:${permissions[p]}`,
+  );
+}
+
+/** The narrower of two scopes: a custom role never widens its base role. */
+export function narrowerScope(a: PermissionScope, b: PermissionScope): PermissionScope {
+  return a === 'own' || b === 'own' ? 'own' : 'tenant';
+}
+
+/**
+ * The problems of a custom role, in Italian, or an empty list: every permission must be one of
+ * the base role, with the same scope or a narrower one.
+ */
+export function customRoleProblems(baseRole: UserRole, permissions: CustomPermissions): string[] {
+  const ceiling = ROLE_PERMISSIONS[baseRole];
+  const problems: string[] = [];
+  for (const [permission, scope] of Object.entries(permissions) as Array<
+    [Permission, PermissionScope]
+  >) {
+    const allowed = ceiling[permission];
+    if (!allowed) problems.push(`«${permission}» non fa parte del ruolo di base`);
+    else if (allowed === 'own' && scope === 'tenant') {
+      problems.push(`«${permission}» vale solo per le proprie pratiche nel ruolo di base`);
+    }
+  }
+  if (Object.keys(permissions).length === 0) problems.push('Scegli almeno un permesso');
+  return problems;
+}

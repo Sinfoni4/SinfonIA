@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
 import {
+  createCustomRole,
+  deleteCustomRole,
+  listCustomRoles,
+  setMemberCustomRole,
+  updateCustomRole,
+} from '../../../core/authz/custom-roles.service.js';
+import { PERMISSIONS, ROLE_PERMISSIONS } from '../../../core/authz/permissions.js';
+import {
   setScheduledExport,
   setTenantScope,
 } from '../../../core/identity/member-access.service.js';
@@ -33,6 +41,23 @@ const InvitationBodySchema = z.object({
   role: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']),
 });
 const InvitationParamsSchema = z.object({ invitationId: z.string().uuid() });
+
+// B2: custom roles. Permissions only from the catalog; the service checks them on the base role.
+const CustomPermissionsSchema = z
+  .partialRecord(z.enum(PERMISSIONS), z.enum(['own', 'tenant']))
+  .refine((p) => Object.keys(p).length <= PERMISSIONS.length);
+const RoleIdParamsSchema = z.object({ roleId: z.string().uuid() });
+const CreateRoleBodySchema = z
+  .object({
+    name: z.string().max(200),
+    baseRole: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']),
+    permissions: CustomPermissionsSchema,
+  })
+  .strict();
+const UpdateRoleBodySchema = z
+  .object({ name: z.string().max(200).optional(), permissions: CustomPermissionsSchema.optional() })
+  .strict();
+const MemberRoleBodySchema = z.object({ roleId: z.string().uuid().nullable() }).strict();
 
 /**
  * Members of the caller's organization, for its administrators (MF5): revocation takes effect at
@@ -196,6 +221,94 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
       },
     );
   }
+
+  // --- B2: custom roles --------------------------------------------------------------------
+
+  // What each base role allows, to build a custom role from it.
+  app.get('/roles/catalog', { config: { permission: 'members.manage' } }, async (req, reply) => {
+    try {
+      requirePermission(req, 'members.manage');
+      return reply.send(ok(ROLE_PERMISSIONS));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  app.get('/roles', { config: { permission: 'members.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'members.read').principal;
+      return reply.send(ok(await listCustomRoles(deps.prisma, auth.tenantId)));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  app.post('/roles', { config: { permission: 'members.manage' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'members.manage').principal;
+      const body = CreateRoleBodySchema.parse(req.body);
+      return reply
+        .status(201)
+        .send(
+          ok(await createCustomRole(deps.prisma, auth.tenantId, body, { userId: auth.userId })),
+        );
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  app.patch('/roles/:roleId', { config: { permission: 'members.manage' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'members.manage').principal;
+      const { roleId } = RoleIdParamsSchema.parse(req.params);
+      const body = UpdateRoleBodySchema.parse(req.body);
+      return reply.send(
+        ok(
+          await updateCustomRole(deps.prisma, auth.tenantId, roleId, body, { userId: auth.userId }),
+        ),
+      );
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  app.delete('/roles/:roleId', { config: { permission: 'members.manage' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'members.manage').principal;
+      const { roleId } = RoleIdParamsSchema.parse(req.params);
+      await deleteCustomRole(deps.prisma, auth.tenantId, roleId, { userId: auth.userId });
+      return reply.send(ok({ id: roleId, deleted: true }));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  app.post(
+    '/members/:userId/custom-role',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        const { userId } = MemberParamsSchema.parse(req.params);
+        const { roleId } = MemberRoleBodySchema.parse(req.body);
+        return reply.send(
+          ok(
+            await setMemberCustomRole(deps.prisma, auth.tenantId, userId, roleId, {
+              userId: auth.userId,
+            }),
+          ),
+        );
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
 
   done();
 };

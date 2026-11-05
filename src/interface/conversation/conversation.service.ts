@@ -1,4 +1,4 @@
-import { can } from '../../core/authz/authorization.service.js';
+import { permits } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
 import { featureEnabled, type Feature } from '../../core/features/features.js';
@@ -34,6 +34,7 @@ import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
+import type { CustomPermissions } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { Tenant } from '../../core/tenant/tenant.store.js';
@@ -51,6 +52,8 @@ export type ConversationIdentity = {
   tenantId: string;
   userId: string;
   role: UserRole;
+  /** B2: the custom role of the membership, or null (the base role). */
+  customPermissions: CustomPermissions | null;
 };
 
 /** A file received on a channel; downloaded only once the target practice is known. */
@@ -80,7 +83,12 @@ export interface ChannelIdentityProvider {
    * Throws TenantNotLinkedError when the sender is not linked to any tenant, and
    * OrganizationChoiceRequiredError when they belong to several organizations.
    */
-  resolve(senderId: string): Promise<{ tenant: Tenant; userId: string; role: UserRole }>;
+  resolve(senderId: string): Promise<{
+    tenant: Tenant;
+    userId: string;
+    role: UserRole;
+    customPermissions: CustomPermissions | null;
+  }>;
   /** Loads an organization chosen among the memberships of an OrganizationChoiceRequiredError. */
   tenantFor?(tenantId: string): Promise<Tenant>;
 }
@@ -264,8 +272,11 @@ function isGreeting(text: string): boolean {
   return ['ciao', 'hello', 'hi', 'help', 'start'].includes(t);
 }
 
-export function onboardingMessage(role: UserRole): string {
-  if (can(role, 'practice.transition')) {
+export function onboardingMessage(
+  who: UserRole | { role: UserRole; customPermissions: CustomPermissions | null },
+): string {
+  const person = typeof who === 'string' ? { role: who, customPermissions: null } : who;
+  if (permits(person, 'practice.transition')) {
     return `👋 Ciao! Ti aiuto a gestire le pratiche.
 
 Puoi:
@@ -392,6 +403,7 @@ export class ConversationService {
       tenant: await this.channel.identity.tenantFor(current.tenantId),
       userId: choice.userId,
       role: current.role,
+      customPermissions: current.customPermissions,
     };
   }
 
@@ -438,13 +450,19 @@ export class ConversationService {
     }
 
     const tenant = identity.tenant;
-    const dbUser = { id: identity.userId, role: identity.role };
-    // A03: who acts, with the functions the platform turned off for the organization.
+    const dbUser = {
+      id: identity.userId,
+      role: identity.role,
+      customPermissions: identity.customPermissions,
+    };
+    // A03 and B2: who acts, with the functions the platform turned off for the organization and
+    // the custom role of the membership.
     const actor = {
       tenantId: tenant.id,
       userId: dbUser.id,
       role: dbUser.role,
       disabledFeatures: tenant.disabledFeatures,
+      customPermissions: dbUser.customPermissions,
     };
     const featureOn = (feature: Feature) => featureEnabled(tenant.disabledFeatures, feature);
     const FEATURE_OFF = 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
@@ -613,7 +631,7 @@ export class ConversationService {
         await reply(FEATURE_OFF);
         return;
       }
-      if (!can(dbUser.role, 'assistance.request')) {
+      if (!permits(dbUser, 'assistance.request')) {
         await reply('🔒 Non puoi inviare richieste di assistenza.');
         return;
       }
@@ -802,6 +820,7 @@ export class ConversationService {
           userId: dbUser.id,
           role: dbUser.role,
           disabledFeatures: tenant.disabledFeatures,
+          customPermissions: dbUser.customPermissions,
         }),
       );
       return;
@@ -854,29 +873,28 @@ export class ConversationService {
 
     // «Aiuto» (also from the menu) always explains what the bot does.
     if (/^(aiuto|\/help)$/i.test(trimmed)) {
-      await reply(onboardingMessage(dbUser.role), { menu: true });
+      await reply(onboardingMessage(dbUser), { menu: true });
       return;
     }
 
     if (lower.startsWith('/start') || isGreeting(text)) {
       const firstTime = await this.memory.markOnboarded(tenant.id, dbUser.id);
-      await reply(
-        firstTime ? onboardingMessage(dbUser.role) : '👋 Bentornato! Come posso aiutarti?',
-        { menu: true },
-      );
+      await reply(firstTime ? onboardingMessage(dbUser) : '👋 Bentornato! Come posso aiutarti?', {
+        menu: true,
+      });
       return;
     }
 
     // Defensive layer: never let a slash command reach the AI pipeline.
     if (trimmed.startsWith('/')) {
-      await reply(onboardingMessage(dbUser.role));
+      await reply(onboardingMessage(dbUser));
       return;
     }
 
     // A03: with the AI off, free text gets the list of commands instead of an interpretation.
     if (!featureOn('ai_chat')) {
       await reply(
-        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser.role)}`,
+        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser)}`,
         { menu: true },
       );
       return;
@@ -886,6 +904,7 @@ export class ConversationService {
       tenantId: tenant.id,
       userId: dbUser.id,
       role: dbUser.role,
+      customPermissions: dbUser.customPermissions,
     });
     const answer: ChatAnswer = typeof raw === 'string' ? { text: raw } : raw;
     // S02: a change of state proposed by the AI is done only after «sì».

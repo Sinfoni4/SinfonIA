@@ -206,6 +206,7 @@ export class EvaluationHarness {
             tenantId: TENANT_ID,
             role: 'ADMIN',
             userId: USER_ID,
+            customPermissions: null,
           });
           result.isCorrect = execution.success;
           if (!execution.success) result.detail ??= 'execution failed';

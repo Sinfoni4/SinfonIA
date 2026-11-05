@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { can } from '../../core/authz/authorization.service.js';
+import { permits } from '../../core/authz/authorization.service.js';
+import { parseCustomPermissions } from '../../core/authz/permissions.js';
 import { InvalidStateTransitionError } from '../../core/errors/workflow.errors.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 
@@ -48,7 +49,15 @@ export class ExecutorService {
       // fail closed, so an action without a known permission is refused as well.
       const permission = ACTION_PERMISSIONS[parsedInput.action];
       const needsPermission = parsedInput.action !== 'clarification_required';
-      if (needsPermission && (!permission || !can(parsedCtx.role, permission))) {
+      const who = {
+        role: parsedCtx.role,
+        customPermissions: parsedCtx.customPermissions
+          ? parseCustomPermissions(
+              Object.entries(parsedCtx.customPermissions).map(([p, s]) => `${p}:${s}`),
+            )
+          : null,
+      };
+      if (needsPermission && (!permission || !permits(who, permission))) {
         return {
           success: false,
           error: { code: 'FORBIDDEN', message: `PERMISSION_DENIED: ${permission}` },

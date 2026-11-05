@@ -28,7 +28,8 @@ import type { PrismaClient } from '@prisma/client';
 const tenant = { id: 't-1', name: 'Cooperativa' } as Tenant;
 const identity = {
   link: () => Promise.resolve(null),
-  resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN' as const }),
+  resolve: () =>
+    Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN' as const, customPermissions: null }),
 };
 
 describe('button answers and markup', () => {

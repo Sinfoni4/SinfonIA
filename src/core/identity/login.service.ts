@@ -662,6 +662,8 @@ export class LoginService {
             revokedAt: null,
             revokedBy: null,
             revocationReason: null,
+            // B2: a custom role is built on the previous role.
+            customRoleId: null,
           },
         });
       } else {

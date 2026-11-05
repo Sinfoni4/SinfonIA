@@ -7,11 +7,16 @@ import {
   INVITATION_LABELS,
   invitationLink,
   memberState,
+  permissionLabel,
   ROLE_HINTS,
   ROLE_NAMES,
   ROLES,
+  SCOPE_LABELS,
+  type CustomRole,
   type Invitation,
   type Member,
+  type PermissionScope,
+  type RoleCatalog,
 } from '../api/members';
 import { formatDate } from '../api/practices';
 import { useSession } from '../session/session';
@@ -34,6 +39,7 @@ export function PeoplePage({ me }: { me: Me }) {
       <h1>Persone</h1>
       <Members me={me} />
       <Invitations me={me} />
+      <CustomRoles me={me} />
     </>
   );
 }
@@ -48,6 +54,10 @@ function Members({ me }: { me: Me }) {
   const query = useQuery({
     queryKey: ['members', me.current.orgId],
     queryFn: () => api<Member[]>('/members'),
+  });
+  const roles = useQuery({
+    queryKey: ['members', me.current.orgId, 'roles'],
+    queryFn: () => api<CustomRole[]>('/roles'),
   });
 
   const act = useMutation({
@@ -130,6 +140,13 @@ function Members({ me }: { me: Me }) {
                     ) : (
                       ROLE_NAMES[m.role]
                     )}
+                    <CustomRoleCell
+                      member={m}
+                      roles={roles.data ?? []}
+                      editable={editable}
+                      busy={act.isPending}
+                      onChange={(roleId) => run(m.userId, 'custom-role', { roleId })}
+                    />
                   </td>
                   <td data-label="Stato">
                     <span className={`state ${state.active ? '' : 'state-failed'}`}>
@@ -227,6 +244,216 @@ function Members({ me }: { me: Me }) {
         La revoca e il cambio di ruolo valgono subito, su dashboard, API e chat. Per cambiare il tuo
         ruolo o revocare te stesso serve un altro amministratore.
       </p>
+    </section>
+  );
+}
+
+/** B2: the custom role of a member, chosen among those built on the member's role. */
+function CustomRoleCell(props: {
+  member: Member;
+  roles: CustomRole[];
+  editable: boolean;
+  busy: boolean;
+  onChange: (roleId: string | null) => void;
+}) {
+  const { member } = props;
+  const options = props.roles.filter((r) => r.baseRole === member.role);
+  if (!props.editable || options.length === 0) {
+    return member.customRole ? <div className="muted">{member.customRole.name}</div> : null;
+  }
+  return (
+    <select
+      aria-label={`Ruolo personalizzato di ${member.email ?? 'questa persona'}`}
+      value={member.customRole?.id ?? ''}
+      disabled={props.busy}
+      onChange={(e) => props.onChange(e.target.value || null)}
+    >
+      <option value="">Tutto il ruolo</option>
+      {options.map((r) => (
+        <option key={r.id} value={r.id}>
+          {r.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * B2 (H6): roles of the organization built on a base role, keeping only some of its permissions
+ * or narrowing them to one's own practices. The backend checks the same rules.
+ */
+function CustomRoles({ me }: { me: Me }) {
+  const { api } = useSession();
+  const queryClient = useQueryClient();
+  const roles = useQuery({
+    queryKey: ['members', me.current.orgId, 'roles'],
+    queryFn: () => api<CustomRole[]>('/roles'),
+  });
+  const catalog = useQuery({
+    queryKey: ['roles-catalog'],
+    queryFn: () => api<RoleCatalog>('/roles/catalog'),
+    staleTime: Infinity,
+  });
+  const [name, setName] = useState('');
+  const [baseRole, setBaseRole] = useState<Role>('OPERATOR');
+  const [chosen, setChosen] = useState<Record<string, PermissionScope>>({});
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['members'] });
+  const create = useMutation({
+    mutationFn: () =>
+      api('/roles', { method: 'POST', body: { name: name.trim(), baseRole, permissions: chosen } }),
+    onSuccess: async () => {
+      setName('');
+      setChosen({});
+      await refresh();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/roles/${id}`, { method: 'DELETE' }),
+    onSuccess: refresh,
+  });
+
+  const ceiling = catalog.data?.[baseRole] ?? {};
+  const pickBase = (role: Role) => {
+    setBaseRole(role);
+    setChosen({});
+  };
+  const toggle = (permission: string, on: boolean) =>
+    setChosen((current) => {
+      const next = { ...current };
+      if (on) next[permission] = ceiling[permission] ?? 'own';
+      else delete next[permission];
+      return next;
+    });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    create.mutate();
+  };
+
+  const list = roles.data ?? [];
+  return (
+    <section aria-labelledby="roles-title">
+      <h2 id="roles-title">Ruoli personalizzati</h2>
+      <p className="muted">
+        Un ruolo personalizzato parte da un ruolo di base e ne tiene solo alcuni permessi, o li
+        limita alle proprie pratiche: non dà mai più del ruolo di base. Vale subito, su dashboard,
+        API e chat.
+      </p>
+      {roles.isError && (
+        <p className="error" role="alert">
+          {describeError(roles.error)}
+        </p>
+      )}
+      {list.length > 0 && (
+        <table className="list cards">
+          <thead>
+            <tr>
+              <th scope="col">Ruolo</th>
+              <th scope="col">Base</th>
+              <th scope="col">Permessi</th>
+              <th scope="col">Persone</th>
+              <th scope="col">Azioni</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((r) => (
+              <tr key={r.id}>
+                <td data-label="Ruolo">{r.name}</td>
+                <td data-label="Base">{ROLE_NAMES[r.baseRole]}</td>
+                <td data-label="Permessi">
+                  <ul className="plain">
+                    {Object.entries(r.permissions).map(([p, scope]) => (
+                      <li key={p}>
+                        {permissionLabel(p)}
+                        {scope === 'own' && <span className="muted"> ({SCOPE_LABELS.own})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </td>
+                <td data-label="Persone">{r.members}</td>
+                <td data-label="Azioni">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={remove.isPending || r.members > 0}
+                    title={r.members > 0 ? 'Toglilo prima alle persone' : undefined}
+                    onClick={() => remove.mutate(r.id)}
+                  >
+                    Elimina
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {remove.isError && (
+        <p className="error" role="alert">
+          {describeError(remove.error)}
+        </p>
+      )}
+      <form className="card form" onSubmit={submit} aria-labelledby="new-role-title">
+        <h3 id="new-role-title">Nuovo ruolo</h3>
+        <label htmlFor="role-name">Nome</label>
+        <input
+          id="role-name"
+          value={name}
+          maxLength={60}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Es. Segreteria"
+        />
+        <label htmlFor="role-base">Parte dal ruolo</label>
+        <select id="role-base" value={baseRole} onChange={(e) => pickBase(e.target.value as Role)}>
+          {ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_NAMES[r]}
+            </option>
+          ))}
+        </select>
+        <fieldset>
+          <legend>Permessi</legend>
+          {Object.entries(ceiling).map(([permission, max]) => (
+            <div key={permission}>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={chosen[permission] !== undefined}
+                  onChange={(e) => toggle(permission, e.target.checked)}
+                />{' '}
+                {permissionLabel(permission)}
+              </label>
+              {max === 'tenant' && chosen[permission] !== undefined && (
+                <select
+                  aria-label={`Ambito di ${permissionLabel(permission)}`}
+                  value={chosen[permission]}
+                  onChange={(e) =>
+                    setChosen((c) => ({ ...c, [permission]: e.target.value as PermissionScope }))
+                  }
+                >
+                  <option value="tenant">{SCOPE_LABELS.tenant}</option>
+                  <option value="own">{SCOPE_LABELS.own}</option>
+                </select>
+              )}
+            </div>
+          ))}
+        </fieldset>
+        <span className="actions">
+          <button
+            type="submit"
+            disabled={
+              create.isPending || name.trim().length < 2 || Object.keys(chosen).length === 0
+            }
+          >
+            Crea il ruolo
+          </button>
+        </span>
+        {create.isError && (
+          <p className="error" role="alert">
+            {describeError(create.error)}
+          </p>
+        )}
+      </form>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { authorize, can, scopedUserId } from '../../core/authz/authorization.service.js';
+import { authorize, permits, scopedUserId } from '../../core/authz/authorization.service.js';
 import {
   formatItalianDate,
   parseIsoDate,
@@ -9,6 +9,7 @@ import { ComplianceValidationError } from '../../core/errors/compliance.errors.j
 import { featureEnabled } from '../../core/features/features.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 
+import type { CustomPermissions } from '../../core/authz/permissions.js';
 import type { ComplianceCommand } from '../../core/compliance/compliance.commands.js';
 import type {
   ComplianceDeadlineView,
@@ -67,6 +68,8 @@ export async function executeComplianceCommand(
     role: UserRole;
     /** A03: functions turned off for the organization. */
     disabledFeatures?: readonly string[];
+    /** B2: the custom role of the membership, or null. */
+    customPermissions: CustomPermissions | null;
   },
 ): Promise<string> {
   if (command.type === 'INVALID_COMPLIANCE_COMMAND') {
@@ -87,7 +90,7 @@ export async function executeComplianceCommand(
     return formatDeadlineList(deadlines);
   }
 
-  if (!can(ctx.role, 'compliance.manage')) {
+  if (!permits(ctx, 'compliance.manage')) {
     return 'ℹ️ Le scadenze le gestiscono un operatore o un amministratore della tua organizzazione.';
   }
 

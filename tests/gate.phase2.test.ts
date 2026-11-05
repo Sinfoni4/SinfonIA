@@ -230,6 +230,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
         tenantId: tenant.id,
         userId: user.id,
         role: user.role,
+        customPermissions: null,
       });
       expect(tgResult.type).toBe('created');
       const tgPractice = (
@@ -257,6 +258,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
         tenantId: tenant.id,
         userId: user.id,
         role: user.role,
+        customPermissions: null,
       });
       expect(tgStatusResult.type).toBe('status');
       if (tgStatusResult.type === 'status') {
@@ -278,6 +280,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
         tenantId: tenant.id,
         userId: user.id,
         role: user.role,
+        customPermissions: null,
       });
       expect(tgExportResult.type).toBe('export');
       if (tgExportResult.type === 'export') {

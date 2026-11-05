@@ -67,6 +67,8 @@ function api(role: 'ADMIN' | 'OPERATOR' | 'MEMBER', routes: Record<string, (c: C
         current: { orgId: ORG, role },
       }),
     'GET /members': () => ok(MEMBERS),
+    'GET /roles': () => ok([]),
+    'GET /roles/catalog': () => ok({ ADMIN: {}, OPERATOR: {}, MEMBER: {} }),
     'GET /members/invitations': () =>
       ok([invitation(), invitation({ id: 'i2', email: 'vecchio@coop.it', status: 'EXPIRED' })]),
   };
@@ -158,6 +160,54 @@ describe('people (FE4)', () => {
     await waitFor(() =>
       expect(posted('/members/u0000000-0000-4000-8000-000000000002/role')[0]?.body).toEqual({
         role: 'ADMIN',
+      }),
+    );
+  });
+
+  it('creates a custom role within the base role and gives it to a member', async () => {
+    const GIULIA = 'u0000000-0000-4000-8000-000000000002';
+    const ROLE = 'r0000000-0000-4000-8000-000000000001';
+    api('ADMIN', {
+      'GET /roles': () =>
+        ok([
+          {
+            id: ROLE,
+            name: 'Segreteria',
+            baseRole: 'OPERATOR',
+            permissions: { 'practice.read': 'own' },
+            members: 0,
+          },
+        ]),
+      'GET /roles/catalog': () =>
+        ok({
+          ADMIN: { 'practice.read': 'tenant', 'members.manage': 'tenant' },
+          OPERATOR: { 'practice.read': 'tenant', 'practice.create': 'own' },
+          MEMBER: { 'practice.read': 'own' },
+        }),
+      'POST /roles': () => ({ status: 201, body: { success: true, data: { id: 'r2' } } }),
+      [`POST /members/${GIULIA}/custom-role`]: () => ok({ customRoleId: ROLE }),
+    });
+    openAt('/persone');
+    // Offered only to people whose role is the base of the custom role.
+    const pick = await screen.findByLabelText('Ruolo personalizzato di giulia@coop.it');
+    expect(screen.queryByLabelText('Ruolo personalizzato di ex@coop.it')).toBeNull();
+    await userEvent.selectOptions(pick, ROLE);
+    await waitFor(() =>
+      expect(posted(`/members/${GIULIA}/custom-role`)[0]?.body).toEqual({ roleId: ROLE }),
+    );
+
+    // The new role offers only the permissions of its base, narrowed when asked.
+    await userEvent.type(screen.getByLabelText('Nome'), 'Accoglienza');
+    expect(screen.queryByText('Gestire persone e ruoli')).toBeNull();
+    await userEvent.click(screen.getByLabelText('Vedere le pratiche'));
+    await userEvent.selectOptions(screen.getByLabelText('Ambito di Vedere le pratiche'), 'own');
+    await userEvent.click(screen.getByLabelText('Creare pratiche'));
+    await userEvent.click(screen.getByRole('button', { name: 'Crea il ruolo' }));
+    await waitFor(() =>
+      expect(posted('/roles')[0]?.body).toEqual({
+        name: 'Accoglienza',
+        baseRole: 'OPERATOR',
+        permissions: { 'practice.read': 'own', 'practice.create': 'own' },
       }),
     );
   });

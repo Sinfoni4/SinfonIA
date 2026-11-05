@@ -132,7 +132,13 @@ describe('compliance Telegram commands', () => {
 
   it('lets members list only their own deadlines and not manage them', async () => {
     const complianceService = fakeService();
-    const ctx = { complianceService, tenantId: 't', userId: 'u-member', role: 'MEMBER' as const };
+    const ctx = {
+      complianceService,
+      tenantId: 't',
+      userId: 'u-member',
+      role: 'MEMBER' as const,
+      customPermissions: null,
+    };
 
     const list = await executeComplianceCommand({ type: 'LIST_DEADLINES' }, ctx);
     expect(list).toContain('DURC cooperativa');
@@ -151,7 +157,13 @@ describe('compliance Telegram commands', () => {
 
   it('lets operators create and close deadlines', async () => {
     const complianceService = fakeService();
-    const ctx = { complianceService, tenantId: 't', userId: 'u-op', role: 'OPERATOR' as const };
+    const ctx = {
+      complianceService,
+      tenantId: 't',
+      userId: 'u-op',
+      role: 'OPERATOR' as const,
+      customPermissions: null,
+    };
 
     const created = await executeComplianceCommand(
       {

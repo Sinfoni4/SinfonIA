@@ -208,7 +208,12 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
         let failureError: unknown;
 
         if (normalized.action === 'create_practice') {
-          const executorCtx = { tenantId: auth.tenantId, userId: auth.userId, role: auth.role };
+          const executorCtx = {
+            tenantId: auth.tenantId,
+            userId: auth.userId,
+            role: auth.role,
+            customPermissions: auth.customPermissions,
+          };
           const createCmd = {
             action: 'create_practice',
             data: { artistName: normalized.artistName },
@@ -240,6 +245,7 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
             tenantId: auth.tenantId,
             userId: auth.userId,
             role: auth.role,
+            customPermissions: auth.customPermissions,
           };
           const result = await deps.executorService.execute(resolved, executorCtx);
           if (result.success) {
