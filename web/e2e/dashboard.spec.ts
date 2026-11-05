@@ -87,6 +87,12 @@ test('fits the screen without horizontal scrolling on every main page', async ()
     'verifica',
     'deleghe',
     'impostazioni',
+    'persone',
+    'attivita',
+    'assistenza',
+    'export',
+    'profilo',
+    'pratiche/nuova',
   ]) {
     await page.goto(`./${path}`);
     await expect(page.locator('main h1')).toBeVisible();
