@@ -82,7 +82,7 @@ describe('practice HTTP API (Phase 2B)', () => {
       const tenantRepo = new TenantRepository(prisma);
       const userRepo = new UserRepository(prisma);
 
-      const tenant = await tenantRepo.createTenant({ name: 't-api-2b' });
+      const tenant = await tenantRepo.createTenant({ name: 't-api-2b', module: 'music' });
       const admin = await userRepo.createUser(tenant.id, {
         email: 'admin@api2b.local',
         role: 'ADMIN',

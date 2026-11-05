@@ -204,7 +204,7 @@ function NewDeadlineForm() {
         maxLength={200}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="Es. DURC cooperativa"
+        placeholder="Es. DURC annuale"
       />
       <label htmlFor="due">Data di scadenza</label>
       <input id="due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />

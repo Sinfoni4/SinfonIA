@@ -24,6 +24,7 @@ async function main() {
       const tenant = await prisma.tenant.create({
         data: {
           name: `Cooperativa Sintetica ${t}`,
+          module: 'music',
           schedulerEnabled: true,
           schedulerFrequency: 'monthly',
           schedulerTasks: [{ type: 'EXPORT_PRACTICES', frequency: 'monthly' }],

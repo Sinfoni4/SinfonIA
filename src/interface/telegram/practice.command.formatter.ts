@@ -20,19 +20,19 @@ function shortDate(date: Date): string {
 export function formatPracticeCommandResult(result: PracticeCommandResult): string {
   switch (result.type) {
     case 'created':
-      return `🎵 Pratica creata: ${result.practice.name}`;
+      return `📋 Pratica creata: ${result.practice.name}`;
 
     case 'list': {
       if (result.practices.length === 0) {
-        return '🎵 Nessuna pratica trovata';
+        return '📋 Nessuna pratica trovata';
       }
 
       const list = result.practices.map((practice) => `- ${practice.name}`).join('\n');
-      return `🎵 Pratiche:\n${list}`;
+      return `📋 Pratiche:\n${list}`;
     }
 
     case 'status':
-      return `🎵 Stato pratica ${result.practice.name}: ${result.practice.status}`;
+      return `📋 Stato pratica ${result.practice.name}: ${result.practice.status}`;
 
     case 'confirm_delete':
       return (

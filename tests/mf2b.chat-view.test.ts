@@ -95,7 +95,9 @@ describe.runIf(Boolean(DATABASE_URL))('chat default view and explicit requests (
   beforeAll(async () => {
     prisma = createPrismaClient(DATABASE_URL!);
     await prisma.$connect();
-    tenantId = (await new TenantRepository(prisma).createTenant({ name: `mf2b-${run}` })).id;
+    tenantId = (
+      await new TenantRepository(prisma).createTenant({ name: `mf2b-${run}`, module: 'music' })
+    ).id;
     const repo = new UserRepository(prisma);
     for (const [who, role] of [
       ['admin', 'ADMIN'],
@@ -232,7 +234,9 @@ describe.runIf(Boolean(DATABASE_URL))('chat default view and explicit requests (
       practices.executeCommand(confirm, { tenantId, userId: users.operator, role: 'MEMBER' }),
     ).rejects.toThrow(/PERMISSION_DENIED/);
     // Another organization never reaches the practice.
-    const other = (await new TenantRepository(prisma).createTenant({ name: `mf2b-x-${run}` })).id;
+    const other = (
+      await new TenantRepository(prisma).createTenant({ name: `mf2b-x-${run}`, module: 'music' })
+    ).id;
     await expect(
       practices.executeCommand(confirm, { tenantId: other, userId: users.operator, role: 'ADMIN' }),
     ).rejects.toThrow(/not found/i);

@@ -56,8 +56,8 @@ describe.runIf(Boolean(DATABASE_URL))('MF4 memberships', () => {
     prisma = createPrismaClient(DATABASE_URL!);
     await prisma.$connect();
     const tenants = new TenantRepository(prisma);
-    tenantA = await tenants.createTenant({ name: `Cooperativa A ${run}` });
-    tenantB = await tenants.createTenant({ name: `Cooperativa B ${run}` });
+    tenantA = await tenants.createTenant({ name: `Cooperativa A ${run}`, module: 'music' });
+    tenantB = await tenants.createTenant({ name: `Cooperativa B ${run}`, module: 'music' });
     await registerInviteCode(prisma, inviteB, tenantB.id);
     // Legacy account in A, made an ADMIN there.
     userId = (await new UserRepository(prisma).ensureTelegramUser(tenantA.id, telegramId)).id;

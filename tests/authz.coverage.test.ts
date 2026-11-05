@@ -129,8 +129,8 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
     await prisma.$connect();
     const tenants = new TenantRepository(prisma);
     const users = new UserRepository(prisma);
-    const tenantA = await tenants.createTenant({ name: `authz-cov-a-${run}` });
-    const tenantB = await tenants.createTenant({ name: `authz-cov-b-${run}` });
+    const tenantA = await tenants.createTenant({ name: `authz-cov-a-${run}`, module: 'music' });
+    const tenantB = await tenants.createTenant({ name: `authz-cov-b-${run}`, module: 'music' });
     const adminA = await users.createUser(tenantA.id, {
       email: `cov-a-${run}@authz.local`,
       role: 'ADMIN',

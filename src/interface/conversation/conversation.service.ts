@@ -277,7 +277,7 @@ Puoi:
 
 Prova a scrivere:
 "valida la pratica di Mario Rossi"
-"scadenze" oppure "nuova scadenza durc 31/12/2026 DURC cooperativa"`;
+"scadenze" oppure "nuova scadenza durc 31/12/2026 DURC annuale"`;
   }
 
   return `👋 Ciao! Ti aiuto a gestire le tue pratiche.
@@ -427,7 +427,7 @@ export class ConversationService {
     } catch (err: unknown) {
       if (err instanceof TenantNotLinkedError) {
         await reply(
-          'Il tuo account non è ancora collegato a una cooperativa.\nScrivi `start <codice invito>`.',
+          'Il tuo account non è ancora collegato a nessuna organizzazione.\nScrivi `start <codice invito>`.',
         );
         return;
       }

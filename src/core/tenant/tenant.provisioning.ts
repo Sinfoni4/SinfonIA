@@ -48,7 +48,7 @@ export async function provisionTenant(
 
     const tenant = await tenantRepo.createTenant({
       name: input.name,
-      module: input.module ?? 'music',
+      module: input.module ?? 'generic',
       integrationType: input.integration?.type ?? 'none',
       schedulerEnabled: input.scheduler?.enabled ?? false,
       schedulerFrequency: input.scheduler?.frequency ?? null,

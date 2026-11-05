@@ -17,7 +17,7 @@ function readArg(name: string): string | undefined {
 const name = readArg('name')?.trim();
 if (!name) {
   console.error(
-    'Usage: npm run tenant:provision -- --name "Cooperativa" [--module music] [--integration none|external] [--scheduler] [--frequency daily|weekly|monthly] [--admin-email admin@example.com] [--admin-telegram-id 123456789]',
+    'Usage: npm run tenant:provision -- --name "Cooperativa" [--module generic|music|agri] [--integration none|external] [--scheduler] [--frequency daily|weekly|monthly] [--admin-email admin@example.com] [--admin-telegram-id 123456789]',
   );
   process.exit(1);
 }
@@ -34,7 +34,7 @@ const prisma = createPrismaClient(config.DATABASE_URL);
 try {
   const result = await provisionTenant(prisma, {
     name,
-    module: readArg('module') ?? 'music',
+    module: readArg('module') ?? 'generic',
     integration: {
       type: readArg('integration') === 'external' ? 'external' : 'none',
     },

@@ -5,7 +5,9 @@
  * - development login: the 6-digit code is shown on screen (no email is sent);
  * - Telegram and WhatsApp off, attachments in .runtime/storage-demo, its own process lock, so it
  *   runs next to staging;
- * - a demo organization with an ADMIN account and some practices, created on the first run.
+ * - a demo organization with an ADMIN account and some practices, created on the first run;
+ * - the pilot scenario (scripts/demo/pilot-seed.ts): an agricultural network, its companies and a
+ *   consultant with a delegation, with one account for each point of view.
  *
  * It builds the dashboard first (web/dist). Ctrl+C stops it.
  */
@@ -35,19 +37,26 @@ async function seed(databaseUrl: string): Promise<void> {
   const { PracticeApplicationService } =
     await import('../../src/core/practice/practice.application.service.js');
   const { LocalStorageService } = await import('../../src/data/storage/storage.service.js');
+  const { seedPilotScenario } = await import('./pilot-seed.js');
 
   const prisma = createPrismaClient(databaseUrl);
   try {
+    const practices = new PracticeApplicationService(prisma, {
+      storageService: new LocalStorageService(STORAGE),
+    });
+    if ((await seedPilotScenario(prisma, practices)).created) {
+      console.log('Dati demo del pilota creati (Rete Agricola Demo).');
+    }
     if (await prisma.user.findFirst({ where: { email: EMAIL }, select: { id: true } })) return;
-    const tenant = await new TenantRepository(prisma).createTenant({ name: 'Cooperativa Demo' });
+    const tenant = await new TenantRepository(prisma).createTenant({
+      name: 'Cooperativa Demo',
+      module: 'music',
+    });
     const users = new UserRepository(prisma);
     const admin = await users.createUser(tenant.id, { email: EMAIL, role: 'ADMIN' });
     const member = await users.createUser(tenant.id, {
       email: 'collaboratore.demo@sinfonia.test',
       role: 'MEMBER',
-    });
-    const practices = new PracticeApplicationService(prisma, {
-      storageService: new LocalStorageService(STORAGE),
     });
     const withReceipt = await practices.createPractice({
       tenantId: tenant.id,
@@ -91,6 +100,7 @@ async function main() {
   }
 
   await seed(databaseUrl);
+  const { PILOT_ACCOUNTS } = await import('./pilot-seed.js');
 
   const app = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     stdio: 'inherit',
@@ -115,7 +125,11 @@ async function main() {
     },
   });
   console.log(`\nDashboard demo: http://localhost:${PORT}/app/`);
-  console.log(`Accesso con ${EMAIL}: il codice compare sullo schermo. Ctrl+C per fermare.\n`);
+  console.log(`Accesso con ${EMAIL}: il codice compare sullo schermo. Ctrl+C per fermare.`);
+  console.log('Scenario del pilota (agricoltura):');
+  console.log(`  rete        ${PILOT_ACCOUNTS.network}`);
+  console.log(`  azienda     ${PILOT_ACCOUNTS.company}`);
+  console.log(`  consulente  ${PILOT_ACCOUNTS.consultant}\n`);
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => app.kill(signal));
   }

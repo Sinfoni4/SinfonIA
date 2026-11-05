@@ -258,4 +258,55 @@ describe('practices (FE2)', () => {
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/attachments'));
     expect(post?.body).toEqual({ hint: 'ricevuta', file: 'ricevuta.pdf' });
   });
+  it('shows the fields of the module with their labels, and the step', async () => {
+    api('ADMIN', {
+      [`GET /practices/${P1}`]: () =>
+        ok({
+          ...practice({
+            kind: 'agri',
+            status: 'SUBMITTED',
+            subState: 'under_review',
+            fields: { dueDate: '2027-01-31', procedure: 'csr', unknown: 'x' },
+          }),
+          allowedTransitions: [],
+        }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+      'GET /modules/current': () =>
+        ok({
+          id: 'agri',
+          label: 'Agricoltura',
+          description: '',
+          defaultKind: 'agri',
+          deadlineCategories: [],
+          practiceTypes: [
+            {
+              kind: 'agri',
+              label: 'Agricola',
+              typeLabel: 'agricultural practice',
+              fields: [
+                {
+                  key: 'procedure',
+                  label: 'Procedimento',
+                  type: 'choice',
+                  options: [{ value: 'csr', label: 'Bando di sviluppo rurale' }],
+                },
+                { key: 'campaignYear', label: 'Anno della campagna', type: 'number' },
+                { key: 'dueDate', label: 'Termine di presentazione', type: 'date' },
+              ],
+              subStates: [{ key: 'under_review', label: 'In istruttoria', during: ['SUBMITTED'] }],
+              expectedDocuments: [],
+            },
+          ],
+        }),
+    });
+    openAt(`/pratiche/${P1}`);
+    const facts = await screen.findByText('Procedimento');
+    const list = facts.closest('dl')!;
+    expect(within(list).getByText('Bando di sviluppo rurale')).toBeTruthy();
+    expect(within(list).getByText('31/01/2027')).toBeTruthy();
+    expect(within(list).getByText('In istruttoria')).toBeTruthy();
+    // Not given, or not declared by the module: not shown.
+    expect(within(list).queryByText('Anno della campagna')).toBeNull();
+    expect(within(list).queryByText('x')).toBeNull();
+  });
 });

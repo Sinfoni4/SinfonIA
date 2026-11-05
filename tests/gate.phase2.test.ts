@@ -40,6 +40,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
 
         const tenant = await tenantRepo.createTenant({
           name: 'gate-restart-tenant',
+          module: 'music',
           schedulerEnabled: true,
           schedulerFrequency: 'monthly',
         });
@@ -114,6 +115,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
 
         const tenant = await tenantRepo.createTenant({
           name: 'gate-dual-worker-tenant',
+          module: 'music',
           schedulerEnabled: true,
           schedulerFrequency: 'daily',
         });
@@ -202,7 +204,7 @@ describe('Phase 2 Gate: Verification and Resilience', () => {
       const tenantRepo = new TenantRepository(prisma);
       const userRepo = new UserRepository(prisma);
 
-      const tenant = await tenantRepo.createTenant({ name: 'gate-parity-tenant' });
+      const tenant = await tenantRepo.createTenant({ name: 'gate-parity-tenant', module: 'music' });
       const user = await userRepo.createUser(tenant.id, {
         email: 'user@gate-parity.local',
         role: 'ADMIN',

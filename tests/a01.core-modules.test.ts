@@ -73,7 +73,6 @@ describe('A01/A02: the Core and the modules', () => {
       ['core/modules/module.contract.ts', 2], // the list of module ids
       ['core/practice/practice.payload.ts', 4], // stored payload types and legacy `artistName`
       ['core/practice/practice.commands.ts', 2], // comment
-      ['core/tenant/tenant.provisioning.ts', 1], // default module of old seeds
     ]);
     const found = new Map<string, number>();
     for (const file of filesUnder(path.join(SRC, 'core'))) {
@@ -241,6 +240,15 @@ describe.runIf(Boolean(DATABASE_URL))('A03 with PostgreSQL', () => {
   });
   afterAll(async () => {
     await prisma?.$disconnect();
+  });
+
+  it('gives the generic module to an organization created without a sector', async () => {
+    const viaApp = await new TenantRepository(prisma).createTenant({ name: `a01-${randomUUID()}` });
+    const viaDb = await prisma.tenant.create({
+      data: { name: `a01-db-${randomUUID()}` },
+      select: { module: true },
+    });
+    expect([viaApp.module, viaDb.module]).toEqual(['generic', 'generic']);
   });
 
   it('accepts only known function names in the database', async () => {

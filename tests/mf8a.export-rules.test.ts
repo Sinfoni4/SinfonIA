@@ -92,7 +92,9 @@ describe.runIf(Boolean(DATABASE_URL))('export rules D5 and D5b', () => {
   beforeAll(async () => {
     prisma = createPrismaClient(DATABASE_URL!);
     await prisma.$connect();
-    tenantId = (await new TenantRepository(prisma).createTenant({ name: `mf8a-${run}` })).id;
+    tenantId = (
+      await new TenantRepository(prisma).createTenant({ name: `mf8a-${run}`, module: 'music' })
+    ).id;
     const repo = new UserRepository(prisma);
     const create = async (name: string, role: UserRole, telegramId?: string) =>
       (

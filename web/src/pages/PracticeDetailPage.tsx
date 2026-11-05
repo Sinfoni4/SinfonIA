@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState, type FormEvent } from 'react';
+import { Fragment, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { describeError, type Me } from '../api/client';
-import { type CurrentModule } from '../api/modules';
+import { type CurrentModule, shownFields } from '../api/modules';
 import {
   formatDate,
   formatSize,
@@ -82,6 +82,7 @@ export function PracticeDetailPage({ me }: { me: Me }) {
   const type = moduleQuery.data?.practiceTypes.find((t) => t.kind === p.kind);
   const steps = type?.subStates.filter((s) => s.during.includes(p.status)) ?? [];
   const currentStep = type?.subStates.find((s) => s.key === p.subState);
+  const fields = type ? shownFields(type, p.fields) : [];
   return (
     <>
       <p>
@@ -101,6 +102,12 @@ export function PracticeDetailPage({ me }: { me: Me }) {
               <dd>{usefulSummary(p)}</dd>
             </>
           )}
+          {fields.map((f) => (
+            <Fragment key={f.key}>
+              <dt>{f.label}</dt>
+              <dd>{f.value}</dd>
+            </Fragment>
+          ))}
           {currentStep && (
             <>
               <dt>Fase</dt>
