@@ -6,7 +6,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { CONSULTANT, login, openSection, unique } from './helpers';
+import { accessibilityProblems, CONSULTANT, login, openSection, unique } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -101,6 +101,31 @@ test('fits the screen without horizontal scrolling on every main page', async ()
     );
     expect(overflow, path || 'home').toBeLessThanOrEqual(0);
   }
+});
+
+test('meets the basic accessibility checks on every main page', async () => {
+  const found: Record<string, string[]> = {};
+  for (const path of [
+    '',
+    'pratiche',
+    'pratiche/nuova',
+    'bacheca',
+    'scadenze',
+    'verifica',
+    'deleghe',
+    'persone',
+    'attivita',
+    'assistenza',
+    'export',
+    'impostazioni',
+    'profilo',
+  ]) {
+    await page.goto(`./${path}`);
+    await expect(page.locator('main h1')).toBeVisible();
+    const problems = await accessibilityProblems(page);
+    if (problems.length > 0) found[path || 'home'] = problems;
+  }
+  expect(found).toEqual({});
 });
 
 test('gives a delegation to a consultant and revokes it', async () => {
