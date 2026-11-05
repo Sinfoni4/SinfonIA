@@ -5,7 +5,7 @@ import { BrowserRouter } from 'react-router';
 
 import { App } from './App';
 import { SessionProvider } from './session/session';
-import './styles.css';
+import './ui.css';
 
 // Answers are kept only in memory and only while the session lasts (§6 of the frontend plan).
 const queryClient = new QueryClient({

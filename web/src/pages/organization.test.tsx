@@ -226,7 +226,7 @@ describe('settings (P12)', () => {
       }),
     );
     expect(await screen.findByRole('status')).toBeTruthy();
-    expect(await screen.findByText('Cooperativa Nuova', { selector: '.org span' })).toBeTruthy();
+    expect(await screen.findByText('Cooperativa Nuova', { selector: 'header span' })).toBeTruthy();
     expect(screen.getByText(/30, 15, 7, 1 giorni prima/)).toBeTruthy();
   });
 
