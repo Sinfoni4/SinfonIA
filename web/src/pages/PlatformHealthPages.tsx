@@ -187,6 +187,14 @@ export function HealthPage() {
                           }`
                         : 'nessuno'}
                     </dd>
+                    <dt>Verifica del ripristino</dt>
+                    <dd>
+                      {h.backup.restoreCheck
+                        ? `${h.backup.restoreCheck.ok ? 'riuscita' : 'NON riuscita'} il ${formatDateTime(
+                            h.backup.restoreCheck.at,
+                          )} (backup del ${formatDateTime(h.backup.restoreCheck.backupAt)})`
+                        : 'mai fatta'}
+                    </dd>
                   </>
                 )}
               </dl>

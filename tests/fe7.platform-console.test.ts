@@ -401,7 +401,12 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       expect(Object.keys(extra.storage.disk ?? {}).sort()).toEqual(
         ['checkedAt', 'files', 'missingFiles', 'orphanFiles'].sort(),
       );
-      expect(extra.backup).toEqual({ configured: false, reachable: false, last: null });
+      expect(extra.backup).toEqual({
+        configured: false,
+        reachable: false,
+        last: null,
+        restoreCheck: null,
+      });
       expect(res.body).not.toMatch(/runtime|storage-|SinfonIA-backup/);
     });
 
