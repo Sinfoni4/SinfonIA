@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router';
 
 import { describeError, ROLE_LABELS, type Me } from '../api/client';
 import { NETWORK_TYPES } from '../api/organization';
@@ -9,6 +9,20 @@ import { useSession } from '../session/session';
 export function Layout({ me }: { me: Me }) {
   const { enter, enterPlatform, logout } = useSession();
   const [error, setError] = useState<string | null>(null);
+  // FE5: on a phone the sections fold behind «Menu»; a new page closes it.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+  // FE5: after a change of page, keyboard and screen readers start from the new content.
+  const main = useRef<HTMLElement>(null);
+  const firstPage = useRef(true);
+  useEffect(() => {
+    setMenuOpen(false);
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    main.current?.focus();
+  }, [pathname]);
   const current = me.organizations.find((o) => o.orgId === me.current.orgId);
   // MF9: the sections of a network (G5); the backend refuses them to other types anyway.
   const isNetwork = current?.type !== undefined && NETWORK_TYPES.includes(current.type);
@@ -24,6 +38,9 @@ export function Layout({ me }: { me: Me }) {
 
   return (
     <div className="shell">
+      <a href="#contenuto" className="skip-link">
+        Vai al contenuto
+      </a>
       <header className="topbar">
         <NavLink to="/" className="brand">
           SinfonIA
@@ -49,51 +66,62 @@ export function Layout({ me }: { me: Me }) {
           )}
           <span className="badge">{ROLE_LABELS[me.current.role]}</span>
         </div>
-        <nav aria-label="Sezioni">
-          <NavLink to="/pratiche">Pratiche</NavLink>
-          {me.current.role !== 'MEMBER' && <NavLink to="/bacheca">Bacheca</NavLink>}
-          <NavLink to="/scadenze">Scadenze</NavLink>
-          <NavLink to="/verifica">Da verificare</NavLink>
-          {me.current.role !== 'MEMBER' && <NavLink to="/assistenza">Assistenza</NavLink>}
-          <NavLink to="/export">Export</NavLink>
-          <NavLink to="/deleghe">Deleghe</NavLink>
-          {isNetwork && me.current.role !== 'MEMBER' && (
-            <NavLink to="/rete/statistiche">Statistiche</NavLink>
-          )}
-          {me.current.role === 'ADMIN' && (
-            <>
-              <NavLink to="/persone">Persone</NavLink>
-              {isNetwork && <NavLink to="/rete">Aderenti</NavLink>}
-              <NavLink to="/adesioni">Adesioni</NavLink>
-              <NavLink to="/attivita">Attività</NavLink>
-              <NavLink to="/impostazioni">Impostazioni</NavLink>
-            </>
-          )}
-        </nav>
-        <nav aria-label="Account">
-          {me.platform && (
-            <button
-              type="button"
-              className="link"
-              onClick={() =>
-                void enterPlatform().catch((err: unknown) => setError(describeError(err)))
-              }
-            >
-              Console
+        <button
+          type="button"
+          className="secondary menu-toggle"
+          aria-expanded={menuOpen}
+          aria-controls="main-menu"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? 'Chiudi' : 'Menu'}
+        </button>
+        <div id="main-menu" className={`menu ${menuOpen ? 'open' : ''}`}>
+          <nav aria-label="Sezioni">
+            <NavLink to="/pratiche">Pratiche</NavLink>
+            {me.current.role !== 'MEMBER' && <NavLink to="/bacheca">Bacheca</NavLink>}
+            <NavLink to="/scadenze">Scadenze</NavLink>
+            <NavLink to="/verifica">Da verificare</NavLink>
+            {me.current.role !== 'MEMBER' && <NavLink to="/assistenza">Assistenza</NavLink>}
+            <NavLink to="/export">Export</NavLink>
+            <NavLink to="/deleghe">Deleghe</NavLink>
+            {isNetwork && me.current.role !== 'MEMBER' && (
+              <NavLink to="/rete/statistiche">Statistiche</NavLink>
+            )}
+            {me.current.role === 'ADMIN' && (
+              <>
+                <NavLink to="/persone">Persone</NavLink>
+                {isNetwork && <NavLink to="/rete">Aderenti</NavLink>}
+                <NavLink to="/adesioni">Adesioni</NavLink>
+                <NavLink to="/attivita">Attività</NavLink>
+                <NavLink to="/impostazioni">Impostazioni</NavLink>
+              </>
+            )}
+          </nav>
+          <nav aria-label="Account">
+            {me.platform && (
+              <button
+                type="button"
+                className="link"
+                onClick={() =>
+                  void enterPlatform().catch((err: unknown) => setError(describeError(err)))
+                }
+              >
+                Console
+              </button>
+            )}
+            <NavLink to="/profilo">Profilo</NavLink>
+            <button type="button" className="link" onClick={() => void logout()}>
+              Esci
             </button>
-          )}
-          <NavLink to="/profilo">Profilo</NavLink>
-          <button type="button" className="link" onClick={() => void logout()}>
-            Esci
-          </button>
-        </nav>
+          </nav>
+        </div>
       </header>
       {error && (
         <p className="error banner" role="alert">
           {error}
         </p>
       )}
-      <main className="content">
+      <main className="content" id="contenuto" tabIndex={-1} ref={main}>
         <Outlet />
       </main>
     </div>
