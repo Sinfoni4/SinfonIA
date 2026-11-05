@@ -19,6 +19,7 @@ import {
 import { TelegramAdapter } from '../src/interface/telegram/telegram.adapter.js';
 import { formatTelegramResponse } from '../src/interface/telegram/telegram.formatter.js';
 
+import type { AITracer } from '../src/ai/tracing/ai.tracer.js';
 import type { Tenant } from '../src/core/tenant/tenant.store.js';
 
 const tenant = { id: 't-1', name: 'Cooperativa' } as Tenant;
@@ -137,8 +138,9 @@ describe('answers to a question of the AI', () => {
 });
 
 describe('the AI adapter tells when it asked a question', () => {
-  const adapter = (llmAnswer: object) =>
+  const adapter = (llmAnswer: object, tracer?: Pick<AITracer, 'record'>) =>
     new TelegramAdapter({
+      ...(tracer ? { tracer } : {}),
       interpreter: new InterpreterService({
         complete: () => Promise.resolve(JSON.stringify(llmAnswer)),
       }),
@@ -176,5 +178,37 @@ describe('the AI adapter tells when it asked a question', () => {
     }).answer('Crea nuova pratica', identity);
     expect(answer.text).toContain('Qual è il nome della pratica');
     expect(answer.clarification?.options).toEqual(['Crea nuova pratica']);
+  });
+
+  it('records the call to the AI from the chat, without its text (S08)', async () => {
+    const record = vi.fn();
+    await adapter(
+      {
+        schemaVersion: 1,
+        action: 'clarification_required',
+        confidence: 0.4,
+        filters: { practiceId: null, status: null, name: null },
+        artistName: null,
+        nextState: null,
+        clarification: {
+          question: 'Qual è il nome della pratica?',
+          reason: 'MISSING_NAME',
+          options: [],
+          candidatePracticeIds: [],
+        },
+      },
+      { record },
+    ).answer('Crea pratica segreta Mario Rossi', identity);
+    expect(record).toHaveBeenCalledTimes(1);
+    const trace = record.mock.calls[0][0] as Record<string, unknown>;
+    expect(trace).toMatchObject({
+      tenantId: 't-1',
+      userId: 'u-1',
+      outcome: 'AMBIGUOUS',
+      action: 'clarification_required',
+    });
+    expect(typeof trace.provider).toBe('string');
+    expect(typeof trace.model).toBe('string');
+    expect(JSON.stringify(trace)).not.toContain('Mario Rossi');
   });
 });

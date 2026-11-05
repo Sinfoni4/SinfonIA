@@ -108,8 +108,15 @@ describe('practice application service', () => {
       expect(exported.count).toBeGreaterThanOrEqual(1);
       expect(exported.csv).toContain('Serata live');
 
-      const deleted = await service.executeCommand(
+      // S05: the command asks; the confirmation deletes, after checking the practice again.
+      const asked = await service.executeCommand(
         { type: 'DELETE_PRACTICE', payload: { name: 'Serata live' } },
+        actor,
+      );
+      expect(asked.type).toBe('confirm_delete');
+      if (asked.type !== 'confirm_delete') throw new Error('expected a confirmation');
+      const deleted = await service.executeCommand(
+        { type: 'CONFIRM_DELETE', payload: { practiceId: asked.practice.id } },
         actor,
       );
       expect(deleted.type).toBe('deleted');

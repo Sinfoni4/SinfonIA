@@ -13,7 +13,7 @@ import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
 import { readPracticePayload } from './practice.payload.js';
 
-import type { ChatTransition, PracticeCommand } from './practice.commands.js';
+import type { PracticeCommand } from './practice.commands.js';
 import type { PracticeExportFilter } from './practice.export.js';
 import type { PracticeKind, PracticePayloadKind } from './practice.payload.js';
 import type { DocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
@@ -38,6 +38,7 @@ const COMMAND_PERMISSIONS: Record<PracticeCommand['type'], Permission> = {
   GET_ORG_PRACTICE_STATUS: 'practice.read',
   TRANSITION_ORG_PRACTICE: 'practice.transition',
   CONFIRM_TRANSITION: 'practice.transition',
+  CONFIRM_DELETE: 'practice.delete',
 };
 
 /** Practices per page of the organization list in chat. */
@@ -107,7 +108,9 @@ export type PracticeCommandResult =
   /** The caller's permission covers only their own practices. */
   | { type: 'org_view_denied' }
   /** The practice belongs to someone else: the person confirms before the transition. */
-  | { type: 'confirm_transition'; practice: PracticeView; nextState: ChatTransition }
+  | { type: 'confirm_transition'; practice: PracticeView; nextState: PracticeState }
+  /** S05: a deletion is asked before it is done; «sì» confirms it. */
+  | { type: 'confirm_delete'; practice: PracticeView }
   | { type: 'transitioned'; practice: PracticeView };
 
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -640,6 +643,17 @@ export class PracticeApplicationService {
           return { type: 'not_found', name: command.payload.name };
         }
 
+        // S05: never deleted by the command itself: the person confirms first.
+        return { type: 'confirm_delete', practice };
+      }
+
+      case 'CONFIRM_DELETE': {
+        // Checked again at confirmation: own practice (the permission is "own" for every role).
+        const practice = await this.getPractice({
+          tenantId: actor.tenantId,
+          practiceId: command.payload.practiceId,
+          userId: scopedUserId(grant) ?? actor.userId,
+        });
         return {
           type: 'deleted',
           practice: await this.deletePractice({

@@ -48,6 +48,7 @@ describe('ai executor', () => {
       },
       {
         tenantId: '550e8400-e29b-41d4-a716-446655440001',
+        role: 'ADMIN',
         userId: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
       },
     );
@@ -67,12 +68,13 @@ describe('ai executor', () => {
 
     const res = await executor.execute(
       { action: 'unknown_action', data: {} },
-      { tenantId: '550e8400-e29b-41d4-a716-446655440001', userId: null },
+      { tenantId: '550e8400-e29b-41d4-a716-446655440001', userId: null, role: 'ADMIN' },
     );
 
+    // S03: fail closed, an action without a known permission is refused before anything else.
     expect(res.success).toBe(false);
     if (!res.success) {
-      expect(res.error.code).toBe('UNSUPPORTED_ACTION');
+      expect(res.error.code).toBe('FORBIDDEN');
     }
   });
 
@@ -81,7 +83,7 @@ describe('ai executor', () => {
 
     const res = await executor.execute(
       { action: 'transition_practice', data: { practiceId: 'not-a-uuid', nextState: 'NOPE' } },
-      { tenantId: '550e8400-e29b-41d4-a716-446655440001', userId: null },
+      { tenantId: '550e8400-e29b-41d4-a716-446655440001', userId: null, role: 'ADMIN' },
     );
 
     expect(res.success).toBe(false);

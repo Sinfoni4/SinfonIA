@@ -1,9 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
+import { LLMDisabledError } from '../../ai/providers/disabled.provider.js';
 import { enforceIdPriority } from '../../ai/validation/pre-execution.validator.js';
 import { can } from '../../core/authz/authorization.service.js';
 import {
   InMemoryConversationMemory,
   type ConversationMemory,
 } from '../conversation/conversation.memory.js';
+
+import { FINAL_STATES, TRANSITION_VERBS } from './practice.command.formatter.js';
 
 import type { TelegramIdentity } from './telegram.bot.js';
 import type { PracticeContext } from '../../ai/context/context.service.js';
@@ -15,21 +20,37 @@ import type {
   ExecutorResult,
 } from '../../ai/execution/executor.types.js';
 import type { InterpreterService } from '../../ai/interpreter/interpreter.service.js';
+import type { InterpreterDetailsResult } from '../../ai/interpreter/interpreter.service.js';
 import type {
   InterpreterContext,
   InterpreterOutput,
 } from '../../ai/interpreter/interpreter.types.js';
 import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
+import type { AITraceOutcome, AITracer } from '../../ai/tracing/ai.tracer.js';
 import type {
   validateBeforeDecision,
   validateResolvedCommand,
 } from '../../ai/validation/pre-execution.validator.js';
+import type { PracticeState } from '../../core/types/workflow.types.js';
 import type { ChatAnswer } from '../conversation/conversation.service.js';
+
+/** What a chat answer records about its call to the AI (S08). */
+type ChatTrace = {
+  meta: InterpreterDetailsResult['traceMeta'] | null;
+  action: string | null;
+  outcome: AITraceOutcome;
+};
 
 export class TelegramAdapter {
   constructor(
     private readonly deps: {
-      interpreter: Pick<InterpreterService, 'interpret'>;
+      interpreter: Pick<InterpreterService, 'interpret'> &
+        Partial<Pick<InterpreterService, 'interpretWithDetails'>>;
+      /**
+       * S08: the AI calls from the chat are traced like those of the API (provider, model, tokens,
+       * time, outcome; never the text), for the console and the measure of consumption.
+       */
+      tracer?: Pick<AITracer, 'record'>;
       normalizer: Pick<NormalizerService, 'normalize'>;
       decisionEngine: Pick<DecisionEngine, 'resolveCommand'>;
       validateBeforeDecision: typeof validateBeforeDecision;
@@ -58,6 +79,41 @@ export class TelegramAdapter {
 
   /** The reply, saying when it is a question back (the conversation then awaits the answer). */
   async answer(input: string, identity: TelegramIdentity): Promise<ChatAnswer> {
+    const tracer = this.deps.tracer;
+    if (!tracer) return this.answerAndTrace(input, identity, null);
+    const trace: ChatTrace = { meta: null, action: null, outcome: 'ERROR' };
+    const started = performance.now();
+    try {
+      const answer = await this.answerAndTrace(input, identity, trace);
+      trace.outcome = answer.clarification ? 'AMBIGUOUS' : 'SUCCESS';
+      return answer;
+    } catch (err: unknown) {
+      trace.outcome = err instanceof LLMDisabledError ? 'LLM_DISABLED' : 'ERROR';
+      throw err;
+    } finally {
+      // Only when the AI was actually asked: a reply without a call to the provider is not a use.
+      if (trace.meta) {
+        tracer.record({
+          requestId: `chat_${randomUUID()}`,
+          tenantId: identity.tenantId,
+          userId: identity.userId,
+          model: trace.meta.model,
+          provider: trace.meta.provider,
+          ...(trace.meta.tokens ? { tokens: trace.meta.tokens } : {}),
+          latencyMs: Math.round(performance.now() - started),
+          outcome: trace.outcome,
+          action: trace.action,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  private async answerAndTrace(
+    input: string,
+    identity: TelegramIdentity,
+    trace: ChatTrace | null,
+  ): Promise<ChatAnswer> {
     const { tenantId, userId: execUserId, role } = identity;
     const ctx: InterpreterContext = { tenantId, userId: execUserId, practices: [] };
 
@@ -73,8 +129,16 @@ export class TelegramAdapter {
     );
     ctx.practices = context.practices;
 
-    const interpreted: InterpreterOutput = await this.deps.interpreter.interpret(input, ctx);
+    let interpreted: InterpreterOutput;
+    if (trace && this.deps.interpreter.interpretWithDetails) {
+      const details = await this.deps.interpreter.interpretWithDetails(input, ctx);
+      trace.meta = details.traceMeta;
+      interpreted = details.output;
+    } else {
+      interpreted = await this.deps.interpreter.interpret(input, ctx);
+    }
     const normalized = enforceIdPriority(this.deps.normalizer.normalize(interpreted));
+    if (trace) trace.action = normalized.action;
 
     const canAdvance = can(role, 'practice.transition');
     if (normalized.action === 'transition_practice' && !canAdvance) {
@@ -98,6 +162,23 @@ export class TelegramAdapter {
         practices: context.practices,
       });
       this.deps.validateResolvedCommand(command, context.practices);
+    }
+
+    // S02: the AI never changes the state of a practice by itself: it proposes the change and
+    // the person confirms it (the confirmation runs the normal command, with every check).
+    if (command.action === 'transition_practice') {
+      const data = command.data as { practiceId?: unknown; nextState?: unknown };
+      const practice = context.practices.find((p) => p.id === data.practiceId);
+      const nextState = data.nextState as PracticeState;
+      if (practice && typeof data.practiceId === 'string' && nextState in TRANSITION_VERBS) {
+        return {
+          text:
+            `❓ Vuoi ${TRANSITION_VERBS[nextState]} la pratica «${practice.name}»?` +
+            (FINAL_STATES.has(nextState) ? ' Dopo non si potrà più cambiare stato.' : '') +
+            ' Rispondi «sì» per confermare.',
+          confirmTransition: { practiceId: data.practiceId, nextState },
+        };
+      }
     }
 
     const execCtx: ExecutorContext = { tenantId, userId: execUserId, role };

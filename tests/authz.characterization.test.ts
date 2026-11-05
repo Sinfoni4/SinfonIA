@@ -365,7 +365,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
       expect(admin.replies[1]).not.toContain(seed.names.member);
     });
 
-    it('lets any role delete its own practices immediately, without confirmation (C3 pending)', async () => {
+    it('lets any role delete its own practices, only after «sì» (S05; C3 rules pending)', async () => {
       const member = chat('member', 'MEMBER');
       const name = `Da eliminare ${run}`;
       await practiceService.createPractice({
@@ -377,7 +377,9 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
       await member.say(`elimina pratica ${seed.names.admin}`);
       expect(member.replies[0]).toContain('Nessuna pratica trovata');
       await member.say(`elimina pratica ${name}`);
-      expect(member.replies[1]).toContain(`Pratica eliminata: ${name}`);
+      expect(member.replies[1]).toContain(`Vuoi davvero eliminare la pratica ${name}?`);
+      await member.say('sì');
+      expect(member.replies[2]).toContain(`Pratica eliminata: ${name}`);
     });
 
     it('lets MEMBER list own deadlines but not create them', async () => {
@@ -406,7 +408,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
       });
     }
 
-    it('refuses an AI transition to a MEMBER and executes it for an OPERATOR on own practices', async () => {
+    it('refuses an AI transition to a MEMBER and only proposes it to an OPERATOR (S02)', async () => {
       const operatorPractice = await practiceService.createPractice({
         tenantId: seed.tenantId,
         userId: seed.users.operator,
@@ -429,13 +431,22 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
           role: 'MEMBER',
         }),
       ).rejects.toThrow('PERMISSION_DENIED:VALIDATED');
-      await expect(
-        adapter().handleMessage(`valida ${operatorPractice.id}`, {
-          tenantId: seed.tenantId,
-          userId: seed.users.operator,
-          role: 'OPERATOR',
-        }),
-      ).resolves.toBe('ok');
+      // The AI proposes; nothing changes until the person confirms in the chat.
+      const answer = await adapter().answer(`valida ${operatorPractice.id}`, {
+        tenantId: seed.tenantId,
+        userId: seed.users.operator,
+        role: 'OPERATOR',
+      });
+      expect(answer.confirmTransition).toEqual({
+        practiceId: operatorPractice.id,
+        nextState: 'VALIDATED',
+      });
+      expect(answer.text).toContain(`Vuoi validare la pratica «Pratica AI ${run}»?`);
+      const unchanged = await practiceService.getPractice({
+        tenantId: seed.tenantId,
+        practiceId: operatorPractice.id,
+      });
+      expect(unchanged.status).toBe('CREATED');
     });
   });
 });

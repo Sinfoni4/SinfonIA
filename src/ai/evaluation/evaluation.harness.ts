@@ -204,6 +204,7 @@ export class EvaluationHarness {
         } else {
           const execution = await executor.execute(resolved, {
             tenantId: TENANT_ID,
+            role: 'ADMIN',
             userId: USER_ID,
           });
           result.isCorrect = execution.success;

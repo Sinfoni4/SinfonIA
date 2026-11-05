@@ -1,10 +1,17 @@
 import type { PracticeCommandResult } from '../../core/practice/practice.application.service.js';
-import type { ChatTransition } from '../../core/practice/practice.commands.js';
+import type { PracticeState } from '../../core/types/workflow.types.js';
 
-const TRANSITION_LABELS: Record<ChatTransition, string> = {
+/** The verb of a transition, as in «vuoi davvero validarla?». */
+export const TRANSITION_VERBS: Record<PracticeState, string> = {
+  CREATED: 'riportare a «creata»',
   VALIDATED: 'validare',
+  SUBMITTED: 'segnare come inviata',
+  FAILED: 'segnare come non riuscita',
   COMPLETED: 'completare',
 };
+
+/** States that cannot be changed any more. */
+export const FINAL_STATES: ReadonlySet<PracticeState> = new Set(['COMPLETED', 'FAILED']);
 
 function shortDate(date: Date): string {
   return date.toISOString().slice(0, 10).split('-').reverse().join('/');
@@ -26,6 +33,13 @@ export function formatPracticeCommandResult(result: PracticeCommandResult): stri
 
     case 'status':
       return `🎵 Stato pratica ${result.practice.name}: ${result.practice.status}`;
+
+    case 'confirm_delete':
+      return (
+        `🗑️ Vuoi davvero eliminare la pratica ${result.practice.name}? ` +
+        "L'eliminazione non si può annullare. Rispondi «sì» per confermare, qualsiasi altra " +
+        'risposta annulla.'
+      );
 
     case 'deleted':
       return `🗑️ Pratica eliminata: ${result.practice.name}`;
@@ -85,7 +99,7 @@ export function formatPracticeCommandResult(result: PracticeCommandResult): stri
     case 'confirm_transition':
       return (
         `⚠️ La pratica ${result.practice.name} (${result.practice.status}) non è tua.\n` +
-        `Vuoi davvero ${TRANSITION_LABELS[result.nextState]}la? ` +
+        `Vuoi davvero ${TRANSITION_VERBS[result.nextState]} questa pratica? ` +
         'Rispondi «sì» per confermare, qualsiasi altra risposta annulla.'
       );
 

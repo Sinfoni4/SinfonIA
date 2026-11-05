@@ -44,9 +44,11 @@ export class ExecutorService {
       const parsedInput = ExecutorInputSchema.parse(input);
       const parsedCtx = ExecutorContextSchema.parse(ctx);
 
-      // The AI only proposes: an action the requester may not perform is never executed.
+      // The AI only proposes: an action the requester may not perform is never executed. S03:
+      // fail closed, so an action without a known permission is refused as well.
       const permission = ACTION_PERMISSIONS[parsedInput.action];
-      if (parsedCtx.role && permission && !can(parsedCtx.role, permission)) {
+      const needsPermission = parsedInput.action !== 'clarification_required';
+      if (needsPermission && (!permission || !can(parsedCtx.role, permission))) {
         return {
           success: false,
           error: { code: 'FORBIDDEN', message: `PERMISSION_DENIED: ${permission}` },
