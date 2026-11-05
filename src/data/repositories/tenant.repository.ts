@@ -43,7 +43,7 @@ export class TenantRepository {
       const row = await this.prisma.tenant.create({
         data: {
           name: data.name,
-          module: data.module ?? 'music',
+          module: data.module ?? 'generic',
           integrationType: data.integrationType ?? 'none',
           schedulerEnabled: data.schedulerEnabled ?? false,
           schedulerFrequency: data.schedulerFrequency ?? null,

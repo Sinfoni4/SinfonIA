@@ -19,8 +19,11 @@ describe('practice application service', () => {
       const userRepo = new UserRepository(prisma);
       const auditRepo = new AuditRepository(prisma);
 
-      const tenant = await tenantRepo.createTenant({ name: 't-service-create' });
-      const otherTenant = await tenantRepo.createTenant({ name: 't-service-other' });
+      const tenant = await tenantRepo.createTenant({ name: 't-service-create', module: 'music' });
+      const otherTenant = await tenantRepo.createTenant({
+        name: 't-service-other',
+        module: 'music',
+      });
       const user = await userRepo.createUser(tenant.id, {
         email: 'service@test.local',
         role: 'MEMBER',
@@ -71,7 +74,7 @@ describe('practice application service', () => {
     try {
       const tenantRepo = new TenantRepository(prisma);
       const userRepo = new UserRepository(prisma);
-      const tenant = await tenantRepo.createTenant({ name: 't-service-commands' });
+      const tenant = await tenantRepo.createTenant({ name: 't-service-commands', module: 'music' });
       const user = await userRepo.createUser(tenant.id, {
         email: 'commands@test.local',
         role: 'OPERATOR',

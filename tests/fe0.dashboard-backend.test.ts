@@ -84,7 +84,9 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
   beforeAll(async () => {
     prisma = createPrismaClient(DATABASE_URL!);
     await prisma.$connect();
-    orgId = (await new TenantRepository(prisma).createTenant({ name: `fe0-${run}` })).id;
+    orgId = (
+      await new TenantRepository(prisma).createTenant({ name: `fe0-${run}`, module: 'music' })
+    ).id;
     const users = new UserRepository(prisma);
     adminId = (await users.createUser(orgId, { email: `admin-${run}@fe0.local`, role: 'ADMIN' }))
       .id;

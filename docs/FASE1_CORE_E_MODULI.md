@@ -20,8 +20,11 @@ Versione ridotta concordata di A04/A05: gli **stati comuni** delle pratiche rest
 **Restano (debito noto, controllato da `tests/a01.core-modules.test.ts`, che impedisce di aggiungerne altri)**:
 
 - `artistName` nel contratto JSON dell'IA (interprete, normalizzatore, stub, banco di valutazione): da rinominare in `name` insieme al banco di valutazione dell'IA, per non perdere la confrontabilità delle misure (fase 3, Q-step).
-- Modulo predefinito `music` per le organizzazioni create senza indicarlo (colonna del database, seed, `tenant.provisioning.ts`): la console ora chiede il settore e propone «Generico». Cambiare il valore predefinito del database richiede di aggiornare i seed e i test che creano pratiche musicali: proposto per una migrazione separata.
-- Emoji 🎵 nei messaggi delle pratiche in chat (`practice.command.formatter.ts`) e testo «cooperativa» in alcuni messaggi: da rendere neutri o del modulo.
+
+**Risolti dopo la prima consegna** (ramo `feat/phase1-defaults-demo`):
+
+- Modulo predefinito: un'organizzazione creata senza indicare il settore ha ora il modulo «Generico» (database, repository, `tenant.provisioning.ts`, script `tenant:provision`); migrazione `20261106100000_a01_default_module_generic`, che cambia solo il valore predefinito, con ritorno in `prisma/rollback/`. Le organizzazioni già presenti non cambiano; i test e i seed musicali indicano ora il settore.
+- Messaggi della chat neutri: 📋 al posto di 🎵 nei messaggi delle pratiche, «organizzazione» al posto di «cooperativa», esempio di scadenza «DURC annuale».
 
 ## 2. A02 — Contratto tra Core e moduli
 
@@ -62,6 +65,8 @@ Regole: un'organizzazione alla volta e solo se attivato dalla piattaforma; ciò 
 
 `tests/a11.pilot-scenario.test.ts` ricostruisce il pilota: rete agricola con 5 aziende che confermano l'adesione; pratica PAC con campi del modulo; la rete non vede i dati delle aziende; un consulente di uno studio esterno legge la pratica solo tramite delega; deleghe spente da una parte o dall'altra e statistiche di rete spente e riaccese; tracce nei registri. Si aggiunge alle prove di B5 già presenti (`mf8.delegations`, `mf8a.export-rules`, `mf9.network`).
 
+**Dati dimostrativi del pilota** (`scripts/demo/pilot-seed.ts`, caricati da `npm run web:demo` sul database dei test, mai sullo staging): «Rete Agricola Demo» con quattro aziende che hanno aderito e una con l'invito in attesa; l'«Azienda Agricola Colle Verde» con quattro pratiche agricole (una per fase: raccolta documenti, in istruttoria, integrazione richiesta, completata), un fascicolo aziendale dimostrativo e quattro scadenze; lo «Studio Agronomico Demo» con una delega di lettura e modifica. Nomi e documenti inventati. Accessi: `rete.demo@sinfonia.test`, `colleverde.demo@sinfonia.test`, `consulente.demo@sinfonia.test` (codice mostrato sullo schermo). Provati da `tests/demo.pilot-seed.test.ts`.
+
 ## 7. A12 — Piano MF12 (solo pianificazione)
 
 Colonne del modello precedente su `user`: `tenant_id`, `role`, `telegram_id` (vincolo unico `tenant_id, telegram_id`). Le autorizzazioni usano già `membership`; restano usi in `user.repository.ts` (13 riferimenti a `telegramId`), `tenant.store.ts`, `tenant.provisioning.ts`, `telegram.bot.ts` e nelle creazioni di utenti dei test e dei seed.
@@ -76,4 +81,4 @@ Colonne del modello precedente su `user`: `tenant_id`, `role`, `telegram_id` (vi
 
 - Applicare allo staging la migrazione `20261106090000_a03_tenant_features` (solo aggiunta di colonna con valore vuoto; ritorno in `prisma/rollback/`).
 - Settore delle organizzazioni già presenti sullo staging (oggi «Musica e spettacolo» per tutte): quali passano ad «Agricoltura» o «Generico».
-- Valore predefinito del database `music` → `generic` (migrazione separata, vedi §1).
+- Applicare allo staging anche `20261106100000_a01_default_module_generic` (solo valore predefinito, vedi §1).

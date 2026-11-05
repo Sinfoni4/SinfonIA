@@ -62,8 +62,8 @@ describe.runIf(Boolean(DATABASE_URL))('MF5 revocation', () => {
     await prisma.$connect();
     const tenants = new TenantRepository(prisma);
     const users = new UserRepository(prisma);
-    orgA = (await tenants.createTenant({ name: `mf5-a-${run}` })).id;
-    orgB = (await tenants.createTenant({ name: `mf5-b-${run}` })).id;
+    orgA = (await tenants.createTenant({ name: `mf5-a-${run}`, module: 'music' })).id;
+    orgB = (await tenants.createTenant({ name: `mf5-b-${run}`, module: 'music' })).id;
     const create = async (orgId: string, name: string, role: UserRole) =>
       (await users.createUser(orgId, { email: `${name}-${run}@mf5.local`, role })).id;
     admin = await create(orgA, 'admin', 'ADMIN');

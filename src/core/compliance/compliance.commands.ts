@@ -30,11 +30,11 @@ const CATEGORY_ALIASES: Record<string, ComplianceCategory> = {
 export const CREATE_DEADLINE_USAGE =
   'Scrivi: nuova scadenza <tipo> <gg/mm/aaaa> <descrizione>\n' +
   'Tipi: durc, sicurezza, bio, visita, patentino, altro\n' +
-  'Esempio: nuova scadenza durc 31/12/2026 DURC cooperativa';
+  'Esempio: nuova scadenza durc 31/12/2026 DURC annuale';
 
 /**
  * Deterministic Telegram commands for compliance deadlines:
- * "scadenze", "nuova scadenza durc 31/12/2026 DURC cooperativa", "chiudi scadenza ab12cd34".
+ * "scadenze", "nuova scadenza durc 31/12/2026 DURC annuale", "chiudi scadenza ab12cd34".
  */
 export function parseComplianceCommand(input: string): ComplianceCommand | null {
   const trimmed = input.trim();

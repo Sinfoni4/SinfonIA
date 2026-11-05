@@ -35,7 +35,10 @@ describe.runIf(Boolean(DATABASE_URL))('orphan attachment files', () => {
     storageDir = await mkdtemp(path.join(tmpdir(), 'sinfonia-orphans-'));
 
     tenantId = (
-      await new TenantRepository(prisma).createTenant({ name: `orphans-${randomUUID()}` })
+      await new TenantRepository(prisma).createTenant({
+        name: `orphans-${randomUUID()}`,
+        module: 'music',
+      })
     ).id;
     const user = await new UserRepository(prisma).createUser(tenantId, {
       email: `orphans-${randomUUID()}@test.local`,

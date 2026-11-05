@@ -68,8 +68,8 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
 
     const tenants = new TenantRepository(prisma);
     const users = new UserRepository(prisma);
-    const tenant = await tenants.createTenant({ name: `authz-char-${run}` });
-    const other = await tenants.createTenant({ name: `authz-char-other-${run}` });
+    const tenant = await tenants.createTenant({ name: `authz-char-${run}`, module: 'music' });
+    const other = await tenants.createTenant({ name: `authz-char-other-${run}`, module: 'music' });
     const mk = (tenantId: string, key: string, role: UserRole) =>
       users.createUser(tenantId, { email: `${key}-${run}@authz.local`, role });
     const admin = await mk(tenant.id, 'admin', 'ADMIN');

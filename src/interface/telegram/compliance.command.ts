@@ -88,7 +88,7 @@ export async function executeComplianceCommand(
   }
 
   if (!can(ctx.role, 'compliance.manage')) {
-    return 'ℹ️ Le scadenze le gestiscono un operatore o un amministratore della tua cooperativa.';
+    return 'ℹ️ Le scadenze le gestiscono un operatore o un amministratore della tua organizzazione.';
   }
 
   try {

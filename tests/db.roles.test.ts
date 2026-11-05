@@ -112,7 +112,10 @@ describe.runIf(enabled)('database roles (MF1)', () => {
   it('lets the application work on data through its normal services', async () => {
     const prisma = createPrismaClient(appUrl);
     try {
-      const tenant = await new TenantRepository(prisma).createTenant({ name: 'Ruoli' });
+      const tenant = await new TenantRepository(prisma).createTenant({
+        name: 'Ruoli',
+        module: 'music',
+      });
       const user = await new UserRepository(prisma).createUser(tenant.id, {
         email: 'ruoli@test.local',
         role: 'ADMIN',

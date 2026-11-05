@@ -15,7 +15,7 @@ datasource db {
 model Tenant {
   id                  String             @id @default(uuid()) @db.Uuid
   name                String
-  module              String             @default("music")
+  module              String             @default("generic")
   /// A03: functions the platform turned off for this organization (src/core/features).
   disabledFeatures    String[]           @default([]) @map("disabled_features")
   integrationType     String             @default("none") @map("integration_type")
