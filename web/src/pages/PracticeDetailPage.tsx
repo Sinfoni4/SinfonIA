@@ -3,6 +3,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { describeError, type Me } from '../api/client';
+import { type CurrentModule } from '../api/modules';
 import {
   formatDate,
   formatSize,
@@ -31,6 +32,19 @@ export function PracticeDetailPage({ me }: { me: Me }) {
   const practice = useQuery({
     queryKey: ['practice', id],
     queryFn: () => api<PracticeDetail>(`/practices/${id}`),
+  });
+  // A02/A05: the module says the steps and the documents of this kind of practice.
+  const moduleQuery = useQuery({
+    queryKey: ['module'],
+    queryFn: () => api<CurrentModule>('/modules/current'),
+    retry: false,
+  });
+  const subState = useMutation({
+    mutationFn: (value: string | null) =>
+      api(`/practices/${id}/sub-state`, { method: 'POST', body: { subState: value } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['practice', id] });
+    },
   });
   const attachments = useQuery({
     queryKey: ['attachments', id],
@@ -65,6 +79,9 @@ export function PracticeDetailPage({ me }: { me: Me }) {
   const p = practice.data;
   // Attachments are added only to one's own practices (attachment.create is "own" for everyone).
   const canUpload = p.userId === me.userId;
+  const type = moduleQuery.data?.practiceTypes.find((t) => t.kind === p.kind);
+  const steps = type?.subStates.filter((s) => s.during.includes(p.status)) ?? [];
+  const currentStep = type?.subStates.find((s) => s.key === p.subState);
   return (
     <>
       <p>
@@ -82,6 +99,12 @@ export function PracticeDetailPage({ me }: { me: Me }) {
             <>
               <dt>Riepilogo</dt>
               <dd>{usefulSummary(p)}</dd>
+            </>
+          )}
+          {currentStep && (
+            <>
+              <dt>Fase</dt>
+              <dd>{currentStep.label}</dd>
             </>
           )}
           <dt>Creata</dt>
@@ -119,7 +142,45 @@ export function PracticeDetailPage({ me }: { me: Me }) {
             {describeError(transition.error)}
           </p>
         )}
+        {/* Who may move the practice may also set its step (same permission). */}
+        {p.allowedTransitions.length > 0 && steps.length > 0 && (
+          <div className="actions">
+            <label htmlFor="sub-state">Fase</label>
+            <select
+              id="sub-state"
+              value={currentStep?.key ?? ''}
+              disabled={subState.isPending}
+              onChange={(e) => subState.mutate(e.target.value || null)}
+            >
+              <option value="">Nessuna</option>
+              {steps.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {subState.isError && (
+          <p className="error" role="alert">
+            {describeError(subState.error)}
+          </p>
+        )}
       </section>
+
+      {type && type.expectedDocuments.length > 0 && (
+        <section className="card" aria-labelledby="expected-title">
+          <h2 id="expected-title">Documenti di solito necessari</h2>
+          <ul className="plain">
+            {type.expectedDocuments.map((d) => (
+              <li key={d.key}>
+                {d.label}
+                {d.required ? '' : <span className="muted"> (se c’è)</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="card" aria-labelledby="attachments-title">
         <h2 id="attachments-title">Allegati</h2>

@@ -431,4 +431,150 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       expect([401, 403]).toContain(res.statusCode);
     });
   });
+
+  describe('module and functions of an organization (A02, A03)', () => {
+    const patch = (url: string, payload: unknown, headers: Record<string, string>) =>
+      app.inject({ method: 'PATCH', url, payload: payload as object, headers });
+    let farmId = '';
+    let farmAdmin = '';
+    const farm = () => authHeaders(farmId, farmAdmin, 'ADMIN');
+
+    beforeAll(async () => {
+      farmId = (await new TenantRepository(prisma).createTenant({ name: `fe7-farm-${run}` })).id;
+      farmAdmin = (
+        await new UserRepository(prisma).createUser(farmId, {
+          email: `farm-${run}@fe7.local`,
+          role: 'ADMIN',
+        })
+      ).id;
+    });
+
+    it('is changed only from the console, with known modules and functions', async () => {
+      const url = `/platform/organizations/${farmId}/modules`;
+      const body = { module: 'agri', disabledFeatures: ['assistance'] };
+      expect([401, 403]).toContain((await patch(url, body, farm())).statusCode);
+      expect(
+        (await patch(url, { module: 'agri', disabledFeatures: ['teleport'] }, bearer())).statusCode,
+      ).toBe(400);
+      expect(
+        (await patch(url, { module: 'space', disabledFeatures: [] }, bearer())).statusCode,
+      ).toBe(400);
+      const res = await patch(url, body, bearer());
+      expect(res.statusCode).toBe(200);
+      const detail = await get(`/platform/organizations/${farmId}`, bearer());
+      expect(
+        detail.json<{ data: { module: string; disabledFeatures: string[] } }>().data,
+      ).toMatchObject({ module: 'agri', disabledFeatures: ['assistance'] });
+      // Recorded for the platform and, without the administrator's name, for the organization.
+      expect(
+        await prisma.platformAuditLog.count({
+          where: { orgId: farmId, action: 'ORGANIZATION_MODULES_CHANGED' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { tenantId: farmId, eventType: 'ORGANIZATION_MODULES_CHANGED', userId: null },
+        }),
+      ).toBe(1);
+      // The same choice again changes nothing and records nothing.
+      expect((await patch(url, body, bearer())).statusCode).toBe(200);
+      expect(
+        await prisma.platformAuditLog.count({
+          where: { orgId: farmId, action: 'ORGANIZATION_MODULES_CHANGED' },
+        }),
+      ).toBe(1);
+    });
+
+    it('refuses a function turned off in the backend, whatever the role, and says so', async () => {
+      const res = await get('/assistance', farm());
+      expect(res.statusCode).toBe(403);
+      expect(res.json<{ error: { code: string } }>().error.code).toBe('FEATURE_DISABLED');
+      const me = await get('/auth/me', farm());
+      expect(
+        me.json<{ data: { current: { disabledFeatures: string[] } } }>().data.current
+          .disabledFeatures,
+      ).toEqual(['assistance']);
+      // Turned on again, it works at the next request.
+      await patch(
+        `/platform/organizations/${farmId}/modules`,
+        { module: 'agri', disabledFeatures: [] },
+        bearer(),
+      );
+      expect((await get('/assistance', farm())).statusCode).toBe(200);
+    });
+
+    it('offers the kinds and fields of the module and checks them', async () => {
+      const current = await get('/modules/current', farm());
+      expect(current.statusCode).toBe(200);
+      const module = current.json<{
+        data: { id: string; defaultKind: string; practiceTypes: Array<{ kind: string }> };
+      }>().data;
+      expect(module.id).toBe('agri');
+      expect(module.practiceTypes.map((t) => t.kind)).toEqual(['generic', 'agri']);
+
+      const created = await post(
+        '/practices',
+        { name: 'PAC 2027', kind: 'agri', fields: { procedure: 'pac', campaignYear: 2027 } },
+        farm(),
+      );
+      expect(created.statusCode).toBe(201);
+      const practice = created.json<{
+        data: { id: string; kind: string; payload: { fields: object } };
+      }>().data;
+      expect(practice.kind).toBe('agri');
+      expect(practice.payload.fields).toEqual({ procedure: 'pac', campaignYear: 2027 });
+
+      // Without a kind: the module's default one.
+      const plain = await post('/practices', { name: 'Senza tipo' }, farm());
+      expect(plain.json<{ data: { kind: string } }>().data.kind).toBe('agri');
+
+      const refused = [
+        { name: 'Altro settore', kind: 'music' },
+        { name: 'Campo ignoto', kind: 'agri', fields: { secret: 'x' } },
+        { name: 'Valore errato', kind: 'agri', fields: { procedure: 'lottery' } },
+        { name: 'Anno errato', kind: 'agri', fields: { campaignYear: 1800 } },
+      ];
+      for (const body of refused) {
+        const res = await post('/practices', body, farm());
+        expect(res.statusCode, body.name).toBe(400);
+      }
+      // Free metadata cannot smuggle fields past the module's checks.
+      const smuggled = await post(
+        '/practices',
+        { name: 'Metadati', kind: 'agri', metadata: { fields: { secret: 'x' }, type: 'x' } },
+        farm(),
+      );
+      expect(smuggled.statusCode).toBe(201);
+      const payload = smuggled.json<{ data: { payload: Record<string, unknown> } }>().data.payload;
+      expect(payload.fields).toBeUndefined();
+      expect(payload.type).toBe('agri_practice');
+    });
+
+    it('sets a sub-state only of the type and in its common states', async () => {
+      const created = await post('/practices', { name: 'Istruttoria', kind: 'agri' }, farm());
+      const id = created.json<{ data: { id: string } }>().data.id;
+      const set = (subState: string | null) =>
+        post(`/practices/${id}/sub-state`, { subState }, farm());
+      // «In istruttoria» is for SUBMITTED; the practice is CREATED.
+      expect((await set('under_review')).statusCode).toBe(400);
+      expect((await set('not_a_step')).statusCode).toBe(400);
+      expect((await set('collecting_documents')).statusCode).toBe(200);
+      const read = async () =>
+        (await get(`/practices/${id}`, farm())).json<{ data: { subState: string | null } }>().data
+          .subState;
+      expect(await read()).toBe('collecting_documents');
+      // A change of common state ends the step.
+      expect(
+        (await post(`/practices/${id}/transition`, { nextState: 'SUBMITTED' }, farm())).statusCode,
+      ).toBe(200);
+      expect(await read()).toBeNull();
+      expect((await set('under_review')).statusCode).toBe(200);
+      expect(await read()).toBe('under_review');
+      expect(
+        await prisma.auditLog.count({
+          where: { tenantId: farmId, eventType: 'PRACTICE_SUB_STATE_CHANGED' },
+        }),
+      ).toBe(2);
+    });
+  });
 });

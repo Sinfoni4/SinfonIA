@@ -120,6 +120,9 @@ export function buildInterpreterPrompt(userInput: string, context?: InterpreterC
     '',
     buildAvailablePracticesSection(context),
     '',
+    // A02: written by SinfonIA's module, not by the user: a hint on the vocabulary only.
+    context?.sector ? `SECTOR CONTEXT (from the organization's module):\n${context.sector}` : '',
+    '',
     'Rules on context usage:',
     '- Use context as hints to extract best filters.',
     '- Do not decide the final candidate; deterministic engine resolves candidates later.',

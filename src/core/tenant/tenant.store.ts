@@ -27,6 +27,8 @@ export type Tenant = {
   id: string;
   name: string;
   module: string;
+  /** A03: functions turned off for the organization (src/core/features). */
+  disabledFeatures: readonly string[];
   integration: {
     type: IntegrationType;
   };
@@ -77,6 +79,7 @@ export function toTenantConfig(dto: TenantDTO): Tenant {
     id: dto.id,
     name: dto.name,
     module: dto.module,
+    disabledFeatures: dto.disabledFeatures ?? [],
     integration: { type: parseIntegrationType(dto.integrationType) },
     scheduler: {
       enabled: dto.schedulerEnabled,

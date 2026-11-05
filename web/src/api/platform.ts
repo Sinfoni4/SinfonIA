@@ -45,6 +45,8 @@ export type OrganizationPage = {
 
 export type OrganizationDetail = OrganizationRow & {
   module: string;
+  /** A03: functions turned off for the organization. */
+  disabledFeatures?: string[];
   scheduledExport: boolean;
   webhook: boolean;
   deactivatedAt: string | null;
@@ -59,8 +61,44 @@ export type PlatformAuditRow = {
   actorEmail: string | null;
   organization: { id: string; name: string | null } | null;
   targetEmail: string | null;
-  details: Partial<Record<'name' | 'type' | 'reason' | 'via', string>>;
+  details: Partial<Record<'name' | 'type' | 'reason' | 'via' | 'module', string>> & {
+    disabledFeatures?: string[];
+  };
 };
+
+/** A02: the sector modules (src/modules on the server). */
+export const MODULES = ['generic', 'music', 'agri'] as const;
+export type ModuleId = (typeof MODULES)[number];
+export const MODULE_LABELS: Record<ModuleId, string> = {
+  generic: 'Generico',
+  music: 'Musica e spettacolo',
+  agri: 'Agricoltura',
+};
+
+/** A03: the functions the platform can turn off for one organization. */
+export const FEATURES = [
+  'ai_chat',
+  'documents',
+  'deadlines',
+  'assistance',
+  'exports',
+  'delegations',
+  'network_stats',
+] as const;
+export type Feature = (typeof FEATURES)[number];
+export const FEATURE_LABELS: Record<Feature, string> = {
+  ai_chat: 'Assistente IA nella chat',
+  documents: 'Documenti e lettura automatica',
+  deadlines: 'Scadenze e promemoria',
+  assistance: 'Richieste di assistenza',
+  exports: 'Esportazioni',
+  delegations: 'Deleghe tra organizzazioni',
+  network_stats: 'Statistiche di rete',
+};
+
+export function moduleLabel(id: string): string {
+  return (MODULE_LABELS as Record<string, string>)[id] ?? id;
+}
 
 export type PlatformAuditPage = {
   items: PlatformAuditRow[];
@@ -101,6 +139,14 @@ export function describePlatformAction(row: PlatformAuditRow): string {
       return `Sospesa ${org}${row.details.reason ? `: ${row.details.reason}` : ''}`;
     case 'ORGANIZATION_REACTIVATED':
       return `Riattivata ${org}`;
+    case 'ORGANIZATION_MODULES_CHANGED': {
+      const off = (row.details.disabledFeatures ?? [])
+        .map((f) => (FEATURE_LABELS as Record<string, string>)[f] ?? f)
+        .join(', ');
+      return `Modulo di ${org}: ${moduleLabel(row.details.module ?? '')}${
+        off ? `; spente: ${off}` : '; tutte le funzioni attive'
+      }`;
+    }
     case 'PLATFORM_ADMIN_GRANTED':
       return `${row.targetEmail ?? 'Una persona'} è ora gestore della piattaforma`;
     case 'PLATFORM_ADMIN_REVOKED':

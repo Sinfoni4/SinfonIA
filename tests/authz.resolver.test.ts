@@ -33,6 +33,7 @@ describe.runIf(Boolean(DATABASE_URL))('principal resolver (C1)', () => {
         userId: user.id,
         role: 'OPERATOR',
         extraPermissions: [],
+        disabledFeatures: [],
       });
       // A real user, but of another tenant.
       expect(await ask(b.id)).toBeNull();

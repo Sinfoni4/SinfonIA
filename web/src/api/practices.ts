@@ -1,7 +1,7 @@
 /** Practices and their attachments, as the API returns them (src/core/practice). */
 
 export type PracticeState = 'CREATED' | 'VALIDATED' | 'SUBMITTED' | 'FAILED' | 'COMPLETED';
-export type PracticeKind = 'generic' | 'music' | 'artist';
+export type PracticeKind = 'generic' | 'music' | 'artist' | 'agri';
 
 export type Practice = {
   id: string;
@@ -15,6 +15,8 @@ export type Practice = {
   updatedAt: string;
   /** A4: the administrator or operator who follows the practice, if anyone. */
   assignedTo: string | null;
+  /** A05: the step of the module inside the common state, if any. */
+  subState?: string | null;
 };
 
 export type PracticeDetail = Practice & { allowedTransitions: PracticeState[] };
@@ -133,6 +135,7 @@ export const KIND_LABELS: Record<PracticeKind, string> = {
   generic: 'Generica',
   music: 'Musicale',
   artist: 'Artista',
+  agri: 'Agricola',
 };
 
 export const OCR_LABELS: Record<OcrStatus, string> = {

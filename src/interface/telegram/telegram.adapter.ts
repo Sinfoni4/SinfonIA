@@ -58,7 +58,8 @@ export class TelegramAdapter {
       executor: {
         execute: (command: ExecutorInput, ctx: ExecutorContext) => Promise<ExecutorResult<unknown>>;
       };
-      contextService: Pick<ContextService, 'getPracticeContext'>;
+      contextService: Pick<ContextService, 'getPracticeContext'> &
+        Partial<Pick<ContextService, 'getSectorInstructions'>>;
       formatResponse: (data: {
         input: string;
         command: ExecutorInput;
@@ -128,6 +129,8 @@ export class TelegramAdapter {
       execUserId,
     );
     ctx.practices = context.practices;
+    const sector = await this.deps.contextService.getSectorInstructions?.(tenantId);
+    if (sector) ctx.sector = sector;
 
     let interpreted: InterpreterOutput;
     if (trace && this.deps.interpreter.interpretWithDetails) {

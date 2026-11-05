@@ -414,7 +414,7 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
     await channel.receive(webhook(textMessage('l3', phone, 'lista pratiche')));
     expect(deps.practiceService.executeCommand).toHaveBeenCalledWith(
       { type: 'LIST_PRACTICES', payload: {} },
-      { tenantId, userId: identity!.userId, role: 'MEMBER' },
+      { tenantId, userId: identity!.userId, role: 'MEMBER', disabledFeatures: [] },
       { channel: 'whatsapp' },
     );
   });

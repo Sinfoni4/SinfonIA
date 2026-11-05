@@ -1,11 +1,14 @@
 import { z } from 'zod';
 
+import { FEATURES } from '../../../core/features/features.js';
+import { MODULE_IDS } from '../../../core/modules/module.contract.js';
 import { aiUsage, systemHealth } from '../../../core/platform/platform-health.service.js';
 import {
   createOrganization,
   getOrganization,
   listOrganizations,
   listPlatformAudit,
+  setOrganizationModules,
   setOrganizationSuspended,
 } from '../../../core/platform/platform.service.js';
 import { requirePlatform } from '../auth/guards.js';
@@ -70,6 +73,8 @@ const CreateBodySchema = z
     name: z.string().max(200),
     type: z.enum(TYPES),
     firstAdminEmail: z.string().trim().email().max(254),
+    /** A02: the sector module; omitted, the organization gets the default one. */
+    module: z.enum(MODULE_IDS).optional(),
     verification: VerificationSchema,
   })
   .strict();
@@ -84,6 +89,14 @@ const SuspendBodySchema = z
   .strict();
 
 const ReactivateBodySchema = z.object({ verification: VerificationSchema }).strict();
+
+/** A03: the module and the functions turned off (the full list: what is not in it is on). */
+const ModulesBodySchema = z
+  .object({
+    module: z.enum(MODULE_IDS),
+    disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
+  })
+  .strict();
 
 const AuditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -143,7 +156,12 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       const created = await createOrganization(
         deps.prisma,
         deps.login,
-        { name: body.name, type: body.type, firstAdminEmail: body.firstAdminEmail },
+        {
+          name: body.name,
+          type: body.type,
+          firstAdminEmail: body.firstAdminEmail,
+          ...(body.module ? { module: body.module } : {}),
+        },
         { userId },
       );
       return reply.status(201).send(ok(created));
@@ -183,6 +201,18 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       const body = ReactivateBodySchema.parse(req.body);
       await deps.login.confirmStepUp(userId, body.verification.challengeId, body.verification.code);
       return reply.send(ok(await setOrganizationSuspended(deps.prisma, id, false, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // A03 (voce 16): module and functions of an organization.
+  app.patch('/platform/organizations/:id/modules', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = ModulesBodySchema.parse(req.body);
+      return reply.send(ok(await setOrganizationModules(deps.prisma, id, body, { userId })));
     } catch (err: unknown) {
       return sendError(reply, err);
     }

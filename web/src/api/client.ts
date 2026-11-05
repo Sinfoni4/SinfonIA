@@ -13,6 +13,8 @@ export type Organization = {
   role: Role;
   /** The type decides which sections are shown (G5); absent in old sessions. */
   type?: OrganizationType;
+  /** A02: the sector module (generic, music, agri). */
+  module?: string;
 };
 
 export type Me = {
@@ -21,7 +23,8 @@ export type Me = {
   organizations: Organization[];
   /** A platform administrator: the console is offered too (FE7). */
   platform: boolean;
-  current: { orgId: string; role: Role };
+  /** A03: `disabledFeatures`, the functions the platform turned off for the organization. */
+  current: { orgId: string; role: Role; disabledFeatures?: string[] };
 };
 
 /** The platform administrator in the console, with their own organizations to go back to. */

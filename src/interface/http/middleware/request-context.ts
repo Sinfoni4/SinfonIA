@@ -10,6 +10,8 @@ export type RequestContext = {
   role: AuthRole | null;
   /** Extra scopes of the membership, read with the role at every request (D5). */
   extraPermissions?: readonly string[];
+  /** A03: functions turned off for the organization, read with the role. */
+  disabledFeatures?: readonly string[];
   /** Platform console requests (G1): no organization and no role, never both. */
   platform?: { userId: string; sessionId: string; email: string };
 };
@@ -38,7 +40,10 @@ export function getRequestContext(req: FastifyRequest): RequestContext | null {
 
 export function attachAuthenticatedContext(
   req: FastifyRequest,
-  auth: AuthContext & { extraPermissions?: readonly string[] },
+  auth: AuthContext & {
+    extraPermissions?: readonly string[];
+    disabledFeatures?: readonly string[];
+  },
 ): void {
   const ctx = getRequestContext(req);
   if (!ctx) {
@@ -48,6 +53,7 @@ export function attachAuthenticatedContext(
   ctx.userId = auth.userId;
   ctx.role = auth.role;
   ctx.extraPermissions = auth.extraPermissions ?? [];
+  ctx.disabledFeatures = auth.disabledFeatures ?? [];
 }
 
 export function attachPlatformContext(

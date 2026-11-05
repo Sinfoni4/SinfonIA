@@ -1,12 +1,19 @@
 import { z } from 'zod';
 
-export const PRACTICE_KINDS = ['artist', 'music', 'generic'] as const;
-export type PracticeKind = (typeof PRACTICE_KINDS)[number];
+import { PRACTICE_KINDS, practiceTypeOf, type PracticeKind } from '../../modules/registry.js';
+
+/**
+ * The payload of a practice: name, type and the fields its module declares (A02/A04).
+ * The kinds and their labels come from the modules (src/modules); the Core only knows the shape.
+ */
+
+export { PRACTICE_KINDS, type PracticeKind };
 
 export const PRACTICE_PAYLOAD_TYPES = [
   'artist_practice',
   'music_practice',
   'generic_practice',
+  'agri_practice',
   'legacy_practice',
 ] as const;
 export type PracticePayloadType = (typeof PRACTICE_PAYLOAD_TYPES)[number];
@@ -25,18 +32,15 @@ export const PracticePayloadSchema = z
 export type PracticePayload = z.infer<typeof PracticePayloadSchema>;
 export type PracticePayloadKind = PracticeKind | 'legacy' | 'unknown';
 
-const PAYLOAD_TYPE_BY_KIND: Readonly<Record<PracticeKind, PracticePayloadType>> = {
-  artist: 'artist_practice',
-  music: 'music_practice',
-  generic: 'generic_practice',
-};
+function payloadTypeOf(kind: PracticeKind): PracticePayloadType {
+  return `${kind}_practice`;
+}
 
-const KIND_BY_PAYLOAD_TYPE: Readonly<Record<string, PracticePayloadKind>> = {
-  artist_practice: 'artist',
-  music_practice: 'music',
-  generic_practice: 'generic',
-  legacy_practice: 'legacy',
-};
+function kindOfPayloadType(type: string): PracticePayloadKind {
+  if (type === 'legacy_practice') return 'legacy';
+  const kind = type.endsWith('_practice') ? type.slice(0, -'_practice'.length) : '';
+  return (PRACTICE_KINDS as readonly string[]).includes(kind) ? (kind as PracticeKind) : 'unknown';
+}
 
 function asRecord(payload: unknown): Record<string, unknown> | null {
   return typeof payload === 'object' && payload !== null
@@ -45,18 +49,9 @@ function asRecord(payload: unknown): Record<string, unknown> | null {
 }
 
 function payloadTypeLabel(kind: PracticePayloadKind): string {
-  switch (kind) {
-    case 'artist':
-      return 'artist practice';
-    case 'music':
-      return 'music practice';
-    case 'generic':
-      return 'generic practice';
-    case 'legacy':
-      return 'legacy practice';
-    default:
-      return 'practice';
-  }
+  if (kind === 'legacy') return 'legacy practice';
+  if (kind === 'unknown') return 'practice';
+  return practiceTypeOf(kind)?.typeLabel ?? 'practice';
 }
 
 export function buildPracticePayload(
@@ -64,11 +59,12 @@ export function buildPracticePayload(
   name: string,
   extra?: Record<string, unknown>,
 ): PracticePayload {
+  // The extra data never overrides the type, the name or the schema version.
   return PracticePayloadSchema.parse({
-    schemaVersion: CURRENT_PAYLOAD_SCHEMA_VERSION,
-    type: PAYLOAD_TYPE_BY_KIND[kind],
-    name: name.trim(),
     ...(extra ?? {}),
+    schemaVersion: CURRENT_PAYLOAD_SCHEMA_VERSION,
+    type: payloadTypeOf(kind),
+    name: name.trim(),
   });
 }
 
@@ -78,6 +74,10 @@ export function readPracticePayload(payload: unknown): {
   kind: PracticePayloadKind;
   typeLabel: string;
   summary: string;
+  /** A04: the fields of the module, as stored. */
+  fields: Record<string, unknown>;
+  /** A05: the sub-state set inside the common state, if any. */
+  subState: string | null;
 } {
   const record = asRecord(payload);
   if (!record) {
@@ -87,6 +87,8 @@ export function readPracticePayload(payload: unknown): {
       kind: 'unknown',
       typeLabel: 'practice',
       summary: 'practice',
+      fields: {},
+      subState: null,
     };
   }
 
@@ -95,22 +97,21 @@ export function readPracticePayload(payload: unknown): {
       ? record.schemaVersion
       : 1;
 
+  // `artistName`: practices created before the modules (legacy payloads).
   const rawName = record.name ?? record.artistName;
   const name = typeof rawName === 'string' && rawName.trim().length > 0 ? rawName.trim() : null;
   const rawType = typeof record.type === 'string' ? record.type : null;
-  const kind = rawType ? (KIND_BY_PAYLOAD_TYPE[rawType] ?? 'unknown') : 'legacy';
+  const kind = rawType ? kindOfPayloadType(rawType) : 'legacy';
   const typeLabel = payloadTypeLabel(kind);
+  const fields = asRecord(record.fields) ?? {};
+  const subState = typeof record.subState === 'string' ? record.subState : null;
 
   if (!name) {
-    return { schemaVersion, name, kind, typeLabel, summary: typeLabel };
+    return { schemaVersion, name, kind, typeLabel, summary: typeLabel, fields, subState };
   }
-
-  switch (kind) {
-    case 'artist':
-      return { schemaVersion, name, kind, typeLabel, summary: `pratica artista ${name}` };
-    case 'music':
-      return { schemaVersion, name, kind, typeLabel, summary: `pratica music ${name}` };
-    default:
-      return { schemaVersion, name, kind, typeLabel, summary: `pratica ${name}` };
-  }
+  const prefix =
+    kind === 'legacy' || kind === 'unknown'
+      ? 'pratica'
+      : (practiceTypeOf(kind)?.summaryPrefix ?? 'pratica');
+  return { schemaVersion, name, kind, typeLabel, summary: `${prefix} ${name}`, fields, subState };
 }

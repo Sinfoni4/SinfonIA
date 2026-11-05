@@ -184,12 +184,14 @@ export const aiRoutes: FastifyPluginCallback<AiRoutesDeps> = (app, deps, done) =
 
         req.log.debug({ practiceCount: practiceContext.practices.length }, 'AI context loaded');
 
+        const sector = await deps.contextService.getSectorInstructions?.(auth.tenantId);
         const interpretation = await deps.interpreterService.interpretWithDetails(
           validation.value,
           {
             tenantId: auth.tenantId,
             userId: auth.userId ?? null,
             practices: practiceContext.practices,
+            ...(sector ? { sector } : {}),
           },
         );
 

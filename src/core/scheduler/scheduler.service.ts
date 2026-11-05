@@ -3,6 +3,7 @@ import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
 import { ComplianceService } from '../compliance/compliance.service.js';
 import { GrantExpiryTask } from '../delegation/grant-reminders.js';
+import { featureEnabled, type Feature } from '../features/features.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
 import { ComplianceDeadlinesTask, ExportPracticesTask } from './scheduler.tasks.js';
@@ -115,6 +116,13 @@ const SYSTEM_TASKS: Array<{ task: SchedulerTask; frequency: SchedulerFrequency }
 ];
 const SYSTEM_TASK_TYPES = new Set<SchedulerTaskType>(SYSTEM_TASKS.map((s) => s.task.type));
 
+/** A03: the function each task belongs to; a task of a function turned off does not run. */
+const TASK_FEATURES: Record<SchedulerTaskType, Feature> = {
+  EXPORT_PRACTICES: 'exports',
+  CHECK_COMPLIANCE_DEADLINES: 'deadlines',
+  CHECK_GRANT_EXPIRY: 'delegations',
+};
+
 export class SchedulerService {
   private readonly schedulerRepo: SchedulerRepository;
   private readonly handlers: Map<SchedulerTaskType, SchedulerTaskHandler>;
@@ -167,6 +175,10 @@ export class SchedulerService {
         : [];
 
       for (const { task, frequency } of [...configured, ...SYSTEM_TASKS]) {
+        if (!featureEnabled(tenant.disabledFeatures, TASK_FEATURES[task.type])) {
+          skippedCount++;
+          continue;
+        }
         const executed = await this.executeTenantTask(tenant, task, frequency, now);
         if (executed) {
           triggeredCount++;

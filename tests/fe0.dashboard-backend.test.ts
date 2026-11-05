@@ -188,7 +188,7 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
         organizations: [expect.objectContaining({ orgId, role: 'MEMBER' })],
         // FE7: whether the console is offered too.
         platform: false,
-        current: { orgId, role: 'MEMBER' },
+        current: { orgId, role: 'MEMBER', disabledFeatures: [] },
       },
     });
     expect((await app.inject({ method: 'GET', url: '/auth/me' })).statusCode).toBe(401);

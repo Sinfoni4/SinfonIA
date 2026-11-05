@@ -70,7 +70,9 @@ export type AuditEvent = {
       | 'organization'
       | 'by'
       | 'operations'
-      | 'action',
+      | 'action'
+      | 'subState'
+      | 'cleared',
       string | number | boolean
     >
   >;
@@ -110,6 +112,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_STATE_CHANGED',
       'PRACTICE_DELETED',
       'PRACTICE_ASSIGNED',
+      'PRACTICE_SUB_STATE_CHANGED',
       'ATTACHMENT_VALIDATED',
     ],
   },
@@ -160,6 +163,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ORGANIZATION_CREATED',
       'ORGANIZATION_SUSPENDED',
       'ORGANIZATION_REACTIVATED',
+      'ORGANIZATION_MODULES_CHANGED',
     ],
   },
 };
@@ -336,6 +340,12 @@ export function describeEvent(event: AuditEvent): string {
       return 'Organizzazione sospesa dal gestore della piattaforma';
     case 'ORGANIZATION_REACTIVATED':
       return 'Organizzazione riattivata dal gestore della piattaforma';
+    case 'ORGANIZATION_MODULES_CHANGED':
+      return 'Settore o funzioni cambiati dal gestore della piattaforma';
+    case 'PRACTICE_SUB_STATE_CHANGED':
+      return d.cleared === true
+        ? `Pratica ${practice}: fase tolta`
+        : `Pratica ${practice}: fase «${String(d.subState)}»`;
     case 'ORGANIZATION_SETTINGS_CHANGED': {
       const parts: string[] = [];
       if (typeof d.name === 'string') parts.push(`nome «${d.name}»`);

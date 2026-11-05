@@ -31,7 +31,19 @@ export class ContextService {
   constructor(
     private readonly practiceService: Pick<PracticeApplicationService, 'listPractices'> &
       Partial<Pick<PracticeApplicationService, 'listPracticesPaginated'>>,
+    /** A02: the AI instructions of the organization's module; absent, none are given. */
+    private readonly sectorOf?: (tenantId: string) => Promise<string>,
   ) {}
+
+  /** A02: the sector context for the AI prompt; empty when unknown or on error. */
+  async getSectorInstructions(tenantId: string): Promise<string> {
+    if (!this.sectorOf) return '';
+    try {
+      return await this.sectorOf(tenantId);
+    } catch {
+      return '';
+    }
+  }
 
   /**
    * Retrieves context practices strictly scoped to the tenant.
