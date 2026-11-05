@@ -1,7 +1,7 @@
 /** A5 / FE8: the warnings of the state of the system and the formats of the console. */
 import { describe, expect, it } from 'vitest';
 
-import { formatUptime, healthWarnings, type SystemHealth } from './health';
+import { formatBytes, formatUptime, healthWarnings, type SystemHealth } from './health';
 
 const HEALTHY: SystemHealth = {
   checkedAt: '2026-11-05T10:00:00Z',
@@ -41,6 +41,61 @@ describe('state of the system (A5)', () => {
     expect(
       healthWarnings({ ...HEALTHY, database: { reachable: false, latencyMs: null, mode: 'X' } }),
     ).toEqual(['Il database non risponde.']);
+  });
+
+  it('names documents waiting, missing files and an old or unreachable backup', () => {
+    const now = new Date('2026-11-20T10:00:00Z');
+    const base = {
+      ...HEALTHY,
+      documents: { pending: 2, processing: 0, failedLast24h: 1, oldestPendingMinutes: 40 },
+      storage: {
+        driver: 'local' as const,
+        attachments: 10,
+        bytes: 1024,
+        disk: { files: 11, orphanFiles: 2, missingFiles: 1, checkedAt: '2026-11-20T09:55:00Z' },
+      },
+    };
+    expect(
+      healthWarnings(
+        {
+          ...base,
+          backup: {
+            configured: true,
+            reachable: true,
+            last: { at: '2026-11-05T16:46:40Z', tables: 26, attachments: 5 },
+          },
+        },
+        now,
+      ),
+    ).toEqual([
+      'Un documento aspetta la lettura da 40 minuti.',
+      '1 documenti non letti nelle ultime 24 ore.',
+      '1 allegati non hanno più il file sul disco.',
+      "L'ultimo backup è di 14 giorni fa.",
+    ]);
+    expect(
+      healthWarnings(
+        { ...HEALTHY, backup: { configured: true, reachable: false, last: null } },
+        now,
+      ),
+    ).toEqual(['La cartella dei backup non è raggiungibile: il disco è collegato?']);
+    // Orphan files and a backup folder not configured here are not warnings.
+    expect(
+      healthWarnings(
+        {
+          ...HEALTHY,
+          storage: { ...base.storage, disk: { ...base.storage.disk, missingFiles: 0 } },
+          backup: { configured: false, reachable: false, last: null },
+        },
+        now,
+      ),
+    ).toEqual([]);
+  });
+
+  it('writes sizes in bytes, KB, MB or GB', () => {
+    expect(formatBytes(512)).toBe('512 byte');
+    expect(formatBytes(1536)).toBe('1,5 KB');
+    expect(formatBytes(3 * 1024 * 1024 * 1024)).toBe('3 GB');
   });
 
   it('writes the uptime in days, hours or minutes', () => {

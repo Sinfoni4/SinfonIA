@@ -8,6 +8,7 @@
 import { ComplianceService } from '../../src/core/compliance/compliance.service.js';
 import { PracticeApplicationService } from '../../src/core/practice/practice.application.service.js';
 import { createPrismaClient } from '../../src/data/db/prisma.js';
+import { UserRepository } from '../../src/data/repositories/user.repository.js';
 
 async function main() {
   const url = process.env.MF0_SOURCE_URL;
@@ -37,13 +38,10 @@ async function main() {
 
       const users = [];
       for (const [i, role] of (['ADMIN', 'OPERATOR', 'MEMBER', 'MEMBER'] as const).entries()) {
-        const user = await prisma.user.create({
-          data: {
-            tenantId: tenant.id,
-            email: `persona${i}.coop${t}@esempio.test`,
-            role,
-            telegramId: String(900000000 + t * 100 + i),
-          },
+        const user = await new UserRepository(prisma).createUser(tenant.id, {
+          email: `persona${i}.coop${t}@esempio.test`,
+          role,
+          telegramId: String(900000000 + t * 100 + i),
         });
         await prisma.userTenant.create({ data: { userId: user.id, tenantId: tenant.id } });
         users.push(user);

@@ -37,10 +37,14 @@ const CHECKS: Array<{ name: string; sql: string; detail: string; informational?:
                               WHERE c.channel = 'TELEGRAM' AND c.external_id = u.telegram_id)`,
   },
   {
+    // Since MF12 step 2 new links are written in channel_identity only: the legacy rule is
+    // checked on the links that are still mirrored on the user who holds them.
     name: 'telegram_link_not_most_recent_user',
-    detail: 'active Telegram links not held by the most recent user with that id (legacy rule)',
+    detail: 'active legacy Telegram links not held by the most recent user with that id',
     sql: `SELECT count(*)::int n FROM channel_identity c
            WHERE c.channel = 'TELEGRAM' AND c.revoked_at IS NULL
+             AND EXISTS (SELECT 1 FROM "user" h
+                          WHERE h.id = c.user_id AND h.telegram_id = c.external_id)
              AND c.user_id <> (SELECT u.id FROM "user" u WHERE u.telegram_id = c.external_id
                                 ORDER BY u.created_at DESC LIMIT 1)`,
   },

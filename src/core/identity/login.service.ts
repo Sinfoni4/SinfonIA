@@ -7,6 +7,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 
+import { UserRepository } from '../../data/repositories/user.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { isPlatformAdmin, resolvePlatformPrincipal } from '../authz/platform.js';
@@ -666,15 +667,11 @@ export class LoginService {
           },
         });
       } else {
-        // New person: the legacy columns still need an organization (until M3).
-        const created = await tx.user.create({
-          data: {
-            tenantId: invitation.orgId,
-            email: invitation.email,
-            role: invitation.role,
-            emailVerifiedAt: this.now(),
-          },
-          select: { id: true },
+        // New person, with the membership of the invitation (MF12 step 3).
+        const created = await new UserRepository(tx).createUser(invitation.orgId, {
+          email: invitation.email,
+          role: invitation.role,
+          emailVerifiedAt: this.now(),
         });
         id = created.id;
       }

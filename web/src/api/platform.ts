@@ -61,7 +61,9 @@ export type PlatformAuditRow = {
   actorEmail: string | null;
   organization: { id: string; name: string | null } | null;
   targetEmail: string | null;
-  details: Partial<Record<'name' | 'type' | 'reason' | 'via' | 'module', string>> & {
+  details: Partial<
+    Record<'name' | 'type' | 'reason' | 'via' | 'module' | 'organization', string>
+  > & {
     disabledFeatures?: string[];
   };
 };
@@ -99,6 +101,26 @@ export const FEATURE_LABELS: Record<Feature, string> = {
 export function moduleLabel(id: string): string {
   return (MODULE_LABELS as Record<string, string>)[id] ?? id;
 }
+
+/** Voce 17: memberships of an organization as the console sees them (names and states only). */
+export type OrganizationLink = {
+  relationId: string;
+  orgId: string;
+  name: string;
+  status: 'PENDING' | 'ACTIVE';
+  since: string;
+};
+
+export type OrganizationLinks = {
+  isNetwork: boolean;
+  members: OrganizationLink[];
+  networks: OrganizationLink[];
+};
+
+export const LINK_STATUS_LABELS: Record<OrganizationLink['status'], string> = {
+  PENDING: 'in attesa di conferma',
+  ACTIVE: 'aderente',
+};
 
 export type PlatformAuditPage = {
   items: PlatformAuditRow[];
@@ -147,6 +169,8 @@ export function describePlatformAction(row: PlatformAuditRow): string {
         off ? `; spente: ${off}` : '; tutte le funzioni attive'
       }`;
     }
+    case 'NETWORK_INVITATION_SENT':
+      return `Invitata ${row.details.organization ? `«${row.details.organization}»` : "un'organizzazione"} ad aderire alla rete ${org}`;
     case 'PLATFORM_ADMIN_GRANTED':
       return `${row.targetEmail ?? 'Una persona'} è ora gestore della piattaforma`;
     case 'PLATFORM_ADMIN_REVOKED':

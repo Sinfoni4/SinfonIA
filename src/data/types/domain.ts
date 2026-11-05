@@ -22,7 +22,6 @@ export type UserDTO = {
   tenantId: string;
   email: string;
   role: UserRole;
-  telegramId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

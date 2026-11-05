@@ -6,6 +6,8 @@ import { aiUsage, systemHealth } from '../../../core/platform/platform-health.se
 import {
   createOrganization,
   getOrganization,
+  inviteToNetwork,
+  listOrganizationLinks,
   listOrganizations,
   listPlatformAudit,
   setOrganizationModules,
@@ -17,6 +19,7 @@ import { fail, ok } from '../errors/http.errors.js';
 
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
+import type { HealthLocations } from '../../../core/platform/platform-storage.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
 
@@ -25,6 +28,8 @@ export type PlatformRoutesDeps = {
   login: LoginService;
   /** A5: which external services this process is configured for. */
   services?: ConfiguredServices;
+  /** Attachment folder and backup folder, for the system health (never shown). */
+  locations?: HealthLocations;
 };
 
 const NO_SERVICES: ConfiguredServices = {
@@ -97,6 +102,9 @@ const ModulesBodySchema = z
     disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
   })
   .strict();
+
+/** Voce 17: the company to invite, by its id (the console picks it from the list). */
+const InviteBodySchema = z.object({ orgId: z.string().uuid() }).strict();
 
 const AuditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -218,11 +226,37 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
     }
   });
 
+  // Voce 17: memberships of an organization, and invitations of companies into a network.
+  app.get('/platform/organizations/:id/links', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      return reply.send(ok(await listOrganizationLinks(deps.prisma, id)));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post('/platform/organizations/:id/network-members', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = InviteBodySchema.parse(req.body);
+      return reply
+        .status(201)
+        .send(ok(await inviteToNetwork(deps.prisma, id, body.orgId, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
   // A5 / FE8: the state of the system (database, deliveries, scheduler, configured services).
   app.get('/platform/health', { config }, async (req, reply) => {
     try {
       requirePlatform(req);
-      return reply.send(ok(await systemHealth(deps.prisma, deps.services ?? NO_SERVICES)));
+      return reply.send(
+        ok(await systemHealth(deps.prisma, deps.services ?? NO_SERVICES, deps.locations)),
+      );
     } catch (err: unknown) {
       return sendError(reply, err);
     }

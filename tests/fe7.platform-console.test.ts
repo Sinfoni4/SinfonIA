@@ -386,6 +386,23 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
         ].sort(),
       );
       expect(h.services).toEqual({ telegram: false, whatsapp: false, webhook: false, ai: null });
+      // Documents to read, storage and backup: counts and dates, never paths or file names.
+      const extra = res.json<{
+        data: {
+          documents: Record<string, number | null>;
+          storage: { driver: string; disk: Record<string, unknown> | null };
+          backup: { configured: boolean };
+        };
+      }>().data;
+      expect(Object.keys(extra.documents).sort()).toEqual(
+        ['failedLast24h', 'oldestPendingMinutes', 'pending', 'processing'].sort(),
+      );
+      expect(extra.storage.driver).toBe('local');
+      expect(Object.keys(extra.storage.disk ?? {}).sort()).toEqual(
+        ['checkedAt', 'files', 'missingFiles', 'orphanFiles'].sort(),
+      );
+      expect(extra.backup).toEqual({ configured: false, reachable: false, last: null });
+      expect(res.body).not.toMatch(/runtime|storage-|SinfonIA-backup/);
     });
 
     it('counts the use of the AI by organization, without any error text', async () => {
@@ -575,6 +592,82 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
           where: { tenantId: farmId, eventType: 'PRACTICE_SUB_STATE_CHANGED' },
         }),
       ).toBe(2);
+    });
+  });
+  describe('network and companies from the console (Cantiere 1, voce 17)', () => {
+    let networkId = '';
+    let companyId = '';
+    let companyAdmin = '';
+
+    beforeAll(async () => {
+      const tenants = new TenantRepository(prisma);
+      networkId = (await tenants.createTenant({ name: `fe7-rete-${run}` })).id;
+      await prisma.tenant.update({ where: { id: networkId }, data: { type: 'NETWORK' } });
+      companyId = (await tenants.createTenant({ name: `fe7-azienda-${run}` })).id;
+      companyAdmin = (
+        await new UserRepository(prisma).createUser(companyId, {
+          email: `azienda-${run}@fe7.local`,
+          role: 'ADMIN',
+        })
+      ).id;
+    });
+
+    it('invites a company into a network; the company still has to confirm', async () => {
+      const url = `/platform/organizations/${networkId}/network-members`;
+      // Not with an organization token, and only into a network.
+      expect([401, 403]).toContain(
+        (await post(url, { orgId: companyId }, authHeaders(companyId, companyAdmin, 'ADMIN')))
+          .statusCode,
+      );
+      expect(
+        (
+          await post(
+            `/platform/organizations/${companyId}/network-members`,
+            { orgId: networkId },
+            bearer(),
+          )
+        ).statusCode,
+      ).toBe(403);
+      const res = await post(url, { orgId: companyId }, bearer());
+      expect(res.statusCode).toBe(201);
+      expect((await post(url, { orgId: companyId }, bearer())).statusCode).toBe(409);
+
+      const links = await get(`/platform/organizations/${networkId}/links`, bearer());
+      expect(links.json<{ data: object }>().data).toMatchObject({
+        isNetwork: true,
+        members: [{ orgId: companyId, name: `fe7-azienda-${run}`, status: 'PENDING' }],
+        networks: [],
+      });
+      const company = await get(`/platform/organizations/${companyId}/links`, bearer());
+      expect(company.json<{ data: object }>().data).toMatchObject({
+        isNetwork: false,
+        networks: [{ orgId: networkId, status: 'PENDING' }],
+      });
+
+      // The company sees it and confirms it like any other invitation.
+      const mine = await get('/memberships', authHeaders(companyId, companyAdmin, 'ADMIN'));
+      const relationId = mine.json<{ data: Array<{ relationId: string }> }>().data[0].relationId;
+      expect(
+        (
+          await post(
+            `/memberships/${relationId}/confirm`,
+            {},
+            authHeaders(companyId, companyAdmin, 'ADMIN'),
+          )
+        ).statusCode,
+      ).toBe(200);
+
+      // Recorded for the platform, and in the network's log without the administrator's name.
+      expect(
+        await prisma.platformAuditLog.count({
+          where: { orgId: networkId, action: 'NETWORK_INVITATION_SENT' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { tenantId: networkId, eventType: 'NETWORK_INVITATION_SENT', userId: null },
+        }),
+      ).toBe(1);
     });
   });
 });

@@ -236,6 +236,43 @@ describe('platform console (FE7)', () => {
     );
   });
 
+  it('invites a company into a network from the console', async () => {
+    const COMPANY = 'a0000000-0000-4000-8000-000000000009';
+    api({
+      [`GET /platform/organizations/${ORG}`]: () => ok({ ...DETAIL, type: 'NETWORK' }),
+      [`GET /platform/organizations/${ORG}/links`]: () =>
+        ok({ isNetwork: true, members: [], networks: [] }),
+      'GET /platform/organizations': () =>
+        ok({
+          items: [ROW, { ...ROW, id: COMPANY, name: 'Azienda Agricola Beta', type: 'COMPANY' }],
+          total: 2,
+          page: 1,
+          totalPages: 1,
+        }),
+      [`POST /platform/organizations/${ORG}/network-members`]: () => ({
+        status: 201,
+        body: { success: true, data: { relationId: 'r-1' } },
+      }),
+    });
+    openAt(`/piattaforma/organizzazioni/${ORG}`, 'platform');
+    expect(await screen.findByText('Nessuna azienda.')).toBeTruthy();
+    const select = screen.getByLabelText('Azienda');
+    // The network itself is not offered.
+    await waitFor(() =>
+      expect(
+        within(select)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['Scegli…', 'Azienda Agricola Beta']),
+    );
+    await userEvent.selectOptions(select, COMPANY);
+    await userEvent.click(screen.getByRole('button', { name: 'Invita nella rete' }));
+    expect(await screen.findByText(/deve confermarlo/)).toBeTruthy();
+    expect(posted(`/platform/organizations/${ORG}/network-members`)[0]?.body).toEqual({
+      orgId: COMPANY,
+    });
+  });
+
   it('is not offered to people who are not platform administrators', async () => {
     api({
       'GET /auth/me': () =>

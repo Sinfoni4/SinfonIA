@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { bindUserToTenant, getTenantIdByInvite } from '../src/core/tenant/tenant.invite.store.js';
 import { provisionTenant } from '../src/core/tenant/tenant.provisioning.js';
-import { getTenantByTelegramUserAsync } from '../src/core/tenant/tenant.store.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
 import { NotFoundError } from '../src/data/errors/errors.js';
 import { PracticeRepository } from '../src/data/repositories/practice.repository.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { AuditService } from '../src/data/services/audit.service.js';
+import { createTelegramIdentityProvider } from '../src/interface/telegram/telegram.bot.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const itWithDb = it.runIf(Boolean(DATABASE_URL));
@@ -77,9 +77,9 @@ describe('data layer (postgres)', () => {
       const telegramUser = await userRepo.ensureTelegramUser(t1.id, '123456');
       const telegramUserAgain = await userRepo.ensureTelegramUser(t1.id, '123456');
       expect(telegramUser.id).toBe(telegramUserAgain.id);
-      expect(telegramUser.telegramId).toBe('123456');
 
-      const identity = await getTenantByTelegramUserAsync(prisma, '123456');
+      // MF12: the chat link is in channel_identity, resolved through the membership.
+      const identity = await createTelegramIdentityProvider(prisma).resolve('123456');
       expect(identity.tenant.id).toBe(t1.id);
       expect(identity.userId).toBe(telegramUser.id);
       expect(identity.role).toBe('MEMBER');
@@ -92,13 +92,8 @@ describe('data layer (postgres)', () => {
         adminTelegramId: '987654321',
       });
       expect(await getTenantIdByInvite(prisma, provisioned.inviteCode)).toBe(provisioned.tenantId);
-      const provisionedAdmin = await userRepo.getUserById(
-        provisioned.tenantId,
-        provisioned.adminUserId,
-      );
-      expect(provisionedAdmin.role).toBe('ADMIN');
-      expect(provisionedAdmin.telegramId).toBe('987654321');
-      const provisionedIdentity = await getTenantByTelegramUserAsync(prisma, '987654321');
+      const provisionedIdentity = await createTelegramIdentityProvider(prisma).resolve('987654321');
+      expect(provisionedIdentity.userId).toBe(provisioned.adminUserId);
       expect(provisionedIdentity.tenant.id).toBe(provisioned.tenantId);
       expect(provisionedIdentity.role).toBe('ADMIN');
       const binding = await prisma.userTenant.findFirst({

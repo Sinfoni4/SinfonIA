@@ -111,72 +111,87 @@ export async function inviteMember(
   prisma: PrismaClient,
   input: { networkId: string; childOrgId: string; actorUserId: string },
 ): Promise<{ relationId: string }> {
-  return withTransaction(prisma, async (tx) => {
-    const network = await requireNetwork(tx, input.networkId);
-    if (input.childOrgId === input.networkId) {
-      throw new NetworkError("Un'organizzazione non può aderire a sé stessa");
-    }
-    const child = await tx.tenant.findUnique({
-      where: { id: input.childOrgId },
-      select: { id: true, name: true, status: true },
-    });
-    if (!child || child.status !== 'ACTIVE') {
-      throw new NetworkError('Codice di adesione non valido', 400, 'UNKNOWN_ORGANIZATION');
-    }
-    const existing = await tx.organizationRelation.findUnique({
-      where: {
-        parentOrgId_childOrgId_relationType: {
-          parentOrgId: input.networkId,
-          childOrgId: input.childOrgId,
-          relationType: 'MEMBER_OF',
-        },
-      },
-      select: { id: true, status: true },
-    });
-    if (existing && existing.status !== 'ENDED') {
-      throw new NetworkError(
-        existing.status === 'ACTIVE'
-          ? `${child.name} aderisce già alla rete`
-          : `L'invito a ${child.name} è già in attesa`,
-        409,
-        'ALREADY_MEMBER',
-      );
-    }
-    const data = {
-      status: 'PENDING' as const,
-      requestedBy: input.actorUserId,
-      confirmedBy: null,
-      startedAt: null,
-      endedAt: null,
-      endedBy: null,
-      refused: false,
-    };
-    const relation = existing
-      ? await tx.organizationRelation.update({
-          where: { id: existing.id },
-          data,
-          select: { id: true },
-        })
-      : await tx.organizationRelation.create({
-          data: { parentOrgId: input.networkId, childOrgId: input.childOrgId, ...data },
-          select: { id: true },
-        });
-    const audit = new AuditService(tx);
-    await audit.logEvent({
-      tenantId: input.networkId,
-      userId: input.actorUserId,
-      eventType: 'NETWORK_INVITATION_SENT',
-      payload: { relationId: relation.id, organization: child.name },
-    });
-    // The company sees the request in its own log too.
-    await audit.logEvent({
-      tenantId: input.childOrgId,
-      userId: null,
-      eventType: 'NETWORK_INVITATION_RECEIVED',
-      payload: { relationId: relation.id, organization: network.name },
-    });
-    return { relationId: relation.id };
+  const { relationId } = await withTransaction(prisma, (tx) => inviteMemberInTx(tx, input));
+  return { relationId };
+}
+
+/**
+ * The invitation inside a transaction of the caller. `byPlatform`: sent from the platform
+ * console (Cantiere 1, voce 17): the network's log shows it as done by the platform, without the
+ * name of the administrator; the company still has to confirm it.
+ */
+export async function inviteMemberInTx(
+  tx: PrismaTx,
+  input: { networkId: string; childOrgId: string; actorUserId: string; byPlatform?: boolean },
+): Promise<{ relationId: string; network: string; organization: string }> {
+  const network = await requireNetwork(tx, input.networkId);
+  if (input.childOrgId === input.networkId) {
+    throw new NetworkError("Un'organizzazione non può aderire a sé stessa");
+  }
+  const child = await tx.tenant.findUnique({
+    where: { id: input.childOrgId },
+    select: { id: true, name: true, status: true },
   });
+  if (!child || child.status !== 'ACTIVE') {
+    throw new NetworkError('Codice di adesione non valido', 400, 'UNKNOWN_ORGANIZATION');
+  }
+  const existing = await tx.organizationRelation.findUnique({
+    where: {
+      parentOrgId_childOrgId_relationType: {
+        parentOrgId: input.networkId,
+        childOrgId: input.childOrgId,
+        relationType: 'MEMBER_OF',
+      },
+    },
+    select: { id: true, status: true },
+  });
+  if (existing && existing.status !== 'ENDED') {
+    throw new NetworkError(
+      existing.status === 'ACTIVE'
+        ? `${child.name} aderisce già alla rete`
+        : `L'invito a ${child.name} è già in attesa`,
+      409,
+      'ALREADY_MEMBER',
+    );
+  }
+  const data = {
+    status: 'PENDING' as const,
+    requestedBy: input.actorUserId,
+    confirmedBy: null,
+    startedAt: null,
+    endedAt: null,
+    endedBy: null,
+    refused: false,
+  };
+  const relation = existing
+    ? await tx.organizationRelation.update({
+        where: { id: existing.id },
+        data,
+        select: { id: true },
+      })
+    : await tx.organizationRelation.create({
+        data: { parentOrgId: input.networkId, childOrgId: input.childOrgId, ...data },
+        select: { id: true },
+      });
+  const audit = new AuditService(tx);
+  await audit.logEvent({
+    tenantId: input.networkId,
+    userId: input.byPlatform ? null : input.actorUserId,
+    eventType: 'NETWORK_INVITATION_SENT',
+    payload: {
+      relationId: relation.id,
+      organization: child.name,
+      ...(input.byPlatform ? { byPlatform: true } : {}),
+    },
+  });
+  // The company sees the request in its own log too.
+  await audit.logEvent({
+    tenantId: input.childOrgId,
+    userId: null,
+    eventType: 'NETWORK_INVITATION_RECEIVED',
+    payload: { relationId: relation.id, organization: network.name },
+  });
+  return { relationId: relation.id, network: network.name, organization: child.name };
 }
 
 /** The networks of a company: invitations to answer and memberships in force. */
