@@ -6,6 +6,8 @@ import { aiUsage, systemHealth } from '../../../core/platform/platform-health.se
 import {
   createOrganization,
   getOrganization,
+  inviteToNetwork,
+  listOrganizationLinks,
   listOrganizations,
   listPlatformAudit,
   setOrganizationModules,
@@ -97,6 +99,9 @@ const ModulesBodySchema = z
     disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
   })
   .strict();
+
+/** Voce 17: the company to invite, by its id (the console picks it from the list). */
+const InviteBodySchema = z.object({ orgId: z.string().uuid() }).strict();
 
 const AuditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -213,6 +218,30 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       const { id } = IdParamsSchema.parse(req.params);
       const body = ModulesBodySchema.parse(req.body);
       return reply.send(ok(await setOrganizationModules(deps.prisma, id, body, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Voce 17: memberships of an organization, and invitations of companies into a network.
+  app.get('/platform/organizations/:id/links', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      return reply.send(ok(await listOrganizationLinks(deps.prisma, id)));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post('/platform/organizations/:id/network-members', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = InviteBodySchema.parse(req.body);
+      return reply
+        .status(201)
+        .send(ok(await inviteToNetwork(deps.prisma, id, body.orgId, { userId })));
     } catch (err: unknown) {
       return sendError(reply, err);
     }
