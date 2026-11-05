@@ -386,6 +386,23 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
         ].sort(),
       );
       expect(h.services).toEqual({ telegram: false, whatsapp: false, webhook: false, ai: null });
+      // Documents to read, storage and backup: counts and dates, never paths or file names.
+      const extra = res.json<{
+        data: {
+          documents: Record<string, number | null>;
+          storage: { driver: string; disk: Record<string, unknown> | null };
+          backup: { configured: boolean };
+        };
+      }>().data;
+      expect(Object.keys(extra.documents).sort()).toEqual(
+        ['failedLast24h', 'oldestPendingMinutes', 'pending', 'processing'].sort(),
+      );
+      expect(extra.storage.driver).toBe('local');
+      expect(Object.keys(extra.storage.disk ?? {}).sort()).toEqual(
+        ['checkedAt', 'files', 'missingFiles', 'orphanFiles'].sort(),
+      );
+      expect(extra.backup).toEqual({ configured: false, reachable: false, last: null });
+      expect(res.body).not.toMatch(/runtime|storage-|SinfonIA-backup/);
     });
 
     it('counts the use of the AI by organization, without any error text', async () => {

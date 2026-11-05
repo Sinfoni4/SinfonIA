@@ -1,5 +1,13 @@
 import { runtimeState } from '../../runtime/runtime.state.js';
 
+import {
+  backupHealth,
+  storageHealth,
+  type BackupHealth,
+  type HealthLocations,
+  type StorageHealth,
+} from './platform-storage.service.js';
+
 import type { PrismaClient } from '@prisma/client';
 
 /**
@@ -31,14 +39,27 @@ export type SystemHealth = {
     deadLetterLast24h: number;
   };
   scheduler: { lastRunAt: Date | null; failedLast24h: number; runsLast24h: number };
+  /** Documents waiting to be read (OCR), across all organizations: counts only. */
+  documents: {
+    pending: number;
+    processing: number;
+    failedLast24h: number;
+    /** Minutes the oldest document still to read has been waiting. */
+    oldestPendingMinutes: number | null;
+  };
+  storage: StorageHealth | null;
+  backup: BackupHealth;
   services: ConfiguredServices;
 };
+
+const NO_LOCATIONS: HealthLocations = { storageDir: null, backupDir: null, databaseName: null };
 
 const DAY_MS = 24 * 60 * 60_000;
 
 export async function systemHealth(
   prisma: PrismaClient,
   services: ConfiguredServices,
+  locations: HealthLocations = NO_LOCATIONS,
 ): Promise<SystemHealth> {
   const now = new Date();
   const since = new Date(now.getTime() - DAY_MS);
@@ -62,7 +83,40 @@ export async function systemHealth(
   };
   let outbox = empty;
   let scheduler: SystemHealth['scheduler'] = { lastRunAt: null, failedLast24h: 0, runsLast24h: 0 };
+  let documents: SystemHealth['documents'] = {
+    pending: 0,
+    processing: 0,
+    failedLast24h: 0,
+    oldestPendingMinutes: null,
+  };
+  let storage: StorageHealth | null = null;
   if (reachable) {
+    const [ocr, oldestDocument, ocrFailed, storageState] = await Promise.all([
+      prisma.practiceAttachment.groupBy({
+        by: ['ocrStatus'],
+        where: { ocrStatus: { in: ['PENDING', 'PROCESSING'] } },
+        _count: { _all: true },
+      }),
+      prisma.practiceAttachment.findFirst({
+        where: { ocrStatus: 'PENDING' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      prisma.practiceAttachment.count({
+        where: { ocrStatus: 'FAILED', updatedAt: { gte: since } },
+      }),
+      storageHealth(prisma, locations.storageDir, now),
+    ]);
+    const ocrCount = (status: string) => ocr.find((g) => g.ocrStatus === status)?._count._all ?? 0;
+    documents = {
+      pending: ocrCount('PENDING'),
+      processing: ocrCount('PROCESSING'),
+      failedLast24h: ocrFailed,
+      oldestPendingMinutes: oldestDocument
+        ? Math.floor((now.getTime() - oldestDocument.createdAt.getTime()) / 60_000)
+        : null,
+    };
+    storage = storageState;
     const [byStatus, oldest, deadRecent, lastRun, runs, failedRuns] = await Promise.all([
       prisma.outboxMessage.groupBy({ by: ['status'], _count: { _all: true } }),
       prisma.outboxMessage.findFirst({
@@ -107,6 +161,9 @@ export async function systemHealth(
     },
     outbox,
     scheduler,
+    documents,
+    storage,
+    backup: await backupHealth(locations.backupDir, locations.databaseName),
     services,
   };
 }

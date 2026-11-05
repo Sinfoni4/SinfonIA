@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { describeError } from '../api/client';
 import {
+  formatBytes,
   formatNumber,
   formatUptime,
   healthWarnings,
@@ -113,6 +114,84 @@ export function HealthPage() {
               </dd>
             </dl>
           </section>
+          {h.documents && (
+            <section className="card">
+              <h2>Lettura dei documenti</h2>
+              <dl className="facts">
+                <dt>Da leggere</dt>
+                <dd>
+                  {h.documents.pending}
+                  {h.documents.oldestPendingMinutes !== null &&
+                    ` (il più vecchio da ${h.documents.oldestPendingMinutes} min)`}
+                </dd>
+                <dt>In lettura</dt>
+                <dd>{h.documents.processing}</dd>
+                <dt>Non letti nelle ultime 24 ore</dt>
+                <dd>{h.documents.failedLast24h}</dd>
+              </dl>
+            </section>
+          )}
+          {h.storage && (
+            <section className="card">
+              <h2>Archivio degli allegati</h2>
+              <dl className="facts">
+                <dt>Allegati</dt>
+                <dd>
+                  {formatNumber(h.storage.attachments)}, {formatBytes(h.storage.bytes)}
+                </dd>
+                <dt>Archivio</dt>
+                <dd>
+                  {h.storage.driver === 'local' ? 'disco del server' : 'archivio esterno (S3)'}
+                </dd>
+                {h.storage.disk && (
+                  <>
+                    <dt>File sul disco</dt>
+                    <dd>{formatNumber(h.storage.disk.files)}</dd>
+                    <dt>File orfani</dt>
+                    <dd>
+                      {formatNumber(h.storage.disk.orphanFiles)}
+                      {h.storage.disk.orphanFiles > 0 && ' (elenco con npm run storage:orphans)'}
+                    </dd>
+                    <dt>Allegati senza file</dt>
+                    <dd>{formatNumber(h.storage.disk.missingFiles)}</dd>
+                    <dt>Controllo del disco</dt>
+                    <dd>{formatDateTime(h.storage.disk.checkedAt)}</dd>
+                  </>
+                )}
+              </dl>
+            </section>
+          )}
+          {h.backup && (
+            <section className="card">
+              <h2>Backup</h2>
+              <dl className="facts">
+                <dt>Cartella dei backup</dt>
+                <dd>
+                  {!h.backup.configured
+                    ? 'non configurata su questo server'
+                    : h.backup.reachable
+                      ? 'raggiungibile'
+                      : 'non raggiungibile'}
+                </dd>
+                {h.backup.configured && h.backup.reachable && (
+                  <>
+                    <dt>Ultimo backup</dt>
+                    <dd>
+                      {h.backup.last
+                        ? `${formatDateTime(h.backup.last.at)}${
+                            h.backup.last.tables !== null ? `, ${h.backup.last.tables} tabelle` : ''
+                          }${
+                            h.backup.last.attachments !== null
+                              ? `, ${h.backup.last.attachments} allegati`
+                              : ''
+                          }`
+                        : 'nessuno'}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </section>
+          )}
           <section className="card">
             <h2>Servizi collegati</h2>
             <dl className="facts">

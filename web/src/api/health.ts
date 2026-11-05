@@ -13,8 +13,29 @@ export type SystemHealth = {
     deadLetterLast24h: number;
   };
   scheduler: { lastRunAt: string | null; failedLast24h: number; runsLast24h: number };
+  /** Missing on an older backend. */
+  documents?: {
+    pending: number;
+    processing: number;
+    failedLast24h: number;
+    oldestPendingMinutes: number | null;
+  };
+  storage?: {
+    driver: 'local' | 's3';
+    attachments: number;
+    bytes: number;
+    disk: { files: number; orphanFiles: number; missingFiles: number; checkedAt: string } | null;
+  } | null;
+  backup?: {
+    configured: boolean;
+    reachable: boolean;
+    last: { at: string; tables: number | null; attachments: number | null } | null;
+  };
   services: { telegram: boolean; whatsapp: boolean; webhook: boolean; ai: string | null };
 };
+
+/** A backup older than this is reported in the warnings. */
+export const BACKUP_MAX_AGE_DAYS = 7;
 
 export type AiUsage = {
   days: number;
@@ -51,7 +72,7 @@ export const MODE_LABELS: Record<string, string> = {
 };
 
 /** What needs attention, in plain words; empty when all is well. */
-export function healthWarnings(h: SystemHealth): string[] {
+export function healthWarnings(h: SystemHealth, now = new Date()): string[] {
   const warnings: string[] = [];
   if (!h.database.reachable) warnings.push('Il database non risponde.');
   else if (h.database.mode !== 'HEALTHY') {
@@ -70,6 +91,27 @@ export function healthWarnings(h: SystemHealth): string[] {
       `${h.scheduler.failedLast24h} attività pianificate non riuscite nelle ultime 24 ore.`,
     );
   }
+  const docs = h.documents;
+  if (docs && docs.oldestPendingMinutes !== null && docs.oldestPendingMinutes >= 30) {
+    warnings.push(`Un documento aspetta la lettura da ${docs.oldestPendingMinutes} minuti.`);
+  }
+  if (docs && docs.failedLast24h > 0) {
+    warnings.push(`${docs.failedLast24h} documenti non letti nelle ultime 24 ore.`);
+  }
+  if (h.storage?.disk && h.storage.disk.missingFiles > 0) {
+    warnings.push(`${h.storage.disk.missingFiles} allegati non hanno più il file sul disco.`);
+  }
+  const backup = h.backup;
+  if (backup?.configured) {
+    if (!backup.reachable) {
+      warnings.push('La cartella dei backup non è raggiungibile: il disco è collegato?');
+    } else if (!backup.last) {
+      warnings.push('Nessun backup trovato nella cartella dei backup.');
+    } else {
+      const days = Math.floor((now.getTime() - new Date(backup.last.at).getTime()) / 86_400_000);
+      if (days >= BACKUP_MAX_AGE_DAYS) warnings.push(`L'ultimo backup è di ${days} giorni fa.`);
+    }
+  }
   return warnings;
 }
 
@@ -84,4 +126,16 @@ export function formatUptime(seconds: number): string {
   if (days > 0) return `${days} g ${hours} h`;
   if (hours > 0) return `${hours} h ${minutes} min`;
   return `${minutes} min`;
+}
+
+/** Bytes in KB, MB or GB, in Italian. */
+export function formatBytes(bytes: number): string {
+  const units = ['byte', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${unit === 0 ? value : value.toLocaleString('it-IT', { maximumFractionDigits: 1 })} ${units[unit]}`;
 }
