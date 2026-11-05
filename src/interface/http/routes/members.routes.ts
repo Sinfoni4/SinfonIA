@@ -12,6 +12,7 @@ import {
   setScheduledExport,
   setTenantScope,
 } from '../../../core/identity/member-access.service.js';
+import { memberCard } from '../../../core/identity/member-card.service.js';
 import {
   changeMemberRole,
   listMembers,
@@ -221,6 +222,18 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
       },
     );
   }
+
+  // Cantiere 3 (item 43): one member in one view, for the administrators.
+  app.get('/members/:userId', { config: { permission: 'members.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'members.read').principal;
+      const { userId } = MemberParamsSchema.parse(req.params);
+      return reply.send(ok(await memberCard(deps.prisma, auth.tenantId, userId)));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
 
   // --- B2: custom roles --------------------------------------------------------------------
 

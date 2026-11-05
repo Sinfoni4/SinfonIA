@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 
 import { ApiError, describeError, type Me, type Role } from '../api/client';
 import {
@@ -115,7 +116,9 @@ function Members({ me }: { me: Me }) {
               return (
                 <tr key={m.userId}>
                   <td data-label="Persona">
-                    {m.email ?? <span className="muted">account della chat, senza email</span>}
+                    <Link to={`/persone/${m.userId}`}>
+                      {m.email ?? <span className="muted">account della chat, senza email</span>}
+                    </Link>
                     {self && <span className="badge">tu</span>}
                   </td>
                   <td data-label="Ruolo">

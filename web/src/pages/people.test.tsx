@@ -212,6 +212,67 @@ describe('people (FE4)', () => {
     );
   });
 
+  it('opens the card of a member with practices, deadlines and documents', async () => {
+    const GIULIA = 'u0000000-0000-4000-8000-000000000002';
+    api('ADMIN', {
+      [`GET /members/${GIULIA}`]: () =>
+        ok({
+          userId: GIULIA,
+          email: 'giulia@coop.it',
+          role: 'OPERATOR',
+          customRole: { id: 'r1', name: 'Segreteria' },
+          status: 'ACTIVE',
+          since: '2026-09-01T10:00:00.000Z',
+          practices: {
+            total: 3,
+            open: 2,
+            items: [
+              {
+                id: 'p1',
+                name: 'Domanda PAC',
+                status: 'SUBMITTED',
+                typeLabel: 'agricultural practice',
+                updatedAt: '2026-11-01T10:00:00.000Z',
+              },
+            ],
+          },
+          assigned: [],
+          deadlines: [
+            {
+              id: 'd1',
+              title: 'Visita medica',
+              category: 'VISITA_MEDICA',
+              dueDate: '2026-11-15',
+              daysLeft: 10,
+            },
+          ],
+          documents: {
+            total: 1,
+            toReview: 1,
+            items: [
+              {
+                id: 'a1',
+                practiceId: 'p1',
+                practiceName: 'Domanda PAC',
+                fileName: 'fattura.pdf',
+                ocrStatus: 'COMPLETED',
+                validated: false,
+                createdAt: '2026-11-01T10:00:00.000Z',
+              },
+            ],
+          },
+        }),
+    });
+    openAt('/persone');
+    await userEvent.click(await screen.findByRole('link', { name: 'giulia@coop.it' }));
+    expect(await screen.findByRole('heading', { name: 'giulia@coop.it' })).toBeTruthy();
+    expect(screen.getByText('Operatore · Segreteria')).toBeTruthy();
+    expect(screen.getByText('3, di cui 2 in corso')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Domanda PAC' }).length).toBe(2);
+    expect(screen.getByText('Visita medica')).toBeTruthy();
+    expect(screen.getByText('fattura.pdf')).toBeTruthy();
+  });
+
   it('revokes with an optional reason and explains the last-admin refusal', async () => {
     api('ADMIN', {
       'POST /members/u0000000-0000-4000-8000-000000000002/revoke': () => failure(409, 'LAST_ADMIN'),
