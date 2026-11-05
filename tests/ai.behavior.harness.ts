@@ -492,6 +492,7 @@ async function main(): Promise<void> {
             tenantId: tenant.id,
             userId: user.id,
             role: 'ADMIN',
+            customPermissions: null,
           });
           row.executionResult = execution;
           console.log('[ai-flow]', { step: 'execute', input: cmd, output: execution });
@@ -518,6 +519,7 @@ async function main(): Promise<void> {
         const execution = await executor.execute(resolved, {
           tenantId: tenant.id,
           role: 'ADMIN',
+          customPermissions: null,
           userId: user.id,
         });
         row.executionResult = execution;

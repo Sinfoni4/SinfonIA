@@ -30,6 +30,7 @@ export function requirePrincipal(req: FastifyRequest): Principal {
     ...requireAuthContext(req),
     extraPermissions: ctx?.extraPermissions,
     disabledFeatures: ctx?.disabledFeatures,
+    customPermissions: ctx?.customPermissions ?? null,
   };
 }
 

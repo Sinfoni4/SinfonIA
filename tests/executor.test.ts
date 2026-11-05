@@ -51,6 +51,7 @@ describe('ai executor', () => {
       {
         tenantId: '550e8400-e29b-41d4-a716-446655440001',
         role: 'ADMIN',
+        customPermissions: null,
         userId: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
       },
     );
@@ -70,7 +71,12 @@ describe('ai executor', () => {
 
     const res = await executor.execute(
       { action: 'unknown_action', data: {} },
-      { tenantId: '550e8400-e29b-41d4-a716-446655440001', userId: null, role: 'ADMIN' },
+      {
+        tenantId: '550e8400-e29b-41d4-a716-446655440001',
+        userId: null,
+        role: 'ADMIN',
+        customPermissions: null,
+      },
     );
 
     // S03: fail closed, an action without a known permission is refused before anything else.
@@ -85,7 +91,12 @@ describe('ai executor', () => {
 
     const res = await executor.execute(
       { action: 'transition_practice', data: { practiceId: 'not-a-uuid', nextState: 'NOPE' } },
-      { tenantId: '550e8400-e29b-41d4-a716-446655440001', userId: null, role: 'ADMIN' },
+      {
+        tenantId: '550e8400-e29b-41d4-a716-446655440001',
+        userId: null,
+        role: 'ADMIN',
+        customPermissions: null,
+      },
     );
 
     expect(res.success).toBe(false);

@@ -46,7 +46,12 @@ const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
 };
 
 const ROLES: UserRole[] = ['ADMIN', 'OPERATOR', 'MEMBER'];
-const principal = (role: UserRole) => ({ tenantId: 't-1', userId: 'u-1', role });
+const principal = (role: UserRole) => ({
+  tenantId: 't-1',
+  userId: 'u-1',
+  role,
+  customPermissions: null,
+});
 
 describe('permission matrix', () => {
   it('declares an expectation for every permission of the catalog', () => {

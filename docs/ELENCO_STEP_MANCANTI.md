@@ -79,6 +79,8 @@ Rispetto alla pagina A4 del piano frontend mancano:
 
 ### 1.6 B2 — Ruoli personalizzati (4–5 gg, H6)
 
+*Fatto sul ramo `feat/b2-custom-roles` (migrazione `20261107090000_b2_custom_roles`, solo sul database dei test)*: un ruolo personalizzato parte da un ruolo di base e ne tiene solo alcuni permessi o li limita alle proprie pratiche, mai di più; vale su API, chat e assistente IA; resta sempre almeno un amministratore che gestisce le persone; un ruolo non passa tra organizzazioni (controllo anche nel database). Il perimetro «pratiche assegnate» è rinviato: richiede di cambiare tutte le query delle pratiche.
+
 35. Tabella dei ruoli dell'organizzazione come insiemi di permessi del catalogo esistente, con perimetro (proprie, assegnate, organizzazione); migrazione.
 36. Servizio di autorizzazione che li applica; mai permessi inventati dall'interfaccia.
 37. Pagina dell'amministratore per crearli e assegnarli; audit.

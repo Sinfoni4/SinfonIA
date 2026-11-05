@@ -48,7 +48,8 @@ function setup(answers: Array<string | ChatAnswer>) {
       name: 'telegram',
       identity: {
         link: () => Promise.resolve(null),
-        resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN' }),
+        resolve: () =>
+          Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
       },
     },
   );
@@ -159,7 +160,12 @@ describe('the AI adapter tells when it asked a question', () => {
       contextService: { getPracticeContext: () => Promise.resolve({ practices: [] }) },
       formatResponse: formatTelegramResponse,
     });
-  const identity = { tenantId: 't-1', userId: 'u-1', role: 'ADMIN' as const };
+  const identity = {
+    tenantId: 't-1',
+    userId: 'u-1',
+    role: 'ADMIN' as const,
+    customPermissions: null,
+  };
 
   it('marks a clarification with its options', async () => {
     const answer = await adapter({

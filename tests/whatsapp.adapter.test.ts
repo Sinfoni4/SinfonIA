@@ -294,7 +294,7 @@ function fakeConversationDeps() {
 }
 const linkedIdentity: ChannelIdentityProvider = {
   link: () => Promise.resolve(tenant.id),
-  resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN' }),
+  resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
 };
 
 function fakeWhatsAppClient() {
@@ -414,7 +414,13 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
     await channel.receive(webhook(textMessage('l3', phone, 'lista pratiche')));
     expect(deps.practiceService.executeCommand).toHaveBeenCalledWith(
       { type: 'LIST_PRACTICES', payload: {} },
-      { tenantId, userId: identity!.userId, role: 'MEMBER', disabledFeatures: [] },
+      {
+        tenantId,
+        userId: identity!.userId,
+        role: 'MEMBER',
+        disabledFeatures: [],
+        customPermissions: null,
+      },
       { channel: 'whatsapp' },
     );
   });

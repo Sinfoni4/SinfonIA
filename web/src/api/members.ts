@@ -17,7 +17,63 @@ export type Member = {
   /** Organization-wide scopes granted by an ADMIN, as `<permission>:tenant`. */
   extraPermissions: string[];
   receivesScheduledExport: boolean;
+  /** B2: the custom role of the membership (missing on an older backend). */
+  customRole?: { id: string; name: string } | null;
 };
+
+// --- B2: custom roles ---------------------------------------------------------------------------
+
+export type PermissionScope = 'own' | 'tenant';
+
+export type CustomRole = {
+  id: string;
+  name: string;
+  baseRole: Role;
+  permissions: Record<string, PermissionScope>;
+  /** Active members who have it. */
+  members: number;
+};
+
+/** What each base role allows, as GET /roles/catalog returns it. */
+export type RoleCatalog = Record<Role, Record<string, PermissionScope>>;
+
+/** The permissions of the catalog in plain Italian; unknown ones show their code. */
+export const PERMISSION_LABELS: Record<string, string> = {
+  'practice.create': 'Creare pratiche',
+  'practice.read': 'Vedere le pratiche',
+  'practice.export': 'Esportare le pratiche',
+  'practice.transition': 'Cambiare lo stato delle pratiche',
+  'practice.delete': 'Eliminare le proprie pratiche',
+  'practice.assign': 'Assegnare le pratiche',
+  'attachment.create': 'Caricare documenti',
+  'attachment.read': 'Vedere i documenti',
+  'attachment.validate': 'Verificare i dati letti dai documenti',
+  'ai.execute': "Usare l'assistente IA",
+  'ai.traces.read': "Vedere l'uso dell'assistente IA",
+  'compliance.read': 'Vedere le scadenze',
+  'compliance.manage': 'Gestire le scadenze',
+  'audit.read': 'Vedere il registro delle attività',
+  'members.read': 'Vedere le persone',
+  'members.manage': 'Gestire persone e ruoli',
+  'organization.manage': "Impostazioni dell'organizzazione",
+  'assistance.request': 'Chiedere assistenza',
+  'assistance.manage': 'Gestire le richieste di assistenza',
+  'network.manage': 'Gestire rete e aderenti',
+  'network.stats': 'Vedere le statistiche di rete',
+  'memberships.manage': 'Gestire le adesioni alle reti',
+  'grant.issue': 'Concedere deleghe',
+  'grant.beneficiaries': 'Indicare le persone delle deleghe ricevute',
+  'grant.use': 'Usare le deleghe ricevute',
+};
+
+export const SCOPE_LABELS: Record<PermissionScope, string> = {
+  tenant: "tutta l'organizzazione",
+  own: 'solo le proprie',
+};
+
+export function permissionLabel(permission: string): string {
+  return PERMISSION_LABELS[permission] ?? permission;
+}
 
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
 

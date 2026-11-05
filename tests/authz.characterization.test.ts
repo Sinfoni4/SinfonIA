@@ -325,6 +325,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
                 tenant: { id: seed.tenantId } as never,
                 userId: seed.users[key],
                 role,
+                customPermissions: null,
               }),
           },
         },
@@ -429,6 +430,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
           tenantId: seed.tenantId,
           userId: seed.users.member,
           role: 'MEMBER',
+          customPermissions: null,
         }),
       ).rejects.toThrow('PERMISSION_DENIED:VALIDATED');
       // The AI proposes; nothing changes until the person confirms in the chat.
@@ -436,6 +438,7 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
         tenantId: seed.tenantId,
         userId: seed.users.operator,
         role: 'OPERATOR',
+        customPermissions: null,
       });
       expect(answer.confirmTransition).toEqual({
         practiceId: operatorPractice.id,

@@ -2,6 +2,7 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { can } from '../authz/authorization.service.js';
+import { ensureMemberManager } from '../authz/custom-roles.service.js';
 
 import type { PrismaTx } from '../../data/types/prisma.js';
 import type { PrismaClient, UserRole, UserStatus } from '@prisma/client';
@@ -130,6 +131,7 @@ export async function revokeMembership(
         scheduledExportSince: null,
       },
     });
+    await ensureMemberManager(tx, orgId);
     await new AuditService(tx).logEvent({
       tenantId: orgId,
       userId: actor.userId,
@@ -166,10 +168,13 @@ export async function changeMemberRole(
       data: {
         role,
         extraPermissions: [],
+        // B2: a custom role is built on the old role, so it goes with it.
+        customRoleId: null,
         // Only those who can manage members receive the scheduled export (D5b).
         ...(can(role, 'members.manage') ? {} : { scheduledExportSince: null }),
       },
     });
+    await ensureMemberManager(tx, orgId);
     // Legacy column (until the contract step M3): kept equal in the person's legacy organization.
     await tx.user.updateMany({ where: { id: userId, tenantId: orgId }, data: { role } });
     await new AuditService(tx).logEvent({
@@ -221,6 +226,7 @@ export async function listMembers(prisma: PrismaClient, orgId: string) {
       extraPermissions: true,
       scheduledExportSince: true,
       user: { select: { email: true, status: true } },
+      customRole: { select: { id: true, name: true } },
     },
   });
   return rows.map((r) => ({
@@ -234,5 +240,6 @@ export async function listMembers(prisma: PrismaClient, orgId: string) {
     revokedAt: r.revokedAt,
     extraPermissions: r.extraPermissions,
     receivesScheduledExport: r.scheduledExportSince !== null,
+    customRole: r.customRole,
   }));
 }

@@ -50,6 +50,7 @@ export function createMembershipIdentityProvider(
         tenant: await getTenantById(prisma, only.tenantId),
         userId: found.userId,
         role: only.role,
+        customPermissions: only.customPermissions,
       };
     },
 

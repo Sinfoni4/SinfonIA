@@ -166,13 +166,17 @@ describe('A03: functions turned off for an organization', () => {
       tenantId: 't',
       userId: 'u',
       role: 'ADMIN' as const,
+      customPermissions: null,
       disabledFeatures: ['deadlines'],
     };
     expect(() => authorize(principal, 'compliance.manage')).toThrow(FeatureDisabledError);
     expect(authorize(principal, 'practice.create').scope).toBe('own');
     // A role without the permission still gets the role refusal.
     expect(() =>
-      authorize({ ...principal, role: 'MEMBER', disabledFeatures: [] }, 'compliance.manage'),
+      authorize(
+        { ...principal, role: 'MEMBER', customPermissions: null, disabledFeatures: [] },
+        'compliance.manage',
+      ),
     ).toThrow(PermissionDeniedError);
     expect(
       mapTelegramErrorToMessage(new FeatureDisabledError('deadlines', 'compliance.read')),
@@ -194,7 +198,8 @@ describe('A03: functions turned off for an organization', () => {
         name: 'telegram',
         identity: {
           link: () => Promise.resolve(null),
-          resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN' }),
+          resolve: () =>
+            Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
         },
       },
     );
@@ -221,6 +226,7 @@ describe('A03: functions turned off for an organization', () => {
         tenantId: 't-1',
         userId: 'u-1',
         role: 'ADMIN',
+        customPermissions: null,
         disabledFeatures: ['deadlines'],
       },
     );

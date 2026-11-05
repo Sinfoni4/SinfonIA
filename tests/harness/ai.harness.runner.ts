@@ -543,6 +543,7 @@ export async function runHarness(args: {
           tenantId: tenant.id,
           userId: user.id,
           role: 'ADMIN',
+          customPermissions: null,
         });
         row.executionResult = execution;
         row.classification = classify({
@@ -565,6 +566,7 @@ export async function runHarness(args: {
         tenantId: tenant.id,
         userId: user.id,
         role: 'ADMIN',
+        customPermissions: null,
       });
       row.executionResult = execution;
 

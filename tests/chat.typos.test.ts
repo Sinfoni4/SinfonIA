@@ -77,7 +77,8 @@ describe('typing errors in the chat', () => {
         name: 'telegram',
         identity: {
           link: () => Promise.resolve(null),
-          resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN' }),
+          resolve: () =>
+            Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
         },
       },
     );
@@ -106,7 +107,7 @@ describe('typing errors in the chat', () => {
     await c.say('sì');
     expect(c.executeCommand).toHaveBeenCalledWith(
       { type: 'DELETE_PRACTICE', payload: { name: 'Prova' } },
-      { tenantId: 't-1', userId: 'u-1', role: 'ADMIN' },
+      { tenantId: 't-1', userId: 'u-1', role: 'ADMIN', customPermissions: null },
       { channel: 'telegram' },
     );
   });

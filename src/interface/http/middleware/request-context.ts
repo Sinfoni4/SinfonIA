@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { CustomPermissions } from '../../../core/authz/permissions.js';
 import type { AuthContext, AuthRole } from '../auth/auth.types.js';
 import type { FastifyRequest } from 'fastify';
 
@@ -12,6 +13,8 @@ export type RequestContext = {
   extraPermissions?: readonly string[];
   /** A03: functions turned off for the organization, read with the role. */
   disabledFeatures?: readonly string[];
+  /** B2: the custom role of the membership, read with the role; null = the base role. */
+  customPermissions?: CustomPermissions | null;
   /** Platform console requests (G1): no organization and no role, never both. */
   platform?: { userId: string; sessionId: string; email: string };
 };
@@ -43,6 +46,7 @@ export function attachAuthenticatedContext(
   auth: AuthContext & {
     extraPermissions?: readonly string[];
     disabledFeatures?: readonly string[];
+    customPermissions?: CustomPermissions | null;
   },
 ): void {
   const ctx = getRequestContext(req);
@@ -54,6 +58,7 @@ export function attachAuthenticatedContext(
   ctx.role = auth.role;
   ctx.extraPermissions = auth.extraPermissions ?? [];
   ctx.disabledFeatures = auth.disabledFeatures ?? [];
+  ctx.customPermissions = auth.customPermissions ?? null;
 }
 
 export function attachPlatformContext(

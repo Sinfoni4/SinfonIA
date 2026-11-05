@@ -3,8 +3,11 @@ import { FeatureDisabledError, featureEnabled, featureOf } from '../features/fea
 
 import {
   GRANTABLE_TENANT_SCOPES,
+  narrowerScope,
+  parseCustomPermissions,
   ROLE_PERMISSIONS,
   tenantScopeKey,
+  type CustomPermissions,
   type Permission,
   type PermissionScope,
 } from './permissions.js';
@@ -20,6 +23,12 @@ export type Principal = {
   extraPermissions?: readonly string[];
   /** A03: functions the platform turned off for the organization, read with the role. */
   disabledFeatures?: readonly string[];
+  /**
+   * B2: the custom role of the membership, read with the role, or null. Required on purpose:
+   * every place that builds a principal must load it, or a restricted person would get the
+   * whole base role on that channel.
+   */
+  customPermissions: CustomPermissions | null;
 };
 
 /**
@@ -32,10 +41,12 @@ export type Grant = { principal: Principal; permission: Permission; scope: Permi
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const MEMBERSHIP_SQL = `SELECT m."role", m."extra_permissions", t."disabled_features"
+const MEMBERSHIP_SQL = `SELECT m."role", m."extra_permissions", t."disabled_features",
+        r."permissions" AS "custom_permissions"
    FROM "membership" m
    JOIN "user" u ON u."id" = m."user_id"
    JOIN "tenant" t ON t."id" = m."org_id"
+   LEFT JOIN "org_role" r ON r."id" = m."custom_role_id"
   WHERE m."user_id" = $1 AND m."org_id" = $2 AND m."status" = 'ACTIVE'
     AND u."status" = 'ACTIVE' AND t."status" = 'ACTIVE' AND u."auth_version" = $3`;
 
@@ -52,12 +63,32 @@ export function can(role: UserRole, permission: Permission): boolean {
 }
 
 /**
+ * Whether a person may use a permission at all, with the custom role (B2) when there is one.
+ * For choices made before acting (menus, the AI): the action itself still calls authorize().
+ */
+export function permits(
+  who: { role: UserRole; customPermissions: CustomPermissions | null },
+  permission: Permission,
+): boolean {
+  return (
+    can(who.role, permission) &&
+    (who.customPermissions === null || who.customPermissions[permission] !== undefined)
+  );
+}
+
+/**
  * Grants the permission with its scope, or throws PermissionDeniedError (role) or
  * FeatureDisabledError (A03: the function is off for the organization, whatever the role).
  */
 export function authorize(principal: Principal, permission: Permission): Grant {
-  const base = ROLE_PERMISSIONS[principal.role][permission];
-  if (!base) throw new PermissionDeniedError(permission);
+  const roleScope = ROLE_PERMISSIONS[principal.role][permission];
+  if (!roleScope) throw new PermissionDeniedError(permission);
+  // B2: a custom role only takes away permissions or narrows their scope.
+  const customScope = principal.customPermissions
+    ? principal.customPermissions[permission]
+    : roleScope;
+  if (!customScope) throw new PermissionDeniedError(permission);
+  const base = narrowerScope(roleScope, customScope);
   const feature = featureOf(permission);
   if (feature && !featureEnabled(principal.disabledFeatures, feature)) {
     throw new FeatureDisabledError(feature, permission);
@@ -107,6 +138,7 @@ export function createPrismaPrincipalResolver(
           role: UserRole;
           extra_permissions: string[];
           disabled_features: string[];
+          custom_permissions: string[] | null;
         }>(
           sessionId
             ? {
@@ -129,6 +161,9 @@ export function createPrismaPrincipalResolver(
               role: row.role,
               extraPermissions: row.extra_permissions,
               disabledFeatures: row.disabled_features,
+              customPermissions: row.custom_permissions
+                ? parseCustomPermissions(row.custom_permissions)
+                : null,
             }
           : null;
       }
@@ -155,6 +190,7 @@ export function createPrismaPrincipalResolver(
             role: true,
             extraPermissions: true,
             org: { select: { disabledFeatures: true } },
+            customRole: { select: { permissions: true } },
           },
         });
         return row
@@ -162,6 +198,9 @@ export function createPrismaPrincipalResolver(
               role: row.role,
               extraPermissions: row.extraPermissions,
               disabledFeatures: row.org.disabledFeatures,
+              customPermissions: row.customRole
+                ? parseCustomPermissions(row.customRole.permissions)
+                : null,
             }
           : null;
       };

@@ -181,7 +181,7 @@ describe('Step 3C: Prompt Injection Defense, Data Delimitation & PII Minimizatio
 
       const result = await executor.execute(
         { action: 'clarification_required', data: attackOutput.clarification },
-        { tenantId, userId, role: 'ADMIN' },
+        { tenantId, userId, role: 'ADMIN', customPermissions: null },
       );
 
       expect(result.success).toBe(true);

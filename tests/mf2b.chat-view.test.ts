@@ -77,6 +77,7 @@ describe.runIf(Boolean(DATABASE_URL))('chat default view and explicit requests (
             tenant: await getTenantById(prisma, tenantId),
             userId: users[who],
             role,
+            customPermissions: null,
           }),
         },
       },
@@ -231,14 +232,24 @@ describe.runIf(Boolean(DATABASE_URL))('chat default view and explicit requests (
     } as const;
     // Demoted to MEMBER before answering: the transition is refused.
     await expect(
-      practices.executeCommand(confirm, { tenantId, userId: users.operator, role: 'MEMBER' }),
+      practices.executeCommand(confirm, {
+        tenantId,
+        userId: users.operator,
+        role: 'MEMBER',
+        customPermissions: null,
+      }),
     ).rejects.toThrow(/PERMISSION_DENIED/);
     // Another organization never reaches the practice.
     const other = (
       await new TenantRepository(prisma).createTenant({ name: `mf2b-x-${run}`, module: 'music' })
     ).id;
     await expect(
-      practices.executeCommand(confirm, { tenantId: other, userId: users.operator, role: 'ADMIN' }),
+      practices.executeCommand(confirm, {
+        tenantId: other,
+        userId: users.operator,
+        role: 'ADMIN',
+        customPermissions: null,
+      }),
     ).rejects.toThrow(/not found/i);
   });
 });

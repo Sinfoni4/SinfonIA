@@ -1,4 +1,7 @@
+import { parseCustomPermissions } from '../authz/permissions.js';
+
 import type { PrismaLike } from '../../data/types/prisma.js';
+import type { CustomPermissions } from '../authz/permissions.js';
 import type { ChannelType, UserRole } from '@prisma/client';
 
 /**
@@ -8,7 +11,13 @@ import type { ChannelType, UserRole } from '@prisma/client';
  * docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md §2.
  */
 
-export type MembershipOption = { tenantId: string; tenantName: string; role: UserRole };
+export type MembershipOption = {
+  tenantId: string;
+  tenantName: string;
+  role: UserRole;
+  /** B2: the custom role of the membership, or null. */
+  customPermissions: CustomPermissions | null;
+};
 
 export type ChannelMemberships = { userId: string; options: MembershipOption[] };
 
@@ -44,7 +53,12 @@ export async function findChannelMemberships(
           memberships: {
             where: activeMembership(),
             orderBy: { createdAt: 'asc' },
-            select: { orgId: true, role: true, org: { select: { name: true } } },
+            select: {
+              orgId: true,
+              role: true,
+              org: { select: { name: true } },
+              customRole: { select: { permissions: true } },
+            },
           },
         },
       },
@@ -57,6 +71,7 @@ export async function findChannelMemberships(
       tenantId: m.orgId,
       tenantName: m.org.name,
       role: m.role,
+      customPermissions: m.customRole ? parseCustomPermissions(m.customRole.permissions) : null,
     })),
   };
 }
