@@ -89,7 +89,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return envelope.data;
 }
 
-/** A message the person can act on, in Italian, for an error of the API. */
+/** Codes whose message the backend already writes in Italian, for the person to read. */
 const EXPLAINED_CODES = new Set([
   'DELEGATION_INVALID',
   'UNKNOWN_GRANTEE',
@@ -104,6 +104,7 @@ const EXPLAINED_CODES = new Set([
   'ORGANIZATION_SETTINGS_INVALID',
 ]);
 
+/** A message the person can act on, in Italian, for an error of the API. */
 export function describeError(err: unknown): string {
   if (!(err instanceof ApiError)) return 'Si è verificato un errore imprevisto.';
   // The backend already explains these in Italian (delegations, networks, assistance…).
