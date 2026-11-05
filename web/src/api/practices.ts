@@ -17,6 +17,8 @@ export type Practice = {
   assignedTo: string | null;
   /** A05: the step of the module inside the common state, if any. */
   subState?: string | null;
+  /** A04: the values of the fields of the module (missing on an older backend). */
+  fields?: Record<string, unknown>;
 };
 
 export type PracticeDetail = Practice & { allowedTransitions: PracticeState[] };

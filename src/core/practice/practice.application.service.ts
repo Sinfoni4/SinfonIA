@@ -65,6 +65,8 @@ export type PracticeView = {
   assignedTo: string | null;
   /** A05: the sub-state of the module inside the common state, if any. */
   subState: string | null;
+  /** A04: the values of the fields the module declares for the kind. */
+  fields: Record<string, unknown>;
 };
 
 export type PracticePaginationParams = {
@@ -147,6 +149,7 @@ function toView(dto: PracticeDTO): PracticeView {
     updatedAt: dto.updatedAt,
     assignedTo: dto.assignedTo ?? null,
     subState: visibleSubState(payload, dto.status),
+    fields: payload.fields,
   };
 }
 

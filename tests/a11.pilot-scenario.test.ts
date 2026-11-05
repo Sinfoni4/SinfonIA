@@ -128,6 +128,11 @@ describe.runIf(Boolean(DATABASE_URL))(
       });
       expect(created.statusCode).toBe(201);
       practiceId = created.json<{ data: { id: string } }>().data.id;
+      const read = await call('GET', `/practices/${practiceId}`, company(0));
+      expect(read.json<{ data: { fields: object } }>().data.fields).toEqual({
+        procedure: 'pac',
+        campaignYear: 2027,
+      });
       // Membership gives the network nothing on the data of the company.
       expect((await call('GET', `/practices/${practiceId}`, net())).statusCode).toBe(404);
       const stats = await call('GET', '/network/stats?period=month', netOperator());

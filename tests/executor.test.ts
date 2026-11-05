@@ -22,6 +22,7 @@ function makePracticeView(): PracticeView {
     updatedAt: new Date(),
     assignedTo: null,
     subState: null,
+    fields: {},
   };
 }
 

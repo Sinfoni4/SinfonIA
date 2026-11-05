@@ -50,6 +50,29 @@ export const FALLBACK_MODULE: CurrentModule = {
   deadlineCategories: [],
 };
 
+/**
+ * The stored values of a practice, as label and text to show, in the order the module declares
+ * them: a choice by its label, a date as dd/mm/yyyy. Missing and undeclared values are left out.
+ */
+export function shownFields(
+  type: PracticeType,
+  values: Record<string, unknown> | undefined,
+): Array<{ key: string; label: string; value: string }> {
+  const out: Array<{ key: string; label: string; value: string }> = [];
+  for (const field of type.fields) {
+    const raw = values?.[field.key];
+    if (typeof raw !== 'string' && typeof raw !== 'number') continue;
+    let value = String(raw);
+    if (field.type === 'choice') {
+      value = field.options?.find((o) => o.value === raw)?.label ?? value;
+    } else if (field.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      value = value.split('-').reverse().join('/');
+    }
+    out.push({ key: field.key, label: field.label, value });
+  }
+  return out;
+}
+
 /** The values typed in a form, converted to what the API checks (numbers as numbers). */
 export function fieldValues(
   type: PracticeType,
