@@ -66,7 +66,9 @@ export type AuditEvent = {
       | 'byPlatform'
       | 'outcome'
       | 'topic'
-      | 'unassigned',
+      | 'unassigned'
+      | 'organization'
+      | 'by',
       string | number | boolean
     >
   >;
@@ -107,6 +109,17 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_DELETED',
       'PRACTICE_ASSIGNED',
       'ATTACHMENT_VALIDATED',
+    ],
+  },
+  network: {
+    label: 'Reti e adesioni',
+    types: [
+      'NETWORK_INVITATION_SENT',
+      'NETWORK_INVITATION_RECEIVED',
+      'NETWORK_MEMBERSHIP_CONFIRMED',
+      'NETWORK_MEMBERSHIP_REFUSED',
+      'NETWORK_MEMBERSHIP_ENDED',
+      'NETWORK_STATS_VIEWED',
     ],
   },
   assistance: {
@@ -198,6 +211,7 @@ export function describeEvent(event: AuditEvent): string {
     ? `«${event.practice.name ?? 'pratica eliminata'}»`
     : 'una pratica';
   const target = who(event.target);
+  const org = typeof d.organization === 'string' ? `«${d.organization}»` : "un'organizzazione";
   const channel =
     typeof d.channel === 'string' ? ` (${CHANNEL_LABELS[d.channel] ?? d.channel})` : '';
   const rows = typeof d.rows === 'number' ? `, ${d.rows} ${d.rows === 1 ? 'riga' : 'righe'}` : '';
@@ -233,6 +247,22 @@ export function describeEvent(event: AuditEvent): string {
       return `Export pianificato in chat disattivato per ${target}`;
     case 'ATTACHMENT_VALIDATED':
       return `Dati di un documento ${d.outcome === 'corrected' ? 'corretti' : 'confermati'} (${practice})`;
+    case 'NETWORK_INVITATION_SENT':
+      return `Invito ad aderire alla rete inviato a ${org}`;
+    case 'NETWORK_INVITATION_RECEIVED':
+      return `Invito ad aderire alla rete ${org}`;
+    case 'NETWORK_MEMBERSHIP_CONFIRMED':
+      return d.by === 'company'
+        ? `Adesione alla rete confermata (${org})`
+        : `Adesione confermata da ${org}`;
+    case 'NETWORK_MEMBERSHIP_REFUSED':
+      return `Adesione rifiutata (${org})`;
+    case 'NETWORK_MEMBERSHIP_ENDED':
+      return d.by === 'network'
+        ? `Adesione chiusa dalla rete (${org})`
+        : `Adesione chiusa dall'azienda (${org})`;
+    case 'NETWORK_STATS_VIEWED':
+      return 'Statistiche della rete consultate';
     case 'ASSISTANCE_REQUESTED':
       return `Richiesta di assistenza su ${topicName(d.topic)}${channel}`;
     case 'ASSISTANCE_TAKEN':
@@ -374,6 +404,17 @@ export type Settings = {
   id: string;
   name: string;
   type: OrganizationType;
+  /** MF9: what a network sees of its members, with the name (I1). */
+  municipality: string | null;
+  sector: string | null;
   scheduledExport: { enabled: boolean; frequency: Frequency };
   reminderDays: number[];
 };
+
+/** MF9: the types that can have member organizations (G5). */
+export const NETWORK_TYPES: OrganizationType[] = [
+  'NETWORK',
+  'CONSORTIUM',
+  'TRADE_ASSOCIATION',
+  'ASSOCIATION',
+];

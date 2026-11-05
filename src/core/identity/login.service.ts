@@ -14,7 +14,7 @@ import { isPlatformAdmin, resolvePlatformPrincipal } from '../authz/platform.js'
 import { revokeAllSessions } from './revocation.service.js';
 
 import type { EmailSender } from '../email/email.sender.js';
-import type { PrismaClient, UserRole } from '@prisma/client';
+import type { OrganizationType, PrismaClient, UserRole } from '@prisma/client';
 
 /**
  * Login with a one-time code by email, sessions with a rotated refresh token, and named
@@ -52,7 +52,7 @@ export type LoginSession = {
   userId: string;
   sessionId: string;
   refreshToken: string;
-  organizations: Array<{ orgId: string; name: string; role: UserRole }>;
+  organizations: Array<{ orgId: string; name: string; role: UserRole; type: OrganizationType }>;
   /** A platform administrator: the console is offered too (G1). */
   platform: boolean;
 };
@@ -265,7 +265,7 @@ export class LoginService {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, status: 'ACTIVE', org: { status: 'ACTIVE' } },
       orderBy: { createdAt: 'asc' },
-      select: { orgId: true, role: true, org: { select: { name: true } } },
+      select: { orgId: true, role: true, org: { select: { name: true, type: true } } },
     });
     const audit = new AuditService(this.prisma);
     for (const m of memberships) {
@@ -280,7 +280,12 @@ export class LoginService {
       userId,
       sessionId: session.id,
       refreshToken: `${session.id}.${secret}`,
-      organizations: memberships.map((m) => ({ orgId: m.orgId, name: m.org.name, role: m.role })),
+      organizations: memberships.map((m) => ({
+        orgId: m.orgId,
+        name: m.org.name,
+        role: m.role,
+        type: m.org.type,
+      })),
       platform: isPlatformAdmin(user.platformRole),
     };
   }
@@ -574,7 +579,7 @@ export class LoginService {
   async profile(userId: string): Promise<{
     userId: string;
     email: string | null;
-    organizations: Array<{ orgId: string; name: string; role: UserRole }>;
+    organizations: Array<{ orgId: string; name: string; role: UserRole; type: OrganizationType }>;
     platform: boolean;
   }> {
     const user = await this.prisma.user.findUniqueOrThrow({
@@ -584,12 +589,17 @@ export class LoginService {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, status: 'ACTIVE', org: { status: 'ACTIVE' } },
       orderBy: { createdAt: 'asc' },
-      select: { orgId: true, role: true, org: { select: { name: true } } },
+      select: { orgId: true, role: true, org: { select: { name: true, type: true } } },
     });
     return {
       userId,
       email: PLACEHOLDER_EMAIL.test(user.email) ? null : user.email,
-      organizations: memberships.map((m) => ({ orgId: m.orgId, name: m.org.name, role: m.role })),
+      organizations: memberships.map((m) => ({
+        orgId: m.orgId,
+        name: m.org.name,
+        role: m.role,
+        type: m.org.type,
+      })),
       platform: isPlatformAdmin(user.platformRole),
     };
   }

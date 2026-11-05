@@ -220,6 +220,8 @@ describe('settings (P12)', () => {
     await waitFor(() =>
       expect(requested('/organization').find((c) => c.method === 'PATCH')?.body).toEqual({
         name: 'Cooperativa Nuova',
+        municipality: null,
+        sector: null,
         scheduledExport: { enabled: true, frequency: 'weekly' },
       }),
     );

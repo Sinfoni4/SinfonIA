@@ -28,6 +28,9 @@ export const PERMISSIONS = [
   'assistance.request',
   'assistance.manage',
   'practice.assign',
+  'network.manage',
+  'network.stats',
+  'memberships.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -67,9 +70,14 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
     'members.manage': 'tenant',
     // Name and scheduled export of the organization (P12); its type is the platform's.
     'organization.manage': 'tenant',
+    // MF9: members of a network (invite, end) and memberships of a company (confirm, leave).
+    'network.manage': 'tenant',
+    'memberships.manage': 'tenant',
+    'network.stats': 'tenant',
   },
   // D5: an OPERATOR exports its own practices; the organization only with an extra permission.
-  OPERATOR: { ...STAFF, 'practice.export': 'own' },
+  // MF9: operators of a network read its aggregate statistics (D4).
+  OPERATOR: { ...STAFF, 'practice.export': 'own', 'network.stats': 'tenant' },
   MEMBER: {
     'practice.create': 'own',
     'practice.read': 'own',

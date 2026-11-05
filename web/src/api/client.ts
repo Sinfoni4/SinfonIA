@@ -1,3 +1,4 @@
+import type { OrganizationType } from './organization';
 /**
  * Calls to the SinfonIA API from the dashboard. Same origin (B2): the refresh cookie travels by
  * itself to /auth, the access token is passed in memory, never stored. Every request is marked as
@@ -6,7 +7,13 @@
 
 export type Role = 'ADMIN' | 'OPERATOR' | 'MEMBER';
 
-export type Organization = { orgId: string; name: string; role: Role };
+export type Organization = {
+  orgId: string;
+  name: string;
+  role: Role;
+  /** The type decides which sections are shown (G5); absent in old sessions. */
+  type?: OrganizationType;
+};
 
 export type Me = {
   userId: string;
