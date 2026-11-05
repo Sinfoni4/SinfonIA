@@ -19,6 +19,7 @@ import {
   describePlatformAction,
   FEATURE_LABELS,
   FEATURES,
+  LINK_STATUS_LABELS,
   MODULE_LABELS,
   MODULES,
   moduleLabel,
@@ -27,6 +28,7 @@ import {
   TYPE_LABELS,
   TYPES,
   type OrganizationDetail,
+  type OrganizationLinks,
   type OrganizationPage,
   type OrganizationStatus,
   type OrganizationType,
@@ -523,6 +525,8 @@ function OrganizationPage() {
 
           <ModulesCard key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}`} org={org} />
 
+          <NetworkLinksCard org={org} />
+
           <section className="card" aria-labelledby="admins-title">
             <h2 id="admins-title">Amministratori</h2>
             {org.administrators.length === 0 ? (
@@ -685,6 +689,108 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
         <p className="error" role="alert">
           {describeError(save.error)}
         </p>
+      )}
+    </section>
+  );
+}
+
+// --- Voce 17: network and companies -------------------------------------------------------------
+
+function NetworkLinksCard({ org }: { org: OrganizationDetail }) {
+  const { api } = useSession();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [chosen, setChosen] = useState('');
+
+  const links = useQuery({
+    queryKey: ['platform', 'organization', org.id, 'links'],
+    queryFn: () => api<OrganizationLinks>(`/platform/organizations/${org.id}/links`),
+  });
+  const isNetwork = links.data?.isNetwork ?? false;
+  const candidates = useQuery({
+    queryKey: ['platform', 'organizations', 'candidates', search],
+    queryFn: () =>
+      api<OrganizationPage>(organizationsQuery({ page: 1, search, type: '', status: 'ACTIVE' })),
+    enabled: isNetwork,
+    placeholderData: keepPreviousData,
+  });
+  const invite = useMutation({
+    mutationFn: () =>
+      api(`/platform/organizations/${org.id}/network-members`, {
+        method: 'POST',
+        body: { orgId: chosen },
+      }),
+    onSuccess: async () => {
+      setChosen('');
+      await queryClient.invalidateQueries({ queryKey: ['platform'] });
+    },
+  });
+
+  if (!links.data) return null;
+  const linked = new Set(links.data.members.map((m) => m.orgId));
+  const options = (candidates.data?.items ?? []).filter(
+    (o) => o.id !== org.id && !linked.has(o.id),
+  );
+  const list = isNetwork ? links.data.members : links.data.networks;
+
+  return (
+    <section className="card form" aria-labelledby="links-title">
+      <h2 id="links-title">{isNetwork ? 'Aziende aderenti' : 'Reti'}</h2>
+      <p className="muted">
+        {isNetwork
+          ? "L'adesione parte quando un amministratore dell'azienda la conferma e non dà alla rete accesso ai dati dell'azienda."
+          : "Le reti a cui l'organizzazione aderisce o che l'hanno invitata."}
+      </p>
+      {list.length === 0 ? (
+        <p className="muted">{isNetwork ? 'Nessuna azienda.' : 'Nessuna rete.'}</p>
+      ) : (
+        <ul>
+          {list.map((l) => (
+            <li key={l.relationId}>
+              <Link to={`/piattaforma/organizzazioni/${l.orgId}`}>{l.name}</Link>:{' '}
+              {LINK_STATUS_LABELS[l.status]} dal {formatDate(l.since)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {isNetwork && (
+        <>
+          <label htmlFor="links-search">Cerca un&apos;azienda da invitare</label>
+          <input
+            id="links-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            maxLength={120}
+          />
+          <label htmlFor="links-org">Azienda</label>
+          <select id="links-org" value={chosen} onChange={(e) => setChosen(e.target.value)}>
+            <option value="">Scegli…</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          <span className="actions">
+            <button
+              type="button"
+              disabled={!chosen || invite.isPending}
+              onClick={() => invite.mutate()}
+            >
+              Invita nella rete
+            </button>
+          </span>
+          {invite.isSuccess && (
+            <p className="notice" role="status">
+              Invito inviato: l&apos;azienda lo vede in «Adesioni» e deve confermarlo.
+            </p>
+          )}
+          {invite.isError && (
+            <p className="error" role="alert">
+              {describeError(invite.error)}
+            </p>
+          )}
+        </>
       )}
     </section>
   );

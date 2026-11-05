@@ -2,6 +2,7 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { FEATURES, type Feature } from '../features/features.js';
+import { inviteMemberInTx, NETWORK_TYPES } from '../network/network.service.js';
 
 import type { LoginService } from '../identity/login.service.js';
 import type { ModuleId } from '../modules/module.contract.js';
@@ -326,6 +327,92 @@ export async function setOrganizationModules(
   return { module: input.module, disabledFeatures };
 }
 
+// --- Cantiere 1, voce 17: network and companies from the console -----------------------------
+
+export type OrganizationLink = {
+  relationId: string;
+  orgId: string;
+  name: string;
+  status: 'PENDING' | 'ACTIVE';
+  since: Date;
+};
+
+/**
+ * The memberships of an organization, as the console shows them: its member companies when it
+ * is a network, the networks it belongs to otherwise. Names and states only, never their data.
+ */
+export async function listOrganizationLinks(
+  prisma: PrismaClient,
+  orgId: string,
+): Promise<{ isNetwork: boolean; members: OrganizationLink[]; networks: OrganizationLink[] }> {
+  const org = await prisma.tenant.findUnique({ where: { id: orgId }, select: { type: true } });
+  if (!org) throw new NotFoundError('Organization not found');
+  const select = {
+    id: true,
+    status: true,
+    createdAt: true,
+    startedAt: true,
+    parent: { select: { id: true, name: true } },
+    child: { select: { id: true, name: true } },
+  } as const;
+  const where = {
+    relationType: 'MEMBER_OF' as const,
+    status: { in: ['PENDING' as const, 'ACTIVE' as const] },
+  };
+  const [asNetwork, asMember] = await Promise.all([
+    prisma.organizationRelation.findMany({
+      where: { ...where, parentOrgId: orgId },
+      orderBy: { createdAt: 'asc' },
+      select,
+    }),
+    prisma.organizationRelation.findMany({
+      where: { ...where, childOrgId: orgId },
+      orderBy: { createdAt: 'asc' },
+      select,
+    }),
+  ]);
+  const link = (r: (typeof asNetwork)[number], other: { id: string; name: string }) => ({
+    relationId: r.id,
+    orgId: other.id,
+    name: other.name,
+    status: r.status as 'PENDING' | 'ACTIVE',
+    since: r.startedAt ?? r.createdAt,
+  });
+  return {
+    isNetwork: NETWORK_TYPES.includes(org.type),
+    members: asNetwork.map((r) => link(r, r.child)),
+    networks: asMember.map((r) => link(r, r.parent)),
+  };
+}
+
+/**
+ * The platform invites a company into a network, as the network itself could: the membership
+ * starts only when an administrator of the company confirms it, and gives the network no access
+ * to the company's data. Recorded in the platform log and in the logs of both organizations.
+ */
+export async function inviteToNetwork(
+  prisma: PrismaClient,
+  networkId: string,
+  childOrgId: string,
+  actor: PlatformActor,
+): Promise<{ relationId: string }> {
+  return withTransaction(prisma, async (tx) => {
+    const sent = await inviteMemberInTx(tx, {
+      networkId,
+      childOrgId,
+      actorUserId: actor.userId,
+      byPlatform: true,
+    });
+    await logPlatform(tx, {
+      actor,
+      action: 'NETWORK_INVITATION_SENT',
+      orgId: networkId,
+      payload: { organization: sent.organization, childOrgId },
+    });
+    return { relationId: sent.relationId };
+  });
+}
+
 // --- A6: platform audit log ---------------------------------------------------------------------
 
 export type PlatformAuditRow = {
@@ -336,7 +423,9 @@ export type PlatformAuditRow = {
   organization: { id: string; name: string | null } | null;
   /** The person a role change is about (another platform administrator). */
   targetEmail: string | null;
-  details: Partial<Record<'name' | 'type' | 'reason' | 'via' | 'module', string>> & {
+  details: Partial<
+    Record<'name' | 'type' | 'reason' | 'via' | 'module' | 'organization', string>
+  > & {
     disabledFeatures?: string[];
   };
 };
@@ -386,7 +475,7 @@ export async function listPlatformAudit(
       const payload = recordOf(r.payload);
       const target = targetOf(r.payload);
       const details: PlatformAuditRow['details'] = {};
-      for (const key of ['name', 'type', 'reason', 'via', 'module'] as const) {
+      for (const key of ['name', 'type', 'reason', 'via', 'module', 'organization'] as const) {
         if (typeof payload[key] === 'string') details[key] = payload[key];
       }
       if (Array.isArray(payload.disabledFeatures)) {
