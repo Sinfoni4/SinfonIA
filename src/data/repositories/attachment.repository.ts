@@ -66,6 +66,8 @@ export class AttachmentRepository {
       storagePath: string;
       ocrStatus?: OcrStatus;
       ocrResult?: unknown;
+      /** AGX-01: SHA-256 of the content. */
+      contentHash?: string;
     },
   ): Promise<PracticeAttachmentDTO> {
     requireTenantId(tenantId);
@@ -80,6 +82,7 @@ export class AttachmentRepository {
           storagePath: data.storagePath,
           ocrStatus: data.ocrStatus ?? 'PENDING',
           ocrResult: data.ocrResult ? (data.ocrResult as never) : undefined,
+          contentHash: data.contentHash,
         },
       });
       return toAttachmentDTO(row);

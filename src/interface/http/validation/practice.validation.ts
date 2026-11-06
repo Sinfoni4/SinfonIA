@@ -63,6 +63,14 @@ export const PracticeAssignBodySchema = z.object({ userId: z.string().uuid().nul
 
 export const PracticeAttachmentParamsSchema = PracticeIdParamsSchema;
 
+/** AGX-01: `?allowDuplicate=true` sends a file already sent, after the person confirmed. */
+export const PracticeAttachmentQuerySchema = z.object({
+  allowDuplicate: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
+});
+
 export const PracticeAttachmentBodySchema = z.object({
   fileName: z.string().trim().min(1, 'File name is required'),
   mimeType: z.string().trim().min(1).default('application/octet-stream'),

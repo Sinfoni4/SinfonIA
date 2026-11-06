@@ -141,7 +141,16 @@ export class WhatsAppChannel {
       name: 'whatsapp',
       identity,
       compressedPhotoTip: WHATSAPP_COMPRESSED_PHOTO_TIP,
+      // AGX-01: a file waiting for an answer is downloaded again from its media id.
+      downloadRef: (mediaId) => this.downloadMedia(mediaId),
     });
+  }
+
+  private downloadMedia(mediaId: string): () => Promise<Buffer> {
+    return async () => {
+      const info = await this.client.getMedia(mediaId);
+      return this.client.downloadMedia(info.url);
+    };
   }
 
   /** Accepts a verified webhook payload; returns once its messages have been handled. */
@@ -182,10 +191,8 @@ export class WhatsAppChannel {
           mimeType: media.mimeType ?? 'application/octet-stream',
           hint: message.text,
           compressedPhoto: media.isPhoto,
-          download: async () => {
-            const info = await this.client.getMedia(media.id);
-            return this.client.downloadMedia(info.url);
-          },
+          ref: media.id,
+          download: this.downloadMedia(media.id),
         };
       }
       await this.conversation.handle(inbound, reply);

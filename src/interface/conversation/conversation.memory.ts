@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import type { PrismaLike } from '../../data/types/prisma.js';
 
 /**
@@ -14,6 +16,10 @@ export interface ConversationMemory {
   getActiveOrg(userId: string): Promise<string | null>;
   /** Switching organization also forgets the last practice, which belonged to the old one. */
   setActiveOrg(userId: string, tenantId: string): Promise<void>;
+  /** AGX-01: the file waiting for the person's answer, as stored (checked by the reader). */
+  getPendingFile(userId: string): Promise<unknown>;
+  /** Stores the waiting file, or removes it with null. */
+  setPendingFile(tenantId: string, userId: string, value: object | null): Promise<void>;
 }
 
 /** Process memory: for tests and single-process development. Lost on restart. */
@@ -21,6 +27,7 @@ export class InMemoryConversationMemory implements ConversationMemory {
   private readonly lastPractice = new Map<string, string>();
   private readonly onboarded = new Set<string>();
   private readonly activeOrg = new Map<string, string>();
+  private readonly pendingFile = new Map<string, object>();
 
   getLastPractice(userId: string): Promise<string | null> {
     return Promise.resolve(this.lastPractice.get(userId) ?? null);
@@ -41,6 +48,17 @@ export class InMemoryConversationMemory implements ConversationMemory {
     this.lastPractice.delete(userId);
     this.onboarded.delete(userId);
     this.activeOrg.delete(userId);
+    this.pendingFile.delete(userId);
+    return Promise.resolve();
+  }
+
+  getPendingFile(userId: string): Promise<unknown> {
+    return Promise.resolve(this.pendingFile.get(userId) ?? null);
+  }
+
+  setPendingFile(_tenantId: string, userId: string, value: object | null): Promise<void> {
+    if (value) this.pendingFile.set(userId, value);
+    else this.pendingFile.delete(userId);
     return Promise.resolve();
   }
 
@@ -115,6 +133,29 @@ export class PrismaConversationMemory implements ConversationMemory {
       where: { userId },
       create: { userId, tenantId },
       update: { tenantId, lastPracticeId: null },
+    });
+  }
+
+  async getPendingFile(userId: string): Promise<unknown> {
+    const row = await this.prisma.conversationState.findUnique({
+      where: { userId },
+      select: { pendingFile: true },
+    });
+    return row?.pendingFile ?? null;
+  }
+
+  async setPendingFile(tenantId: string, userId: string, value: object | null): Promise<void> {
+    const pendingFile = value ? (value as Prisma.InputJsonValue) : Prisma.DbNull;
+    if (!value) {
+      // Nothing to remove when the person has no conversation row yet.
+      await this.prisma.conversationState.updateMany({ where: { userId }, data: { pendingFile } });
+      return;
+    }
+    // The active organization (tenant_id) is never changed here.
+    await this.prisma.conversationState.upsert({
+      where: { userId },
+      create: { userId, tenantId, pendingFile },
+      update: { pendingFile },
     });
   }
 }

@@ -82,7 +82,9 @@ function mockPrismaForAttachments() {
         return Promise.resolve({ count: 1 });
       }),
     },
-    practiceAttachment: { create: createAttachment },
+    practiceAttachment: { create: createAttachment, findFirst: vi.fn().mockResolvedValue(null) },
+    auditLog: { create: vi.fn().mockResolvedValue({}) },
+    membership: { findFirst: vi.fn().mockResolvedValue({ id: 'm-1' }) },
   } as unknown as PrismaClient;
   return { prisma, createAttachment };
 }

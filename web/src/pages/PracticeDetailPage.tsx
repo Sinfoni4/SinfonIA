@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 
-import { describeError, type Me } from '../api/client';
+import { ApiError, describeError, type Me } from '../api/client';
 import { type CurrentModule, shownFields } from '../api/modules';
 import {
   formatDate,
@@ -348,12 +348,14 @@ function UploadForm({ practiceId }: { practiceId: string }) {
   const [file, setFile] = useState<File | null>(null);
 
   const upload = useMutation({
-    mutationFn: (file: File) => {
+    // AGX-01: a file already sent is refused until the person chooses «Carica comunque».
+    mutationFn: ({ file, allowDuplicate }: { file: File; allowDuplicate: boolean }) => {
       const form = new FormData();
       // The hint goes before the file: the backend reads the fields in order.
       if (hint.trim()) form.append('hint', hint.trim());
       form.append('file', file);
-      return api(`/practices/${practiceId}/attachments`, { method: 'POST', form });
+      const query = allowDuplicate ? '?allowDuplicate=true' : '';
+      return api(`/practices/${practiceId}/attachments${query}`, { method: 'POST', form });
     },
     onSuccess: async () => {
       setHint('');
@@ -365,8 +367,12 @@ function UploadForm({ practiceId }: { practiceId: string }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (file) upload.mutate(file);
+    if (file) upload.mutate({ file, allowDuplicate: false });
   };
+  const duplicate =
+    upload.error instanceof ApiError && upload.error.code === 'DUPLICATE_ATTACHMENT'
+      ? upload.error.message
+      : null;
 
   return (
     <form className="upload" onSubmit={submit}>
@@ -390,7 +396,19 @@ function UploadForm({ practiceId }: { practiceId: string }) {
       <button type="submit" disabled={!file || upload.isPending}>
         {upload.isPending ? 'Caricamento e lettura…' : 'Carica'}
       </button>
-      {upload.isError && (
+      {duplicate && file && (
+        <div className="notice" role="alert">
+          <p>{duplicate} Vuoi caricarlo di nuovo?</p>
+          <button
+            type="button"
+            onClick={() => upload.mutate({ file, allowDuplicate: true })}
+            disabled={upload.isPending}
+          >
+            Carica comunque
+          </button>
+        </div>
+      )}
+      {upload.isError && !duplicate && (
         <p className="error" role="alert">
           {describeError(upload.error)}
         </p>
