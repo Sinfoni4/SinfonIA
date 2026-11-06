@@ -236,6 +236,40 @@ describe('platform console (FE7)', () => {
     );
   });
 
+  it('sets the identifiers of a company, with the codes in other systems', async () => {
+    api({
+      [`GET /platform/organizations/${ORG}`]: () =>
+        ok({
+          ...DETAIL,
+          identifiers: { taxCode: null, vatNumber: '12345678903', externalRefs: {} },
+        }),
+      [`PATCH /platform/organizations/${ORG}/identifiers`]: (c) => ok(c.body),
+    });
+    openAt(`/piattaforma/organizzazioni/${ORG}`, 'platform');
+    const vat = await screen.findByLabelText<HTMLInputElement>('Partita IVA');
+    expect(vat.value).toBe('12345678903');
+    await userEvent.type(screen.getByLabelText('Codice fiscale / CUAA'), '12345678903');
+    const refs = screen.getByLabelText('Riferimenti in altri sistemi');
+    await userEvent.type(refs, 'odoo res.partner');
+    expect((await screen.findByRole('alert')).textContent).toContain('sistema = riferimento');
+    const save = screen.getByRole('button', { name: 'Salva dati identificativi' });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.clear(refs);
+    await userEvent.type(refs, 'odoo = res.partner/42');
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(
+        calls.find(
+          (c) => c.method === 'PATCH' && c.path === `/platform/organizations/${ORG}/identifiers`,
+        )?.body,
+      ).toEqual({
+        taxCode: '12345678903',
+        vatNumber: '12345678903',
+        externalRefs: { odoo: 'res.partner/42' },
+      }),
+    );
+  });
+
   it('invites a company into a network from the console', async () => {
     const COMPANY = 'a0000000-0000-4000-8000-000000000009';
     api({

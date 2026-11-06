@@ -31,6 +31,7 @@ import {
   InvalidStateTransitionError,
 } from '../../../core/index.js';
 import { NetworkError } from '../../../core/network/network.service.js';
+import { CompanyIdentifiersError } from '../../../core/organization/company-identifiers.js';
 import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
 import { PlatformActionError } from '../../../core/platform/platform.service.js';
 import { AttachmentValidationError } from '../../../core/practice/attachment-validation.js';
@@ -62,6 +63,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof LoginError ||
     err instanceof InvitationError ||
     err instanceof OrganizationSettingsError ||
+    err instanceof CompanyIdentifiersError ||
     err instanceof PlatformAccessError ||
     err instanceof PlatformActionError ||
     err instanceof AttachmentValidationError ||

@@ -43,6 +43,8 @@ const SettingsBodySchema = z
     name: z.string().max(200).optional(),
     municipality: z.string().max(200).nullable().optional(),
     sector: z.string().max(200).nullable().optional(),
+    taxCode: z.string().max(40).nullable().optional(),
+    vatNumber: z.string().max(40).nullable().optional(),
     scheduledExport: z
       .object({
         enabled: z.boolean(),

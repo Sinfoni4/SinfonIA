@@ -30,6 +30,10 @@ model Tenant {
   /// MF9: minimal profile a network sees of its member companies (D4, I1).
   municipality        String?
   sector              String?
+  /// AGX-02: codice fiscale (also the CUAA of a farm), partita IVA and codes in other systems.
+  taxCode             String?            @map("tax_code")
+  vatNumber           String?            @map("vat_number")
+  externalRefs        Json?              @map("external_refs")
   deactivatedAt       DateTime?          @map("deactivated_at")
   deletionScheduledAt DateTime?          @map("deletion_scheduled_at")
   createdAt           DateTime           @default(now()) @map("created_at")

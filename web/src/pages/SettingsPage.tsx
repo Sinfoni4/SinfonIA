@@ -20,6 +20,8 @@ export function SettingsPage({ me }: { me: Me }) {
   const [name, setName] = useState('');
   const [municipality, setMunicipality] = useState('');
   const [sector, setSector] = useState('');
+  const [taxCode, setTaxCode] = useState('');
+  const [vatNumber, setVatNumber] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [frequency, setFrequency] = useState<Frequency>('monthly');
 
@@ -35,6 +37,8 @@ export function SettingsPage({ me }: { me: Me }) {
     setName(query.data.name);
     setMunicipality(query.data.municipality ?? '');
     setSector(query.data.sector ?? '');
+    setTaxCode(query.data.taxCode ?? '');
+    setVatNumber(query.data.vatNumber ?? '');
     setEnabled(query.data.scheduledExport.enabled);
     setFrequency(query.data.scheduledExport.frequency);
   }, [query.data]);
@@ -47,6 +51,8 @@ export function SettingsPage({ me }: { me: Me }) {
           name: name.trim(),
           municipality: municipality.trim() || null,
           sector: sector.trim() || null,
+          taxCode: taxCode.trim() || null,
+          vatNumber: vatNumber.trim() || null,
           scheduledExport: { enabled, frequency },
         },
       }),
@@ -74,6 +80,8 @@ export function SettingsPage({ me }: { me: Me }) {
     (name.trim() !== saved.name ||
       municipality.trim() !== (saved.municipality ?? '') ||
       sector.trim() !== (saved.sector ?? '') ||
+      taxCode.trim() !== (saved.taxCode ?? '') ||
+      vatNumber.trim() !== (saved.vatNumber ?? '') ||
       enabled !== saved.scheduledExport.enabled ||
       frequency !== saved.scheduledExport.frequency);
 
@@ -128,6 +136,35 @@ export function SettingsPage({ me }: { me: Me }) {
           <p className="muted">
             Nome, comune e settore sono gli unici dati che vedono le reti a cui l&apos;azienda
             aderisce.
+          </p>
+          <label htmlFor="org-tax-code">Codice fiscale / CUAA</label>
+          <input
+            id="org-tax-code"
+            maxLength={40}
+            value={taxCode}
+            autoComplete="off"
+            placeholder="16 caratteri (ditta individuale) o 11 cifre (società)"
+            onChange={(e) => {
+              setTaxCode(e.target.value);
+              save.reset();
+            }}
+          />
+          <label htmlFor="org-vat-number">Partita IVA</label>
+          <input
+            id="org-vat-number"
+            maxLength={40}
+            inputMode="numeric"
+            value={vatNumber}
+            autoComplete="off"
+            placeholder="11 cifre"
+            onChange={(e) => {
+              setVatNumber(e.target.value);
+              save.reset();
+            }}
+          />
+          <p className="muted">
+            Codice fiscale e partita IVA servono a identificare l&apos;azienda nelle pratiche e nei
+            collegamenti con altri sistemi: le reti non li vedono.
           </p>
           <p>
             <strong>Tipo:</strong> {ORGANIZATION_TYPE_LABELS[saved.type]}{' '}

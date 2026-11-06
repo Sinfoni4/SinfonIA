@@ -222,12 +222,52 @@ describe('settings (P12)', () => {
         name: 'Cooperativa Nuova',
         municipality: null,
         sector: null,
+        taxCode: null,
+        vatNumber: null,
         scheduledExport: { enabled: true, frequency: 'weekly' },
       }),
     );
     expect(await screen.findByRole('status')).toBeTruthy();
     expect(await screen.findByText('Cooperativa Nuova', { selector: 'header span' })).toBeTruthy();
     expect(screen.getByText(/30, 15, 7, 1 giorni prima/)).toBeTruthy();
+  });
+
+  it('saves codice fiscale / CUAA and partita IVA, and shows a wrong one refused', async () => {
+    let refuse = true;
+    api('ADMIN', {
+      'PATCH /organization': (c) =>
+        refuse
+          ? {
+              status: 400,
+              body: {
+                success: false,
+                error: {
+                  code: 'COMPANY_IDENTIFIERS_INVALID',
+                  message: 'Partita IVA non valida: servono 11 cifre corrette.',
+                },
+              },
+            }
+          : ok({ ...SETTINGS, ...(c.body as object) }),
+    });
+    openAt('/impostazioni');
+    await userEvent.type(await screen.findByLabelText('Codice fiscale / CUAA'), 'RSSMRA85T10A562S');
+    await userEvent.type(screen.getByLabelText('Partita IVA'), '12345678901');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Partita IVA non valida');
+
+    refuse = false;
+    await userEvent.clear(screen.getByLabelText('Partita IVA'));
+    await userEvent.type(screen.getByLabelText('Partita IVA'), '12345678903');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await waitFor(() =>
+      expect(
+        requested('/organization')
+          .filter((c) => c.method === 'PATCH')
+          .at(-1)?.body,
+      ).toMatchObject({ taxCode: 'RSSMRA85T10A562S', vatNumber: '12345678903' }),
+    );
+    expect(await screen.findByRole('status')).toBeTruthy();
+    expect(screen.getByText(/le reti non li vedono/)).toBeTruthy();
   });
 
   it('is only for administrators, also in the menu', async () => {

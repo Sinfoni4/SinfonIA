@@ -10,6 +10,7 @@ import {
   listOrganizationLinks,
   listOrganizations,
   listPlatformAudit,
+  setOrganizationIdentifiers,
   setOrganizationModules,
   setOrganizationSuspended,
 } from '../../../core/platform/platform.service.js';
@@ -100,6 +101,15 @@ const ModulesBodySchema = z
   .object({
     module: z.enum(MODULE_IDS),
     disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
+  })
+  .strict();
+
+/** AGX-02: identifiers of a company; null removes one, a missing field leaves it as it is. */
+const IdentifiersBodySchema = z
+  .object({
+    taxCode: z.string().max(40).nullable().optional(),
+    vatNumber: z.string().max(40).nullable().optional(),
+    externalRefs: z.record(z.string().max(32), z.string().max(200)).nullable().optional(),
   })
   .strict();
 
@@ -221,6 +231,18 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       const { id } = IdParamsSchema.parse(req.params);
       const body = ModulesBodySchema.parse(req.body);
       return reply.send(ok(await setOrganizationModules(deps.prisma, id, body, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-02: codice fiscale / CUAA, partita IVA and codes in other systems.
+  app.patch('/platform/organizations/:id/identifiers', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = IdentifiersBodySchema.parse(req.body ?? {});
+      return reply.send(ok(await setOrganizationIdentifiers(deps.prisma, id, body, { userId })));
     } catch (err: unknown) {
       return sendError(reply, err);
     }
