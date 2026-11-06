@@ -216,7 +216,7 @@ export class InterpreterService {
         nextState: null,
         clarification: {
           question:
-            'Per chi devo creare la pratica? Indica il nome (es. "crea pratica per Mario Rossi").',
+            'Che nome do alla nuova pratica? Scrivilo dopo il comando (es. "crea pratica per Mario Rossi").',
           reason: 'MISSING_NAME',
           candidatePracticeIds: [],
           options: [],

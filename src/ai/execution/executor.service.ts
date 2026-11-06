@@ -74,11 +74,12 @@ export class ExecutorService {
             throw new ExecutorValidationError('Authenticated user is required');
           }
 
+          // No kind: the organization's module gives its default one. A fixed kind of the music
+          // module was refused by every other module (KIND_NOT_IN_MODULE).
           const created = await this.deps.practiceService.createPractice({
             tenantId: parsedCtx.tenantId,
             userId: parsedCtx.userId,
             name: data.data.artistName.trim(),
-            kind: 'artist',
           });
           return { success: true, result: created };
         }
