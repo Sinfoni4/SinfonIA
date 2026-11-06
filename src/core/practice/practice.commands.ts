@@ -55,7 +55,7 @@ export function parsePracticeCommand(input: string): PracticeCommand | null {
 
   const createName = extractAfterPrefix(trimmed, 'crea pratica ');
   // "crea pratica per Mario Rossi" is natural language, not an exact command:
-  // let the AI flow create the canonical artist practice instead of a music one.
+  // let the AI flow extract the name.
   if (createName !== null && !/^(per|di|del|della|dei|degli|delle|da|con)\b/i.test(createName)) {
     return { type: 'CREATE_PRACTICE', payload: { name: createName } };
   }

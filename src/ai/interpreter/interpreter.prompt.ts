@@ -24,7 +24,11 @@ const NAME_PLACEHOLDERS = `ANONYMIZED NAMES:
 - "crea pratica per [NOME_5]" means: create_practice with artistName "[NOME_5]".
 - To refer to an existing practice, put its placeholder in filters.name exactly as written (e.g. "[NOME_2]").
 - Keep any extra words of the name as written (e.g. "[NOME_3] 2026").
-- "crea pratica [NOME_4]" (without "per") is also a creation with artistName "[NOME_4]".`;
+- "crea pratica [NOME_4]" (without "per") is also a creation with artistName "[NOME_4]".
+
+PRACTICE NAME:
+- "artistName" is only a technical field name kept for compatibility: it holds the name of the new practice, whatever it is (a person, a company, a farm, a field, an event, a call for funding).
+- Never call it "artista" or "artist" when writing to the user. Ask for "il nome della pratica", using the words of the organization's sector when they are given above.`;
 
 // Found by the real-model evaluation: a bare practice name was taken as a transition request.
 const ACTION_RULES = `ACTION RULES:
@@ -59,7 +63,7 @@ HARD RULES:
 - NEVER omit fields (even if unknown: set to null)
 - confidence MUST be a float between 0.0 (uncertain) and 1.0 (certain)
 - If confidence < 0.75 or input is ambiguous, set action to "clarification_required" and provide targeted question in clarification.question
-- For create_practice: action = "create_practice", artistName = person name, nextState = "CREATED", clarification = null, confidence = 1.0
+- For create_practice: action = "create_practice", artistName = practice name, nextState = "CREATED", clarification = null, confidence = 1.0
 - For transition_practice: action = "transition_practice", nextState = target status, clarification = null
 
 STATUS INFERENCE:
