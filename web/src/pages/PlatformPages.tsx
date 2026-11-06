@@ -525,6 +525,14 @@ function OrganizationPage() {
 
           <ModulesCard key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}`} org={org} />
 
+          {org.identifiers && (
+            <IdentifiersCard
+              key={JSON.stringify(org.identifiers)}
+              orgId={org.id}
+              identifiers={org.identifiers}
+            />
+          )}
+
           <NetworkLinksCard org={org} />
 
           <section className="card" aria-labelledby="admins-title">
@@ -678,6 +686,119 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
       <span className="actions">
         <button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
           Salva settore e funzioni
+        </button>
+      </span>
+      {save.isSuccess && (
+        <p className="notice" role="status">
+          Salvato.
+        </p>
+      )}
+      {save.isError && (
+        <p className="error" role="alert">
+          {describeError(save.error)}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// --- AGX-02: identifiers of a company -----------------------------------------------------------
+
+type Identifiers = NonNullable<OrganizationDetail['identifiers']>;
+
+/** «sistema = riferimento», one per line. */
+const refsToText = (refs: Record<string, string>) =>
+  Object.entries(refs)
+    .map(([system, ref]) => `${system} = ${ref}`)
+    .join('\n');
+
+function textToRefs(text: string): Record<string, string> | string {
+  const refs: Record<string, string> = {};
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const at = line.indexOf('=');
+    if (at < 1) return `Riga «${line.trim()}»: scrivi sistema = riferimento`;
+    refs[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  return refs;
+}
+
+function IdentifiersCard({ orgId, identifiers }: { orgId: string; identifiers: Identifiers }) {
+  const { api } = useSession();
+  const queryClient = useQueryClient();
+  const [taxCode, setTaxCode] = useState(identifiers.taxCode ?? '');
+  const [vatNumber, setVatNumber] = useState(identifiers.vatNumber ?? '');
+  const [refsText, setRefsText] = useState(refsToText(identifiers.externalRefs));
+  const refs = textToRefs(refsText);
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/platform/organizations/${orgId}/identifiers`, {
+        method: 'PATCH',
+        body: {
+          taxCode: taxCode.trim() || null,
+          vatNumber: vatNumber.trim() || null,
+          externalRefs: typeof refs === 'string' ? {} : refs,
+        },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['platform'] });
+    },
+  });
+
+  return (
+    <section className="card form" aria-labelledby="identifiers-title">
+      <h2 id="identifiers-title">Dati identificativi</h2>
+      <p className="muted">
+        Li vede e li cambia anche l&apos;amministratore dell&apos;organizzazione, tranne i
+        riferimenti esterni. Le reti non li vedono.
+      </p>
+      <label htmlFor="identifiers-tax-code">Codice fiscale / CUAA</label>
+      <input
+        id="identifiers-tax-code"
+        maxLength={40}
+        autoComplete="off"
+        value={taxCode}
+        onChange={(e) => {
+          setTaxCode(e.target.value);
+          save.reset();
+        }}
+      />
+      <label htmlFor="identifiers-vat-number">Partita IVA</label>
+      <input
+        id="identifiers-vat-number"
+        maxLength={40}
+        inputMode="numeric"
+        autoComplete="off"
+        value={vatNumber}
+        onChange={(e) => {
+          setVatNumber(e.target.value);
+          save.reset();
+        }}
+      />
+      <label htmlFor="identifiers-refs">Riferimenti in altri sistemi</label>
+      <textarea
+        id="identifiers-refs"
+        rows={3}
+        value={refsText}
+        placeholder="odoo = res.partner/42"
+        onChange={(e) => {
+          setRefsText(e.target.value);
+          save.reset();
+        }}
+      />
+      <p className="muted">Uno per riga, nella forma «sistema = riferimento».</p>
+      {typeof refs === 'string' && (
+        <p className="error" role="alert">
+          {refs}
+        </p>
+      )}
+      <span className="actions">
+        <button
+          type="button"
+          disabled={save.isPending || typeof refs === 'string'}
+          onClick={() => save.mutate()}
+        >
+          Salva dati identificativi
         </button>
       </span>
       {save.isSuccess && (

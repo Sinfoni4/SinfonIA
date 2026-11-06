@@ -72,7 +72,9 @@ export type AuditEvent = {
       | 'operations'
       | 'action'
       | 'subState'
-      | 'cleared',
+      | 'cleared'
+      | 'taxCode'
+      | 'vatNumber',
       string | number | boolean
     >
   >;
@@ -164,6 +166,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ORGANIZATION_SUSPENDED',
       'ORGANIZATION_REACTIVATED',
       'ORGANIZATION_MODULES_CHANGED',
+      'ORGANIZATION_IDENTIFIERS_CHANGED',
     ],
   },
 };
@@ -342,6 +345,8 @@ export function describeEvent(event: AuditEvent): string {
       return 'Organizzazione riattivata dal gestore della piattaforma';
     case 'ORGANIZATION_MODULES_CHANGED':
       return 'Settore o funzioni cambiati dal gestore della piattaforma';
+    case 'ORGANIZATION_IDENTIFIERS_CHANGED':
+      return 'Dati identificativi cambiati dal gestore della piattaforma';
     case 'PRACTICE_SUB_STATE_CHANGED':
       return d.cleared === true
         ? `Pratica ${practice}: fase tolta`
@@ -353,6 +358,10 @@ export function describeEvent(event: AuditEvent): string {
         parts.push(`export pianificato ${d.scheduledExport ? 'attivato' : 'disattivato'}`);
       if (typeof d.frequency === 'string' && d.frequency in FREQUENCY_LABELS)
         parts.push(`frequenza ${FREQUENCY_LABELS[d.frequency as Frequency]}`);
+      if (typeof d.taxCode === 'string')
+        parts.push(`codice fiscale / CUAA ${d.taxCode === 'removed' ? 'tolto' : 'aggiornato'}`);
+      if (typeof d.vatNumber === 'string')
+        parts.push(`partita IVA ${d.vatNumber === 'removed' ? 'tolta' : 'aggiornata'}`);
       return `Impostazioni: ${parts.join(', ') || 'modificate'}`;
     }
     default:
@@ -457,6 +466,9 @@ export type Settings = {
   /** MF9: what a network sees of its members, with the name (I1). */
   municipality: string | null;
   sector: string | null;
+  /** AGX-02: codice fiscale / CUAA and partita IVA, never shown to networks. */
+  taxCode: string | null;
+  vatNumber: string | null;
   scheduledExport: { enabled: boolean; frequency: Frequency };
   reminderDays: number[];
 };

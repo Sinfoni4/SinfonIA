@@ -39,6 +39,9 @@ const SHOWN_FIELDS = [
   // A05: the step of the module set on a practice, or cleared.
   'subState',
   'cleared',
+  // AGX-02: an identifier «set» or «removed», never its value.
+  'taxCode',
+  'vatNumber',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

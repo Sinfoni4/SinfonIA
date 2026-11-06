@@ -105,6 +105,7 @@ const EXPLAINED_CODES = new Set([
   'ASSISTANCE_STATE',
   'INVALID_ASSIGNEE',
   'ORGANIZATION_SETTINGS_INVALID',
+  'COMPANY_IDENTIFIERS_INVALID',
 ]);
 
 /** A message the person can act on, in Italian, for an error of the API. */
