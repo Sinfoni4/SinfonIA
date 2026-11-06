@@ -258,6 +258,38 @@ describe('practices (FE2)', () => {
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/attachments'));
     expect(post?.body).toEqual({ hint: 'ricevuta', file: 'ricevuta.pdf' });
   });
+
+  it('asks before uploading a file already sent, and sends it again on request (AGX-01)', async () => {
+    api('MEMBER', {
+      [`GET /practices/${P1}`]: () => ok({ ...practice(), allowedTransitions: [] }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+      [`POST /practices/${P1}/attachments`]: (c) =>
+        c.query.get('allowDuplicate') === 'true'
+          ? { status: 201, body: { success: true, data: {} } }
+          : {
+              status: 409,
+              body: {
+                success: false,
+                error: {
+                  code: 'DUPLICATE_ATTACHMENT',
+                  message: 'Hai già caricato questo file il 01/11/2026 nella pratica «Rossi».',
+                },
+              },
+            },
+    });
+    openAt(`/pratiche/${P1}`);
+    const user = userEvent.setup();
+    const file = new File(['%PDF'], 'ricevuta.pdf', { type: 'application/pdf' });
+    await user.upload(await screen.findByLabelText('File (PDF o immagine)'), file);
+    await user.click(screen.getByRole('button', { name: 'Carica' }));
+    expect(await screen.findByText(/Hai già caricato questo file/)).toBeTruthy();
+    expect(screen.queryByText('Documento caricato.')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Carica comunque' }));
+    expect(await screen.findByText('Documento caricato.')).toBeTruthy();
+    const posts = calls.filter((c) => c.method === 'POST' && c.path.endsWith('/attachments'));
+    expect(posts.map((c) => c.query.get('allowDuplicate'))).toEqual([null, 'true']);
+  });
   it('shows the fields of the module with their labels, and the step', async () => {
     api('ADMIN', {
       [`GET /practices/${P1}`]: () =>

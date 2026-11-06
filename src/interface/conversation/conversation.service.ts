@@ -1,6 +1,9 @@
 import { permits } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
-import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
+import {
+  AttachmentRejectedError,
+  DuplicateAttachmentError,
+} from '../../core/errors/attachment.errors.js';
 import { featureEnabled, type Feature } from '../../core/features/features.js';
 import { MemberAccessError } from '../../core/identity/member-access.service.js';
 import {
@@ -24,9 +27,11 @@ import { formatPracticeCommandResult } from '../telegram/practice.command.format
 import {
   formatAttachmentQuestion,
   parseAttachmentSelection,
-  PendingAttachmentStore,
+  PENDING_FILE_TTL_MS,
+  readPendingFile,
   resolveAttachmentTarget,
   type AttachmentCandidate,
+  type PendingFile,
 } from '../telegram/telegram.attachment-target.js';
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
@@ -65,6 +70,11 @@ export type InboundFile = {
   compressedPhoto?: boolean;
   /** Caption sent with the file: a hint for the document type (kept while a practice is chosen). */
   hint?: string;
+  /**
+   * AGX-01: the channel's id of the file (Telegram file_id, WhatsApp media id), to download it
+   * again after a restart while the person still has to answer.
+   */
+  ref?: string;
   download: () => Promise<Buffer>;
 };
 
@@ -147,6 +157,8 @@ export type ChannelOptions = {
   compressedPhotoTip?: string;
   /** Address of the dashboard page of the documents to verify, for «Modifica» (A2). */
   reviewUrl?: string;
+  /** AGX-01: downloads a file again from its `ref`, for a file waiting across a restart. */
+  downloadRef?: (ref: string) => () => Promise<Buffer>;
 };
 
 /** A button under a reply: pressing it is the same as writing `answer` (A2). */
@@ -305,8 +317,9 @@ Prova a scrivere:
 }
 
 export class ConversationService {
-  // Files received while the user still has to choose the target practice.
-  private readonly pendingAttachments = new PendingAttachmentStore<InboundFile>();
+  // AGX-01: the files waiting for an answer, with their download, in this process; what survives
+  // a restart is the record in the conversation memory (see pendingFileOf).
+  private readonly liveFiles = new Map<string, InboundFile>();
   // Transitions of practices of others waiting for «sì», by person (C2).
   private readonly pendingTransitions = new Map<string, PendingTransition>();
   // Commands suggested after a typing error, waiting for «sì», by person.
@@ -337,6 +350,63 @@ export class ConversationService {
     );
   }
   private readonly memory: ConversationMemory;
+
+  /** AGX-01: keeps a file waiting for the person's answer, in this process and in the memory. */
+  private async savePendingFile(
+    tenantId: string,
+    userId: string,
+    file: InboundFile,
+    record: Omit<PendingFile, 'channel' | 'tenantId' | 'file' | 'expiresAt'>,
+  ): Promise<void> {
+    this.liveFiles.set(userId, file);
+    const stored: PendingFile = {
+      ...record,
+      channel: this.channel.name,
+      tenantId,
+      file: {
+        ref: file.ref,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        fileSize: file.fileSize,
+        hint: file.hint,
+        compressedPhoto: file.compressedPhoto,
+      },
+      expiresAt: Date.now() + PENDING_FILE_TTL_MS,
+    };
+    await this.memory.setPendingFile(tenantId, userId, stored);
+  }
+
+  private async clearPendingFile(tenantId: string, userId: string): Promise<void> {
+    this.liveFiles.delete(userId);
+    await this.memory.setPendingFile(tenantId, userId, null);
+  }
+
+  /**
+   * The file waiting for this person in this organization and channel, with a way to download it:
+   * from this process, or again from the channel after a restart. `lost` when the record is there
+   * but the file can no longer be downloaded (the person sends it again).
+   */
+  private async pendingFileOf(
+    tenantId: string,
+    userId: string,
+  ): Promise<{ record: PendingFile; file: InboundFile } | 'lost' | null> {
+    const record = readPendingFile(await this.memory.getPendingFile(userId));
+    if (!record || record.channel !== this.channel.name) return null;
+    if (record.tenantId !== tenantId || record.expiresAt <= Date.now()) {
+      await this.clearPendingFile(tenantId, userId);
+      return null;
+    }
+    const live = this.liveFiles.get(userId);
+    if (live) return { record, file: live };
+    if (record.file.ref && this.channel.downloadRef) {
+      return {
+        record,
+        file: { ...record.file, download: this.channel.downloadRef(record.file.ref) },
+      };
+    }
+    await this.clearPendingFile(tenantId, userId);
+    return 'lost';
+  }
 
   constructor(
     private readonly deps: ConversationDeps,
@@ -468,7 +538,11 @@ export class ConversationService {
     const FEATURE_OFF = 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
 
     // Downloads the file and attaches it to the chosen practice (OCR included).
-    const uploadToPractice = async (file: InboundFile, practice: AttachmentCandidate) => {
+    const uploadToPractice = async (
+      file: InboundFile,
+      practice: AttachmentCandidate,
+      allowDuplicate = false,
+    ) => {
       if (!deps.practiceService.addAttachment) return;
       try {
         const content = await file.download();
@@ -480,6 +554,8 @@ export class ConversationService {
           mimeType: file.mimeType,
           content,
           hint: file.hint,
+          allowDuplicate,
+          channel: this.channel.name,
         });
         await this.memory.setLastPractice(tenant.id, dbUser.id, practice.id);
 
@@ -518,6 +594,20 @@ export class ConversationService {
       } catch (uploadErr) {
         if (uploadErr instanceof AttachmentRejectedError) {
           await reply(formatAttachmentRejection(uploadErr));
+          return;
+        }
+        // AGX-01: the same file again; sent only if the person says so.
+        if (uploadErr instanceof DuplicateAttachmentError) {
+          await this.savePendingFile(tenant.id, dbUser.id, file, {
+            stage: 'duplicate',
+            candidates: [],
+            suggested: false,
+            practice,
+          });
+          await reply(
+            `⚠️ ${uploadErr.message}\nLo carico di nuovo nella pratica «${practice.name}»?`,
+            { buttons: YES_NO },
+          );
           return;
         }
         deps.log?.error({ error: errorLabel(uploadErr), requestId }, 'Attachment upload error');
@@ -562,34 +652,49 @@ export class ConversationService {
         );
         return;
       }
-      if (target.type === 'ask') {
-        this.pendingAttachments.set(dbUser.id, file, target.candidates);
-        await reply(formatAttachmentQuestion(target.candidates), {
-          buttons: [
-            ...target.candidates.map((c, i) => ({
-              label: buttonLabel(c.name),
-              answer: String(i + 1),
-            })),
-            { label: 'Annulla', answer: 'annulla' },
-          ],
-        });
-        return;
-      }
-      await uploadToPractice(file, target.practice);
+      // AGX-01: always asked, even when only one practice is possible.
+      await this.savePendingFile(tenant.id, dbUser.id, file, {
+        stage: 'choose',
+        candidates: target.candidates,
+        suggested: target.suggested,
+      });
+      await reply(formatAttachmentQuestion(target.candidates, target.suggested), {
+        buttons: [
+          ...target.candidates.map((c, i) => ({
+            label:
+              target.suggested && i === 0 ? `✅ Sì, ${buttonLabel(c.name)}` : buttonLabel(c.name),
+            answer: String(i + 1),
+          })),
+          { label: 'Annulla', answer: 'annulla' },
+        ],
+      });
       return;
     }
 
-    const pending = this.pendingAttachments.get(dbUser.id);
-    if (pending) {
-      const selection = parseAttachmentSelection(trimmed, pending.candidates.length);
+    const pending = await this.pendingFileOf(tenant.id, dbUser.id);
+    if (pending === 'lost') {
+      await reply('⌛ Non riesco più a recuperare il file che avevi inviato: mandalo di nuovo.');
+      return;
+    }
+    if (pending?.record.stage === 'duplicate' && pending.record.practice) {
+      await this.clearPendingFile(tenant.id, dbUser.id);
+      if (CONFIRMATION.test(trimmed)) {
+        await uploadToPractice(pending.file, pending.record.practice, true);
+        return;
+      }
+      await reply('Ok, il file non è stato caricato di nuovo.');
+      if (!this.isCommand(trimmed)) return;
+    } else if (pending) {
+      const { candidates, suggested } = pending.record;
+      const selection = parseAttachmentSelection(trimmed, candidates.length, suggested);
       if (selection === 'cancel') {
-        this.pendingAttachments.delete(dbUser.id);
+        await this.clearPendingFile(tenant.id, dbUser.id);
         await reply('Ok, il file non è stato associato a nessuna pratica.');
         return;
       }
-      const chosen = typeof selection === 'number' ? pending.candidates[selection - 1] : null;
+      const chosen = typeof selection === 'number' ? candidates[selection - 1] : null;
       if (chosen) {
-        this.pendingAttachments.delete(dbUser.id);
+        await this.clearPendingFile(tenant.id, dbUser.id);
         await uploadToPractice(pending.file, chosen);
         return;
       }

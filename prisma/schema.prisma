@@ -285,6 +285,8 @@ model PracticeAttachment {
   validatedData Json?     @map("validated_data")
   validatedAt   DateTime? @map("validated_at")
   validatedBy   String?   @map("validated_by") @db.Uuid
+  /// AGX-01: SHA-256 of the content, to flag a file already sent; null for older attachments.
+  contentHash   String?   @map("content_hash")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -295,6 +297,7 @@ model PracticeAttachment {
   @@index([practiceId])
   @@index([tenantId, ocrStatus])
   @@index([tenantId, validatedAt])
+  @@index([tenantId, contentHash])
   @@map("practice_attachment")
 }
 
@@ -400,6 +403,8 @@ model ConversationState {
   tenantId       String    @map("tenant_id") @db.Uuid
   lastPracticeId String?   @map("last_practice_id") @db.Uuid
   onboardedAt    DateTime? @map("onboarded_at")
+  /// AGX-01: a file received in chat still waiting for the person to choose its practice.
+  pendingFile    Json?     @map("pending_file")
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

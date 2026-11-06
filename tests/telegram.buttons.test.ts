@@ -183,9 +183,13 @@ describe('a document read with doubts', () => {
       },
       reply,
     );
-    expect(sent[0].options?.buttons?.map((b) => b.answer)).toEqual(['conferma', 'modifica']);
+    // AGX-01: the only practice is proposed, with a button, and the file waits for the answer.
+    expect(sent[0].options?.buttons?.map((b) => b.answer)).toEqual(['1', 'annulla']);
+    expect(addAttachment).not.toHaveBeenCalled();
+    await service.handle({ senderId: '1', text: '1' }, reply);
+    expect(sent[1].options?.buttons?.map((b) => b.answer)).toEqual(['conferma', 'modifica']);
     await service.handle({ senderId: '1', text: 'modifica' }, reply);
-    expect(sent[1].text).toContain('https://app.sinfonia.test/app/verifica');
+    expect(sent[2].text).toContain('https://app.sinfonia.test/app/verifica');
   });
 });
 

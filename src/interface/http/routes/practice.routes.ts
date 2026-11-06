@@ -13,6 +13,7 @@ import {
   PracticeAssignBodySchema,
   PracticeAttachmentBodySchema,
   PracticeAttachmentParamsSchema,
+  PracticeAttachmentQuerySchema,
   PracticeCreateBodySchema,
   PracticeExportBodySchema,
   PracticeIdParamsSchema,
@@ -315,6 +316,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         // Own practices only, whatever the role: the service filters by the uploader.
         const auth = requirePermission(req, 'attachment.create').principal;
         const params = PracticeAttachmentParamsSchema.parse(req.params);
+        const { allowDuplicate } = PracticeAttachmentQuerySchema.parse(req.query);
         const upload = req.isMultipart()
           ? await readMultipartUpload(req)
           : readBase64Upload(req.body);
@@ -324,6 +326,8 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
           userId: auth.userId,
           practiceId: params.id,
           ...upload,
+          allowDuplicate,
+          channel: 'dashboard',
         });
 
         return reply.status(201).send(ok(result));

@@ -130,12 +130,19 @@ export function createTelegramIdentityProvider(prisma: PrismaClient): ChannelIde
 
 // Exported for tests, which drive it with a fake client.
 export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
+  // A Telegram file_id stays valid: a file waiting for an answer is downloaded again from it.
+  const download = (fileId: string) => async () => {
+    const info = await bot.getFile(fileId);
+    if (!info.file_path) throw new Error('Telegram returned no file path');
+    return bot.downloadFile(info.file_path);
+  };
   const conversation = new ConversationService(deps, {
     name: 'telegram',
     identity: deps.identity ?? createTelegramIdentityProvider(deps.prisma),
     maxDownloadBytes: TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     compressedPhotoTip: TELEGRAM_COMPRESSED_PHOTO_TIP,
     reviewUrl: deps.reviewUrl,
+    downloadRef: download,
   });
   const buttons = new ButtonAnswers();
 
@@ -183,12 +190,6 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
       await reply(VOICE_NOT_SUPPORTED);
       return;
     }
-    const download = (fileId: string) => async () => {
-      const info = await bot.getFile(fileId);
-      if (!info.file_path) throw new Error('Telegram returned no file path');
-      return bot.downloadFile(info.file_path);
-    };
-
     // Identity is the Telegram user, never the chat/group id. This prevents
     // every member of a group from sharing the same tenant identity.
     const inbound: InboundMessage = {
@@ -201,6 +202,7 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         mimeType: msg.document.mime_type ?? 'application/octet-stream',
         fileSize: msg.document.file_size,
         hint: inbound.text,
+        ref: msg.document.file_id,
         download: download(msg.document.file_id),
       };
     } else if (msg.photo) {
@@ -215,6 +217,7 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         fileSize: largest.file_size,
         hint: inbound.text,
         compressedPhoto: true,
+        ref: largest.file_id,
         download: download(largest.file_id),
       };
     }

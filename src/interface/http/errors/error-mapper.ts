@@ -27,6 +27,7 @@ import {
   AttachmentRejectedError,
   ComplianceValidationError,
   ConcurrencyError,
+  DuplicateAttachmentError,
   InvalidStateTransitionError,
 } from '../../../core/index.js';
 import { NetworkError } from '../../../core/network/network.service.js';
@@ -75,7 +76,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof ComplianceValidationError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
-  if (err instanceof AttachmentRejectedError) {
+  if (err instanceof AttachmentRejectedError || err instanceof DuplicateAttachmentError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
   if (err instanceof LLMDisabledError) {

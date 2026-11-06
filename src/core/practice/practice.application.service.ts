@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { defaultDocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AttachmentRepository } from '../../data/repositories/attachment.repository.js';
@@ -7,7 +9,7 @@ import { defaultStorageService, type StorageService } from '../../data/storage/s
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { authorize, scopedUserId, type Principal } from '../authz/authorization.service.js';
-import { AttachmentRejectedError } from '../errors/attachment.errors.js';
+import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
 import { moduleOfTenant, resolvePracticeCreation, visibleSubState } from './practice-module.js';
@@ -342,6 +344,13 @@ export class PracticeApplicationService {
     mimeType: string;
     content: Buffer | Uint8Array;
     hint?: string;
+    /**
+     * AGX-01: the person confirmed sending a file they already sent; without it the same content
+     * in one of their practices (or in this one) is refused with DuplicateAttachmentError.
+     */
+    allowDuplicate?: boolean;
+    /** Where the file came from, for the audit (`dashboard`, `telegram`, `whatsapp`). */
+    channel?: string;
   }): Promise<{
     attachment: PracticeAttachmentDTO;
     practice: PracticeView;
@@ -356,6 +365,16 @@ export class PracticeApplicationService {
     });
 
     const mimeType = this.validateAttachment(input.content);
+    const contentHash = createHash('sha256').update(input.content).digest('hex');
+    const duplicateOf = await this.findDuplicate(
+      input.tenantId,
+      input.userId,
+      input.practiceId,
+      contentHash,
+    );
+    if (duplicateOf && !input.allowDuplicate) {
+      throw new DuplicateAttachmentError(duplicateOf);
+    }
 
     const storageResult = await this.storageService.save(
       input.tenantId,
@@ -387,9 +406,36 @@ export class PracticeApplicationService {
         storagePath: storageResult.storagePath,
         ocrStatus,
         ocrResult,
+        contentHash,
       });
     } catch (err: unknown) {
       // Without its record the stored file could never be listed or deleted: remove it.
+      await this.storageService
+        .delete(input.tenantId, storageResult.storagePath)
+        .catch(() => undefined);
+      throw err;
+    }
+
+    // AGX-01: every file received leaves a trace, without its name or content.
+    try {
+      await new AuditService(this.prisma).logEvent({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        eventType: 'ATTACHMENT_ADDED',
+        payload: {
+          practiceId: input.practiceId,
+          attachmentId: attachment.id,
+          ocrStatus,
+          documentType: ocrResult?.documentType ?? null,
+          channel: input.channel ?? null,
+          duplicateOf: duplicateOf?.attachmentId ?? null,
+        },
+      });
+    } catch (err: unknown) {
+      // A file without its trace is not kept: the person sends it again.
+      await this.attachmentRepository
+        .deleteAttachment(input.tenantId, attachment.id)
+        .catch(() => undefined);
       await this.storageService
         .delete(input.tenantId, storageResult.storagePath)
         .catch(() => undefined);
@@ -440,6 +486,39 @@ export class PracticeApplicationService {
   }
 
   /** Enforces size and format limits; returns the MIME type detected from the content. */
+  /**
+   * AGX-01: the same content already attached to this practice or to one of the person's own
+   * practices. Practices of others are never looked at, so the answer reveals nothing about them.
+   */
+  private async findDuplicate(
+    tenantId: string,
+    userId: string,
+    practiceId: string,
+    contentHash: string,
+  ): Promise<DuplicateAttachmentError['duplicate'] | null> {
+    const found = await this.prisma.practiceAttachment.findFirst({
+      where: {
+        tenantId,
+        contentHash,
+        OR: [{ practiceId }, { practice: { userId } }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        createdAt: true,
+        practiceId: true,
+        practice: { select: { payload: true } },
+      },
+    });
+    if (!found) return null;
+    return {
+      attachmentId: found.id,
+      practiceId: found.practiceId,
+      practiceName: readPracticePayload(found.practice.payload).name ?? 'Pratica senza nome',
+      uploadedAt: found.createdAt,
+    };
+  }
+
   private validateAttachment(content: Buffer | Uint8Array): string {
     if (content.length === 0) {
       throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'The attached file is empty');
