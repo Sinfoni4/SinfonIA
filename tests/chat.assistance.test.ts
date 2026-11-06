@@ -104,11 +104,12 @@ describe('«parla con un operatore» in the chat (H10)', () => {
     expect(c.handleMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the four menu entries two per row on Telegram', () => {
+  it('shows the menu entries two per row on Telegram', () => {
     expect(replyMarkup({ menu: true })).toEqual({
       keyboard: [
         [{ text: '📁 Le mie pratiche' }, { text: '⏰ Le mie scadenze' }],
-        [{ text: '🙋 Operatore' }, { text: '❓ Aiuto' }],
+        [{ text: '🙋 Operatore' }, { text: '🏢 La mia azienda' }],
+        [{ text: '❓ Aiuto' }],
       ],
       resize_keyboard: true,
       is_persistent: true,
