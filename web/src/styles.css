@@ -26,6 +26,14 @@
   box-sizing: border-box;
 }
 
+/*
+ * Space for the vertical scrollbar is always kept: otherwise it appears only on the longer
+ * sections and the centered header and content shift sideways when moving between them.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   background: var(--bg);
