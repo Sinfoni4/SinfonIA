@@ -163,6 +163,19 @@ describe('activity helpers', () => {
         }),
       ),
     ).toBe('Impostazioni: export pianificato attivato, frequenza ogni settimana');
+    expect(
+      describeEvent(
+        event({
+          type: 'ORGANIZATION_SETTINGS_CHANGED',
+          details: { taxCode: 'set', vatNumber: 'removed' },
+        }),
+      ),
+    ).toBe('Impostazioni: codice fiscale / CUAA aggiornato, partita IVA tolta');
+    expect(
+      describeEvent(
+        event({ type: 'COMPANY_IDENTIFIERS_VIEWED', details: { channel: 'telegram' } }),
+      ),
+    ).toBe('Codice fiscale e partita IVA mostrati per intero (Telegram)');
   });
 
   it('builds the log query from a group of events and whole days', () => {

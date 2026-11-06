@@ -39,8 +39,10 @@ import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
+import type { Principal } from '../../core/authz/authorization.service.js';
 import type { CustomPermissions } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
+import type { CompanyCard } from '../../core/organization/company-card.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { Tenant } from '../../core/tenant/tenant.store.js';
 import type { PracticeState } from '../../core/types/workflow.types.js';
@@ -142,6 +144,13 @@ export type ConversationDeps = {
   }) => Promise<{ created: boolean; createdAt: Date }>;
   /** Turns the scheduled export in chat on or off for the person (D5b); returns whether it changed. */
   scheduledExport?: (orgId: string, userId: string, enabled: boolean) => Promise<boolean>;
+  /** AGX-12a: the card of the company («🏢 La mia azienda»), within the person's grants. */
+  companyCard?: (actor: Principal) => Promise<CompanyCard>;
+  /** AGX-12a: the full codes, for who manages the organization only (null otherwise); audited. */
+  revealCompanyIdentifiers?: (
+    actor: Principal,
+    channel: string,
+  ) => Promise<{ taxCode: string | null; vatNumber: string | null } | null>;
   /** Defaults to process memory; production passes the database one. */
   memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
@@ -178,6 +187,7 @@ export const MENU_BUTTONS: ReplyButton[] = [
   { label: '📁 Le mie pratiche', answer: 'lista pratiche' },
   { label: '⏰ Le mie scadenze', answer: 'scadenze' },
   { label: '🙋 Operatore', answer: 'operatore' },
+  { label: '🏢 La mia azienda', answer: 'la mia azienda' },
   { label: '❓ Aiuto', answer: 'aiuto' },
 ];
 
@@ -259,6 +269,48 @@ export const VOICE_NOT_SUPPORTED =
 const LINK_COMMAND = /^\/?start\s+(\S+)/i;
 const SCHEDULED_EXPORT_COMMAND = /^(attiva|disattiva)\s+export\s+pianificato$/i;
 const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
+const CARD_COMMAND =
+  /^(?:la mia azienda|scheda(?: dell')?(?: ?azienda)?|dati (?:della mia |dell')?azienda)[.!?]?$/i;
+const REVEAL_COMMAND = /^mostra (?:i )?codici(?: per intero)?$/i;
+
+const TYPE_LABELS: Record<CompanyCard['type'], string> = {
+  COMPANY: 'Azienda',
+  COOPERATIVE: 'Cooperativa',
+  NETWORK: "Rete d'impresa",
+  CONSORTIUM: 'Consorzio',
+  TRADE_ASSOCIATION: 'Associazione di categoria',
+  ASSOCIATION: 'Associazione',
+  PROFESSIONAL_FIRM: 'Studio professionale',
+  OTHER: 'Altro',
+};
+
+function daysText(daysLeft: number): string {
+  if (daysLeft === 0) return 'oggi';
+  if (daysLeft === 1) return 'domani';
+  if (daysLeft > 0) return `tra ${daysLeft} giorni`;
+  return daysLeft === -1 ? 'scaduta ieri' : `scaduta da ${-daysLeft} giorni`;
+}
+
+/** AGX-12a: the card in chat; the codes, when present, are already masked. */
+export function formatCompanyCard(card: CompanyCard, role: UserRole): string {
+  const lines = [`🏢 Lavori per ${card.name} come ${ROLE_LABELS[role]}.`, ''];
+  lines.push(`Tipo: ${TYPE_LABELS[card.type]}`);
+  if (card.municipality) lines.push(`Comune: ${card.municipality}`);
+  if (card.sector) lines.push(`Settore: ${card.sector}`);
+  if (card.networks.length > 0) lines.push(`Reti: ${card.networks.join(', ')}`);
+  if (card.openPractices !== null) lines.push(`📁 Pratiche aperte: ${card.openPractices}`);
+  if (card.nextDeadline) {
+    const d = card.nextDeadline;
+    const [y, m, day] = d.dueDate.split('-');
+    lines.push(`⏰ Prossima scadenza: ${d.title}, ${day}/${m}/${y} (${daysText(d.daysLeft)})`);
+  }
+  if (card.identifiers) {
+    lines.push('');
+    lines.push(`Codice fiscale / CUAA: ${card.identifiers.taxCode ?? 'non inserito'}`);
+    lines.push(`Partita IVA: ${card.identifiers.vatNumber ?? 'non inserita'}`);
+  }
+  return lines.join('\n');
+}
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'amministratore',
@@ -297,6 +349,7 @@ Puoi:
 • controllarne lo stato
 • gestire le scadenze (DURC, sicurezza, bio, visite mediche, patentini)
 • chiedere aiuto a un operatore (scrivi "operatore")
+• vedere i dati della tua azienda (scrivi "la mia azienda")
 
 Prova a scrivere:
 "valida la pratica di Mario Rossi"
@@ -311,6 +364,7 @@ Puoi:
 • chiedere aggiornamenti
 • vedere le tue scadenze (scrivi "scadenze")
 • parlare con un operatore (scrivi "operatore")
+• vedere i dati della tua azienda (scrivi "la mia azienda")
 
 Prova a scrivere:
 "crea pratica per Mario Rossi"`;
@@ -502,7 +556,8 @@ export class ConversationService {
     let identity: Awaited<ReturnType<ChannelIdentityProvider['resolve']>>;
     try {
       identity = await this.channel.identity.resolve(message.senderId);
-      if (orgCommand) {
+      // AGX-12a: with the card available, «azienda» shows it (below, once the actor is known).
+      if (orgCommand && !deps.companyCard) {
         await reply(`🏢 Lavori per ${identity.tenant.name}.`);
         return;
       }
@@ -536,6 +591,36 @@ export class ConversationService {
     };
     const featureOn = (feature: Feature) => featureEnabled(tenant.disabledFeatures, feature);
     const FEATURE_OFF = 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
+
+    // AGX-12a: the card of the company, read only and without the AI.
+    if ((orgCommand || CARD_COMMAND.test(trimmed)) && deps.companyCard) {
+      const card = await deps.companyCard(actor);
+      const masked = card.identifiers;
+      const canReveal =
+        Boolean(deps.revealCompanyIdentifiers) &&
+        masked !== null &&
+        (masked.taxCode !== null || masked.vatNumber !== null);
+      await reply(
+        formatCompanyCard(card, dbUser.role),
+        canReveal
+          ? { buttons: [{ label: '🔓 Mostra per intero', answer: 'mostra codici' }] }
+          : undefined,
+      );
+      return;
+    }
+    if (REVEAL_COMMAND.test(trimmed) && deps.revealCompanyIdentifiers) {
+      const codes = await deps.revealCompanyIdentifiers(actor, this.channel.name);
+      if (!codes) {
+        await reply('🔒 Solo gli amministratori vedono codice fiscale e partita IVA.');
+        return;
+      }
+      await reply(
+        `Codice fiscale / CUAA: ${codes.taxCode ?? 'non inserito'}\n` +
+          `Partita IVA: ${codes.vatNumber ?? 'non inserita'}\n\n` +
+          'Per modificarli usa Impostazioni nella dashboard.',
+      );
+      return;
+    }
 
     // Downloads the file and attaches it to the chosen practice (OCR included).
     const uploadToPractice = async (

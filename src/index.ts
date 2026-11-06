@@ -16,12 +16,19 @@ import {
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
 import { requestAssistance } from './core/assistance/assistance.service.js';
-import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
+import {
+  createPrismaPrincipalResolver,
+  type Principal,
+} from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
 import { GrantExpiringHandler } from './core/delegation/grant-reminders.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
 import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
+import {
+  getCompanyCard,
+  revealCompanyIdentifiers,
+} from './core/organization/company-card.service.js';
 import {
   AssistanceRequestedHandler,
   AssistanceUpdatedHandler,
@@ -228,6 +235,10 @@ async function main() {
     // H10: «parla con un operatore» records a request for the dashboard and tells the operators.
     requestAssistance: (input: Parameters<typeof requestAssistance>[1]) =>
       requestAssistance(prisma, input),
+    // AGX-12a: «🏢 La mia azienda» in chat; the full codes only to who manages it, audited.
+    companyCard: (actor: Principal) => getCompanyCard(prisma, complianceService, actor),
+    revealCompanyIdentifiers: (actor: Principal, channel: string) =>
+      revealCompanyIdentifiers(prisma, actor, channel),
     memory: conversationMemory,
     practiceService,
     complianceService,
