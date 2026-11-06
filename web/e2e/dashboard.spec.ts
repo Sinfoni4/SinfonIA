@@ -101,6 +101,11 @@ test('fits the screen without horizontal scrolling on every main page', async ()
     );
     expect(overflow, path || 'home').toBeLessThanOrEqual(0);
   }
+  // Space for the scrollbar is always kept, so header and content keep their place between short
+  // and long sections (the test browser's scrollbars take no space, so it is checked directly).
+  expect(
+    await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarGutter),
+  ).toBe('stable');
 });
 
 test('meets the basic accessibility checks on every main page', async () => {
