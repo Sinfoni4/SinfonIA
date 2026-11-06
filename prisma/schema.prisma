@@ -125,6 +125,7 @@ model User {
   beneficiaryOf       AccessGrantBeneficiary[]
   assistanceRequests  AssistanceRequest[]
   assignedPractices   Practice[]               @relation("PracticeAssignee")
+  heldPractices       Practice[]               @relation("PracticeHolder")
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
@@ -141,25 +142,29 @@ enum PracticeStatus {
 }
 
 model Practice {
-  id         String         @id @default(uuid()) @db.Uuid
-  tenantId   String         @map("tenant_id") @db.Uuid
-  userId     String         @map("user_id") @db.Uuid
-  status     PracticeStatus @default(CREATED)
-  version    Int            @default(1)
-  payload    Json
-  createdAt  DateTime       @default(now()) @map("created_at")
-  updatedAt  DateTime       @updatedAt @map("updated_at")
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  status       PracticeStatus @default(CREATED)
+  version      Int            @default(1)
+  payload      Json
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
   /// A4: the administrator or operator who follows the practice; null = nobody yet.
-  assignedTo String?        @map("assigned_to") @db.Uuid
-  assignedAt DateTime?      @map("assigned_at")
+  assignedTo   String?        @map("assigned_to") @db.Uuid
+  assignedAt   DateTime?      @map("assigned_at")
+  /// AGX-03: the person the practice was opened for; null = the creator.
+  holderUserId String?        @map("holder_user_id") @db.Uuid
 
   tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   assignee    User?                @relation("PracticeAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  holder      User?                @relation("PracticeHolder", fields: [holderUserId], references: [id], onDelete: SetNull)
   attachments PracticeAttachment[]
 
   @@index([tenantId])
   @@index([tenantId, assignedTo])
+  @@index([tenantId, holderUserId])
   @@index([tenantId, userId])
   @@index([tenantId, status])
   @@index([tenantId, id, version])

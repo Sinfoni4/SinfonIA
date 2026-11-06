@@ -176,6 +176,23 @@ describe('activity helpers', () => {
         event({ type: 'COMPANY_IDENTIFIERS_VIEWED', details: { channel: 'telegram' } }),
       ),
     ).toBe('Codice fiscale e partita IVA mostrati per intero (Telegram)');
+    expect(
+      describeEvent(
+        event({ type: 'PRACTICE_HOLDER_CHANGED', practice: { id: 'p', name: 'PAC 2026' } }),
+      ),
+    ).toBe('Pratica «PAC 2026»: titolare giulia@coop.it');
+    expect(
+      describeEvent(
+        event({
+          type: 'PRACTICE_HOLDER_CHANGED',
+          target: null,
+          practice: { id: 'p', name: 'PAC 2026' },
+        }),
+      ),
+    ).toBe("Pratica «PAC 2026»: tornata a chi l'ha aperta");
+    expect(
+      describeEvent(event({ type: 'PRACTICE_CREATED', practice: { id: 'p', name: 'PAC 2026' } })),
+    ).toBe('Pratica «PAC 2026» creata per giulia@coop.it');
   });
 
   it('builds the log query from a group of events and whole days', () => {

@@ -1,4 +1,5 @@
 import { NotFoundError } from '../../data/errors/errors.js';
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
 
 import type { PracticeStatus, PrismaClient, UserRole } from '@prisma/client';
@@ -95,13 +96,15 @@ export async function memberCard(
   if (!membership) throw new NotFoundError('Member not found');
 
   const practiceSelect = { id: true, status: true, payload: true, updatedAt: true } as const;
+  // AGX-03: the person's practices are those they created and those opened for them.
+  const mine = personPracticesWhere(userId);
   const today = new Date(now.toISOString().slice(0, 10));
   const [total, open, recent, assigned, deadlines, documents, toReview, recentDocuments] =
     await Promise.all([
-      prisma.practice.count({ where: { tenantId: orgId, userId } }),
-      prisma.practice.count({ where: { tenantId: orgId, userId, status: { in: OPEN } } }),
+      prisma.practice.count({ where: { tenantId: orgId, ...mine } }),
+      prisma.practice.count({ where: { tenantId: orgId, ...mine, status: { in: OPEN } } }),
       prisma.practice.findMany({
-        where: { tenantId: orgId, userId },
+        where: { tenantId: orgId, ...mine },
         orderBy: { updatedAt: 'desc' },
         take: LIMIT,
         select: practiceSelect,
@@ -118,17 +121,17 @@ export async function memberCard(
         take: LIMIT,
         select: { id: true, title: true, category: true, dueDate: true },
       }),
-      prisma.practiceAttachment.count({ where: { tenantId: orgId, practice: { userId } } }),
+      prisma.practiceAttachment.count({ where: { tenantId: orgId, practice: mine } }),
       prisma.practiceAttachment.count({
         where: {
           tenantId: orgId,
-          practice: { userId },
+          practice: mine,
           ocrStatus: 'COMPLETED',
           validatedAt: null,
         },
       }),
       prisma.practiceAttachment.findMany({
-        where: { tenantId: orgId, practice: { userId } },
+        where: { tenantId: orgId, practice: mine },
         orderBy: { createdAt: 'desc' },
         take: LIMIT,
         select: {

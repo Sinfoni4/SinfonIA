@@ -41,6 +41,12 @@ export function formatPracticeCommandResult(result: PracticeCommandResult): stri
         'risposta annulla.'
       );
 
+    case 'delete_denied':
+      return (
+        `🔒 La pratica ${result.practice.name} è stata aperta per te: può eliminarla solo chi ` +
+        "l'ha aperta. Se serve, scrivi «operatore»."
+      );
+
     case 'deleted':
       return `🗑️ Pratica eliminata: ${result.practice.name}`;
 

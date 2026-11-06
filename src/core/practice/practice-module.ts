@@ -1,4 +1,5 @@
 import { NotFoundError } from '../../data/errors/errors.js';
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import {
@@ -98,7 +99,7 @@ export async function setPracticeSubState(
       where: {
         id: input.practiceId,
         tenantId: input.tenantId,
-        ...(input.ownerUserId ? { userId: input.ownerUserId } : {}),
+        ...(input.ownerUserId ? personPracticesWhere(input.ownerUserId) : {}),
       },
       select: { status: true, payload: true },
     });

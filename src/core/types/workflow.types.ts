@@ -15,4 +15,6 @@ export type CreatePracticeInput = {
   name: string;
   kind?: PracticeKind;
   metadata?: Record<string, unknown>;
+  /** AGX-03: the person the practice is opened for; checked against the organization. */
+  holderUserId?: string | null;
 };

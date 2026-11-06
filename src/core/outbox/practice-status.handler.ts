@@ -1,4 +1,5 @@
 import { PRACTICE_ASSIGNED } from '../practice/practice-assignment.js';
+import { PRACTICE_HOLDER_SET, practiceRecipient } from '../practice/practice-holder.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
 
 import { chatDeliveriesTo } from './outbox.recipients.js';
@@ -7,6 +8,7 @@ import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbo
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
 import type { PracticeAssignedPayload } from '../practice/practice-assignment.js';
+import type { PracticeHolderSetPayload } from '../practice/practice-holder.js';
 import type { PracticeState } from '../types/workflow.types.js';
 
 /** A3: someone else changed the state of a person's practice. */
@@ -14,7 +16,7 @@ export const PRACTICE_STATUS_CHANGED = 'PRACTICE_STATUS_CHANGED';
 
 export type PracticeStatusChangedPayload = {
   practiceId: string;
-  /** The owner of the practice, the only one who receives the notice. */
+  /** Who receives the notice: the holder of the practice, or its creator (AGX-03). */
   userId: string;
   from: PracticeState;
   to: PracticeState;
@@ -55,9 +57,10 @@ export class PracticeStatusHandler implements OutboxEventHandler {
     const payload = message.payload as PracticeStatusChangedPayload;
     const practice = await this.prisma.practice.findFirst({
       where: { id: payload.practiceId, tenantId: message.tenantId },
-      select: { payload: true, userId: true },
+      select: { payload: true, userId: true, holderUserId: true },
     });
-    if (!practice || practice.userId !== payload.userId) return [];
+    // Nothing if the practice changed hands meanwhile.
+    if (!practice || practiceRecipient(practice) !== payload.userId) return [];
     const name = readPracticePayload(practice.payload).name ?? 'senza nome';
     const text = formatPracticeStatusNotice(name, payload.to);
     if (!text) return [];
@@ -95,6 +98,42 @@ export class PracticeAssignedHandler implements OutboxEventHandler {
     const name = readPracticePayload(practice.payload).name ?? 'senza nome';
     const text =
       `📌 Ti è stata assegnata la pratica «${name}».` +
+      (this.dashboardUrl ? `\n${this.dashboardUrl}/pratiche/${payload.practiceId}` : '');
+    return chatDeliveriesTo(
+      this.prisma,
+      message.tenantId,
+      this.channels,
+      (notifier, chatId) => notifier.sendMessage(chatId, text),
+      { userIds: [payload.userId] },
+    );
+  }
+}
+
+/**
+ * AGX-03: the person a practice was opened for hears it in chat, with the link to it when the
+ * dashboard address is known. Nothing is sent if the practice moved on to someone else.
+ */
+export class PracticeHolderSetHandler implements OutboxEventHandler {
+  readonly eventType = PRACTICE_HOLDER_SET;
+
+  constructor(
+    private readonly prisma: PrismaLike,
+    private readonly channels: OutboxChannels,
+    /** Base address of the dashboard (`…/app`), when known. */
+    private readonly dashboardUrl?: string,
+  ) {}
+
+  async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
+    const payload = message.payload as PracticeHolderSetPayload;
+    const practice = await this.prisma.practice.findFirst({
+      where: { id: payload.practiceId, tenantId: message.tenantId },
+      select: { payload: true, holderUserId: true },
+    });
+    if (!practice || practice.holderUserId !== payload.userId) return [];
+    const name = readPracticePayload(practice.payload).name ?? 'senza nome';
+    const text =
+      `📂 È stata aperta per te la pratica «${name}».\n` +
+      'Puoi mandarmi qui i documenti: ti chiederò sempre a quale pratica allegarli.' +
       (this.dashboardUrl ? `\n${this.dashboardUrl}/pratiche/${payload.practiceId}` : '');
     return chatDeliveriesTo(
       this.prisma,

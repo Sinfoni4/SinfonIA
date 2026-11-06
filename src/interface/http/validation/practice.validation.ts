@@ -29,6 +29,8 @@ export const PracticeCreateBodySchema = z.object({
   /** A04: the fields of the kind, checked against its module. */
   fields: z.record(z.string(), z.unknown()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** AGX-03: the person the practice is opened for; needs `practice.assign`. */
+  holderUserId: z.string().uuid().nullable().optional(),
 });
 
 /** A05: a sub-state of the practice type, or null to clear it. */
@@ -60,6 +62,9 @@ export const PracticeExportBodySchema = z.object({
 });
 
 export const PracticeAssignBodySchema = z.object({ userId: z.string().uuid().nullable() }).strict();
+
+/** AGX-03: the holder of a practice, or null to give it back to its creator. */
+export const PracticeHolderBodySchema = z.object({ userId: z.string().uuid().nullable() }).strict();
 
 export const PracticeAttachmentParamsSchema = PracticeIdParamsSchema;
 

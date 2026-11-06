@@ -114,6 +114,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_STATE_CHANGED',
       'PRACTICE_DELETED',
       'PRACTICE_ASSIGNED',
+      'PRACTICE_HOLDER_CHANGED',
       'PRACTICE_SUB_STATE_CHANGED',
       'ATTACHMENT_VALIDATED',
     ],
@@ -318,11 +319,17 @@ export function describeEvent(event: AuditEvent): string {
     case 'ASSISTANCE_CLOSED':
       return 'Richiesta di assistenza chiusa';
     case 'PRACTICE_CREATED':
-      return `Pratica ${practice} creata`;
+      return event.target
+        ? `Pratica ${practice} creata per ${target}`
+        : `Pratica ${practice} creata`;
     case 'PRACTICE_STATE_CHANGED':
       return `Pratica ${practice}: da ${stateName(d.from)} a ${stateName(d.to)}`;
     case 'PRACTICE_DELETED':
       return `Pratica ${practice} eliminata`;
+    case 'PRACTICE_HOLDER_CHANGED':
+      return event.target
+        ? `Pratica ${practice}: titolare ${target}`
+        : `Pratica ${practice}: tornata a chi l'ha aperta`;
     case 'PRACTICE_ASSIGNED':
       return d.unassigned === true
         ? `Pratica ${practice} non più assegnata`

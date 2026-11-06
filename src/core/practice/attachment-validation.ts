@@ -1,4 +1,5 @@
 import { NotFoundError } from '../../data/errors/errors.js';
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 
@@ -224,7 +225,7 @@ export async function validateAttachment(
         id: input.attachmentId,
         tenantId: input.tenantId,
         practiceId: input.practiceId,
-        ...(input.ownerUserId ? { practice: { userId: input.ownerUserId } } : {}),
+        ...(input.ownerUserId ? { practice: personPracticesWhere(input.ownerUserId) } : {}),
       },
       select: { ocrResult: true },
     });
@@ -305,7 +306,7 @@ export async function listReviewQueue(
 ): Promise<{ items: ReviewItem[]; total: number; page: number; totalPages: number }> {
   const where: Prisma.PracticeAttachmentWhereInput = {
     tenantId: input.tenantId,
-    ...(input.ownerUserId ? { practice: { userId: input.ownerUserId } } : {}),
+    ...(input.ownerUserId ? { practice: personPracticesWhere(input.ownerUserId) } : {}),
     ...(input.status === 'to_review'
       ? reviewQueueWhere()
       : input.status === 'validated'
@@ -393,7 +394,7 @@ export async function confirmReadDocument(
       id: input.attachmentId,
       tenantId: input.tenantId,
       practiceId: input.practiceId,
-      practice: { userId: input.userId },
+      practice: personPracticesWhere(input.userId),
     },
     select: { ocrResult: true },
   });

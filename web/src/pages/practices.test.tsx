@@ -341,4 +341,74 @@ describe('practices (FE2)', () => {
     expect(within(list).queryByText('Anno della campagna')).toBeNull();
     expect(within(list).queryByText('x')).toBeNull();
   });
+
+  it('opens a practice for another person of the organization (AGX-03)', async () => {
+    api('ADMIN', {
+      'GET /practices/holders': () =>
+        ok([
+          { userId: ME, email: 'mario@coop.it', role: 'ADMIN' },
+          { userId: OTHER, email: 'anna@azienda.it', role: 'MEMBER' },
+        ]),
+      'POST /practices': () => ({
+        status: 201,
+        body: { success: true, data: practice({ holderUserId: OTHER }) },
+      }),
+      [`GET /practices/${P1}`]: () =>
+        ok({ ...practice({ holderUserId: OTHER }), allowedTransitions: [] }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+    });
+    openAt('/pratiche/nuova');
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Nome'), 'Domanda PAC');
+    const holder = await screen.findByLabelText('Aperta per');
+    // The creator is not offered: «Me stesso» is the default.
+    expect(within(holder).queryByText('mario@coop.it')).toBeNull();
+    await user.selectOptions(holder, OTHER);
+    expect(screen.getByText(/La persona vedrà la pratica/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Crea pratica' }));
+    expect(await screen.findByRole('heading', { name: 'Mario Rossi' })).toBeTruthy();
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/practices')?.body).toEqual({
+      name: 'Domanda PAC',
+      kind: 'generic',
+      holderUserId: OTHER,
+    });
+  });
+
+  it('shows the farmer a practice opened for them, with the upload form (AGX-03)', async () => {
+    api('MEMBER', {
+      [`GET /practices/${P1}`]: () =>
+        ok({ ...practice({ userId: OTHER, holderUserId: ME }), allowedTransitions: [] }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+    });
+    openAt(`/pratiche/${P1}`);
+    expect(await screen.findByText('tu')).toBeTruthy();
+    expect(screen.getByLabelText('File (PDF o immagine)')).toBeTruthy();
+    // A member does not choose the holder, and does not ask for the list.
+    expect(calls.some((c) => c.path === '/practices/holders')).toBe(false);
+  });
+
+  it('lets an administrator change the holder of a practice (AGX-03)', async () => {
+    let holderUserId: string | null = null;
+    api('ADMIN', {
+      'GET /practices/holders': () =>
+        ok([
+          { userId: ME, email: 'mario@coop.it', role: 'ADMIN' },
+          { userId: OTHER, email: 'anna@azienda.it', role: 'MEMBER' },
+        ]),
+      [`GET /practices/${P1}`]: () => ok({ ...practice({ holderUserId }), allowedTransitions: [] }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+      [`POST /practices/${P1}/holder`]: (c) => {
+        holderUserId = (c.body as { userId: string | null }).userId;
+        return ok({ holderUserId });
+      },
+    });
+    openAt(`/pratiche/${P1}`);
+    const user = userEvent.setup();
+    const select = await screen.findByRole('combobox', { name: 'Aperta per' });
+    await user.selectOptions(select, OTHER);
+    expect(await screen.findByText('anna@azienda.it', { selector: 'dd' })).toBeTruthy();
+    expect(calls.find((c) => c.path === `/practices/${P1}/holder`)?.body).toEqual({
+      userId: OTHER,
+    });
+  });
 });

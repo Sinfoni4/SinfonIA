@@ -38,6 +38,7 @@ import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
 import {
   PracticeAssignedHandler,
+  PracticeHolderSetHandler,
   PracticeStatusHandler,
 } from './core/outbox/practice-status.handler.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
@@ -359,6 +360,11 @@ async function main() {
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app/deleghe` : undefined,
       ),
       new PracticeAssignedHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
+      ),
+      new PracticeHolderSetHandler(
         prisma,
         outboxChannels,
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
