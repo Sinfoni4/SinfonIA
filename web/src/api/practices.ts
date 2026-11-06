@@ -15,6 +15,8 @@ export type Practice = {
   updatedAt: string;
   /** A4: the administrator or operator who follows the practice, if anyone. */
   assignedTo: string | null;
+  /** AGX-03: the person the practice was opened for; null = its creator. */
+  holderUserId?: string | null;
   /** A05: the step of the module inside the common state, if any. */
   subState?: string | null;
   /** A04: the values of the fields of the module (missing on an older backend). */
@@ -77,6 +79,27 @@ export function practicesQuery(filters: PracticeFilters, userId: string): string
 
 /** A4: who can follow a practice. */
 export type Assignee = { userId: string; email: string | null; role: 'ADMIN' | 'OPERATOR' };
+
+/** AGX-03: a person a practice can be opened for (an active member of the organization). */
+export type HolderCandidate = {
+  userId: string;
+  email: string | null;
+  role: 'ADMIN' | 'OPERATOR' | 'MEMBER';
+};
+
+export function holderLabel(c: Pick<HolderCandidate, 'email' | 'role'>): string {
+  if (c.email) return c.email;
+  return c.role === 'MEMBER'
+    ? 'membro (solo chat)'
+    : c.role === 'ADMIN'
+      ? 'amministratore (solo chat)'
+      : 'operatore (solo chat)';
+}
+
+/** Whether the practice is the person's: created by them or opened for them (AGX-03). */
+export function isMine(p: Pick<Practice, 'userId' | 'holderUserId'>, userId: string): boolean {
+  return p.userId === userId || p.holderUserId === userId;
+}
 
 /** Who the board shows: everything, the caller's practices, or those followed by nobody. */
 export type BoardFilter = 'all' | 'me' | 'none';

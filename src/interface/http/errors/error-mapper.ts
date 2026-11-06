@@ -36,6 +36,7 @@ import { OrganizationSettingsError } from '../../../core/organization/organizati
 import { PlatformActionError } from '../../../core/platform/platform.service.js';
 import { AttachmentValidationError } from '../../../core/practice/attachment-validation.js';
 import { AssignmentError } from '../../../core/practice/practice-assignment.js';
+import { HolderError } from '../../../core/practice/practice-holder.js';
 import { PracticeModuleError } from '../../../core/practice/practice-module.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
@@ -69,6 +70,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof AttachmentValidationError ||
     err instanceof AssistanceError ||
     err instanceof AssignmentError ||
+    err instanceof HolderError ||
     err instanceof PracticeModuleError ||
     err instanceof NetworkError ||
     err instanceof DelegationError

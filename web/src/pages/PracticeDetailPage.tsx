@@ -7,6 +7,8 @@ import { type CurrentModule, shownFields } from '../api/modules';
 import {
   formatDate,
   formatSize,
+  holderLabel,
+  isMine,
   kindLabel,
   OCR_LABELS,
   confirmedFields,
@@ -15,6 +17,7 @@ import {
   TRANSITION_LABELS,
   usefulSummary,
   type Attachment,
+  type HolderCandidate,
   type PracticeDetail,
   type PracticeState,
 } from '../api/practices';
@@ -44,6 +47,21 @@ export function PracticeDetailPage({ me }: { me: Me }) {
       api(`/practices/${id}/sub-state`, { method: 'POST', body: { subState: value } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['practice', id] });
+    },
+  });
+  // AGX-03: who may assign practices also chooses the holder; refused otherwise (then hidden).
+  const holders = useQuery({
+    queryKey: ['holders', me.current.orgId],
+    queryFn: () => api<HolderCandidate[]>('/practices/holders'),
+    enabled: me.current.role !== 'MEMBER',
+    retry: false,
+  });
+  const setHolder = useMutation({
+    mutationFn: (userId: string | null) =>
+      api(`/practices/${id}/holder`, { method: 'POST', body: { userId } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['practice', id] });
+      await queryClient.invalidateQueries({ queryKey: ['practices'] });
     },
   });
   const attachments = useQuery({
@@ -77,8 +95,18 @@ export function PracticeDetailPage({ me }: { me: Me }) {
   }
 
   const p = practice.data;
-  // Attachments are added only to one's own practices (attachment.create is "own" for everyone).
-  const canUpload = p.userId === me.userId;
+  // Attachments are added only to one's own practices (attachment.create is "own" for everyone):
+  // created by the person or opened for them (AGX-03).
+  const canUpload = isMine(p, me.userId);
+  const holderUserId = p.holderUserId ?? null;
+  const holderName =
+    holderUserId === me.userId
+      ? 'tu'
+      : (() => {
+          const found = holders.data?.find((c) => c.userId === holderUserId);
+          return found ? holderLabel(found) : 'un’altra persona';
+        })();
+  const holderChoices = (holders.data ?? []).filter((c) => c.userId !== p.userId);
   const type = moduleQuery.data?.practiceTypes.find((t) => t.kind === p.kind);
   const steps = type?.subStates.filter((s) => s.during.includes(p.status)) ?? [];
   const currentStep = type?.subStates.find((s) => s.key === p.subState);
@@ -112,6 +140,12 @@ export function PracticeDetailPage({ me }: { me: Me }) {
             <>
               <dt>Fase</dt>
               <dd>{currentStep.label}</dd>
+            </>
+          )}
+          {holderUserId && (
+            <>
+              <dt>Aperta per</dt>
+              <dd>{holderName}</dd>
             </>
           )}
           <dt>Creata</dt>
@@ -171,6 +205,32 @@ export function PracticeDetailPage({ me }: { me: Me }) {
         {subState.isError && (
           <p className="error" role="alert">
             {describeError(subState.error)}
+          </p>
+        )}
+        {holders.isSuccess && holderChoices.length > 0 && (
+          <div className="actions">
+            <label htmlFor="holder">Aperta per</label>
+            <select
+              id="holder"
+              value={holderUserId ?? ''}
+              disabled={setHolder.isPending}
+              onChange={(e) => setHolder.mutate(e.target.value || null)}
+            >
+              <option value="">Chi l’ha aperta</option>
+              {holderUserId && !holderChoices.some((c) => c.userId === holderUserId) && (
+                <option value={holderUserId}>persona non più attiva</option>
+              )}
+              {holderChoices.map((c) => (
+                <option key={c.userId} value={c.userId}>
+                  {holderLabel(c)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {setHolder.isError && (
+          <p className="error" role="alert">
+            {describeError(setHolder.error)}
           </p>
         )}
       </section>

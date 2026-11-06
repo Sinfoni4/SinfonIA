@@ -12,6 +12,7 @@ import { authorize, scopedUserId, type Principal } from '../authz/authorization.
 import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
+import { isPersonPractice } from './practice-holder.js';
 import { moduleOfTenant, resolvePracticeCreation, visibleSubState } from './practice-module.js';
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
 import { readPracticePayload } from './practice.payload.js';
@@ -65,6 +66,8 @@ export type PracticeView = {
   updatedAt: Date;
   /** A4: who follows the practice, if anyone. */
   assignedTo: string | null;
+  /** AGX-03: the person the practice was opened for; null = its creator. */
+  holderUserId: string | null;
   /** A05: the sub-state of the module inside the common state, if any. */
   subState: string | null;
   /** A04: the values of the fields the module declares for the kind. */
@@ -73,8 +76,9 @@ export type PracticeView = {
 
 export type PracticePaginationParams = {
   tenantId: string;
+  /** The person's practices: created by them or opened for them (AGX-03). */
   userId?: string;
-  /** B2: practices created by this person or assigned to them. */
+  /** B2: the person's practices or those assigned to them. */
   reachableBy?: string;
   assignedTo?: string;
   status?: PracticeState;
@@ -120,6 +124,8 @@ export type PracticeCommandResult =
   | { type: 'confirm_transition'; practice: PracticeView; nextState: PracticeState }
   /** S05: a deletion is asked before it is done; «sì» confirms it. */
   | { type: 'confirm_delete'; practice: PracticeView }
+  /** AGX-03: the practice was opened for the person by someone else, who alone deletes it. */
+  | { type: 'delete_denied'; practice: PracticeView }
   | { type: 'transitioned'; practice: PracticeView };
 
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -152,6 +158,7 @@ function toView(dto: PracticeDTO): PracticeView {
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     assignedTo: dto.assignedTo ?? null,
+    holderUserId: dto.holderUserId ?? null,
     subState: visibleSubState(payload, dto.status),
     fields: payload.fields,
   };
@@ -203,6 +210,11 @@ export class PracticeApplicationService {
     /** A04: the fields the module declares for the kind. */
     fields?: Record<string, unknown>;
     metadata?: Record<string, unknown>;
+    /**
+     * AGX-03: the person the practice is opened for. The caller checks that the actor may choose
+     * it (`practice.assign`); here it must be an active member of the organization.
+     */
+    holderUserId?: string | null;
   }): Promise<PracticeView> {
     const name = input.name.trim();
     if (!name) throw new NotFoundError('Practice name is required');
@@ -222,6 +234,7 @@ export class PracticeApplicationService {
       name,
       kind,
       metadata: fields ? { ...metadata, fields } : metadata,
+      holderUserId: input.holderUserId,
     });
     return toView(dto);
   }
@@ -288,19 +301,20 @@ export class PracticeApplicationService {
   async getPractice(input: {
     tenantId: string;
     practiceId: string;
+    /** Reachable when it is this person's: created by them or opened for them (AGX-03). */
     userId?: string;
-    /** B2: reachable when created by this person or assigned to them. */
+    /** B2: also reachable when assigned to this person. */
     reachableBy?: string;
   }): Promise<PracticeView> {
     requireDatabase();
 
     const dto = await this.repository.getPracticeById(input.tenantId, input.practiceId);
-    if (input.userId && dto.userId !== input.userId) {
+    if (input.userId && !isPersonPractice(dto, input.userId)) {
       throw new NotFoundError('Practice not found');
     }
     if (
       input.reachableBy &&
-      dto.userId !== input.reachableBy &&
+      !isPersonPractice(dto, input.reachableBy) &&
       dto.assignedTo !== input.reachableBy
     ) {
       throw new NotFoundError('Practice not found');
@@ -320,6 +334,7 @@ export class PracticeApplicationService {
       const audit = new AuditService(tx);
 
       const dto = await repository.getPracticeById(input.tenantId, input.practiceId);
+      // Only its creator deletes a practice: not the person it was opened for (AGX-03).
       if (input.userId && dto.userId !== input.userId) {
         throw new NotFoundError('Practice not found');
       }
@@ -500,7 +515,7 @@ export class PracticeApplicationService {
       where: {
         tenantId,
         contentHash,
-        OR: [{ practiceId }, { practice: { userId } }],
+        OR: [{ practiceId }, { practice: { OR: [{ userId }, { holderUserId: userId }] } }],
       },
       orderBy: { createdAt: 'asc' },
       select: {
@@ -694,7 +709,7 @@ export class PracticeApplicationService {
         });
         return {
           type: 'org_list',
-          practices: page.items.map((p) => ({ ...p, own: p.userId === actor.userId })),
+          practices: page.items.map((p) => ({ ...p, own: isPersonPractice(p, actor.userId) })),
           page: page.page,
           totalPages: page.totalPages,
           total: page.total,
@@ -708,7 +723,11 @@ export class PracticeApplicationService {
         if (found.length > 1) {
           return { type: 'ambiguous', name: command.payload.name, practices: found };
         }
-        return { type: 'org_status', practice: found[0], own: found[0].userId === actor.userId };
+        return {
+          type: 'org_status',
+          practice: found[0],
+          own: isPersonPractice(found[0], actor.userId),
+        };
       }
 
       case 'TRANSITION_ORG_PRACTICE': {
@@ -719,7 +738,7 @@ export class PracticeApplicationService {
           return { type: 'ambiguous', name: command.payload.name, practices: found };
         }
         const practice = found[0];
-        if (practice.userId !== actor.userId) {
+        if (!isPersonPractice(practice, actor.userId)) {
           return { type: 'confirm_transition', practice, nextState: command.payload.nextState };
         }
         return {
@@ -756,6 +775,8 @@ export class PracticeApplicationService {
         if (!practice) {
           return { type: 'not_found', name: command.payload.name };
         }
+        // AGX-03: a practice opened for the person by someone else is deleted only by its creator.
+        if (practice.userId !== actor.userId) return { type: 'delete_denied', practice };
 
         // S05: never deleted by the command itself: the person confirms first.
         return { type: 'confirm_delete', practice };

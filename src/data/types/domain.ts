@@ -37,6 +37,8 @@ export type PracticeDTO = {
   updatedAt: Date;
   /** A4: who follows the practice (an administrator or operator), if anyone. */
   assignedTo: string | null;
+  /** AGX-03: the person the practice was opened for; null = the creator. */
+  holderUserId?: string | null;
 };
 
 export type AuditLogDTO = {

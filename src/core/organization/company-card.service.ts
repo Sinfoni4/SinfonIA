@@ -1,3 +1,4 @@
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import {
   authorize,
@@ -85,9 +86,15 @@ export async function getCompanyCard(
     return {
       tenantId: principal.tenantId,
       status: { notIn: CLOSED },
-      ...(reach.userId ? { userId: reach.userId } : {}),
+      ...(reach.userId ? personPracticesWhere(reach.userId) : {}),
       ...(reach.reachableBy
-        ? { OR: [{ userId: reach.reachableBy }, { assignedTo: reach.reachableBy }] }
+        ? {
+            OR: [
+              { userId: reach.reachableBy },
+              { holderUserId: reach.reachableBy },
+              { assignedTo: reach.reachableBy },
+            ],
+          }
         : {}),
     };
   };

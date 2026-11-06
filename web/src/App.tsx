@@ -55,7 +55,7 @@ export function App() {
         <Route path="adesioni" element={<MembershipsPage me={me} />} />
         <Route path="deleghe" element={<DelegationsPage me={me} />} />
         <Route path="deleghe/:grantId" element={<DelegatedPracticesPage />} />
-        <Route path="pratiche/nuova" element={<NewPracticePage />} />
+        <Route path="pratiche/nuova" element={<NewPracticePage me={me} />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />
         <Route path="verifica" element={<ReviewPage me={me} />} />

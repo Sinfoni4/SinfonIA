@@ -7,6 +7,7 @@ import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { ConcurrencyError } from '../errors/concurrency.errors.js';
 import { InvalidStateTransitionError } from '../errors/workflow.errors.js';
 import { PRACTICE_STATUS_CHANGED } from '../outbox/practice-status.handler.js';
+import { notifyNewHolder, practiceRecipient, requireHolder } from '../practice/practice-holder.js';
 import { buildPracticePayload } from '../practice/practice.payload.js';
 
 import { canTransition } from './state-machine.js';
@@ -42,8 +43,13 @@ export class PracticeWorkflow {
       const audit = new AuditService(tx);
 
       const kind = input.kind ?? 'generic';
+      // AGX-03: opened for someone else; for the creator themselves there is no holder.
+      const holderUserId =
+        input.holderUserId && input.holderUserId !== input.userId ? input.holderUserId : null;
+      if (holderUserId) await requireHolder(tx, input.tenantId, holderUserId);
       const created = await repo.createPractice(input.tenantId, {
         userId: input.userId,
+        holderUserId,
         payload: buildPracticePayload(kind, name, input.metadata),
       });
 
@@ -53,8 +59,17 @@ export class PracticeWorkflow {
         eventType: 'PRACTICE_CREATED',
         payload: {
           practiceId: created.id,
+          ...(holderUserId ? { targetUserId: holderUserId } : {}),
         },
       });
+      if (holderUserId) {
+        await notifyNewHolder(tx, {
+          tenantId: input.tenantId,
+          practiceId: created.id,
+          holderUserId,
+          actorUserId: input.userId,
+        });
+      }
 
       return created;
     });
@@ -101,12 +116,13 @@ export class PracticeWorkflow {
       });
 
       // A3: the owner hears in chat when someone else moves their practice, in the same
-      // transaction, so a rolled-back change sends nothing.
-      if (practice.userId !== input.userId) {
+      // transaction, so a rolled-back change sends nothing. AGX-03: the holder, when there is one.
+      const recipient = practiceRecipient(practice);
+      if (recipient !== input.userId) {
         await new OutboxRepository(tx).createMessage({
           tenantId: input.tenantId,
           eventType: PRACTICE_STATUS_CHANGED,
-          payload: { practiceId: input.practiceId, userId: practice.userId, from, to },
+          payload: { practiceId: input.practiceId, userId: recipient, from, to },
         });
       }
 

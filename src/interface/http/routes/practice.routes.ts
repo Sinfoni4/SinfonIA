@@ -1,8 +1,14 @@
 import { z } from 'zod';
 
-import { can, practiceReach, scopedUserId } from '../../../core/authz/authorization.service.js';
+import {
+  authorize,
+  can,
+  practiceReach,
+  scopedUserId,
+} from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
+import { listHolderCandidates, setPracticeHolder } from '../../../core/practice/practice-holder.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
 import { allowedNextStates } from '../../../core/workflow/state-machine.js';
 import { deadlineCategoriesOf } from '../../../modules/registry.js';
@@ -16,6 +22,7 @@ import {
   PracticeAttachmentQuerySchema,
   PracticeCreateBodySchema,
   PracticeExportBodySchema,
+  PracticeHolderBodySchema,
   PracticeIdParamsSchema,
   PracticeListQuerySchema,
   PracticeSubStateBodySchema,
@@ -89,6 +96,9 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
     try {
       const auth = requirePermission(req, 'practice.create').principal;
       const body = PracticeCreateBodySchema.parse(req.body);
+      // AGX-03: opening a practice for someone else is for who may assign practices.
+      const forOther = body.holderUserId && body.holderUserId !== auth.userId;
+      if (forOther) authorize(auth, 'practice.assign');
 
       const created = await deps.practiceService.createPractice({
         tenantId: auth.tenantId,
@@ -97,6 +107,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         kind: body.kind,
         fields: body.fields,
         metadata: body.metadata,
+        holderUserId: forOther ? body.holderUserId : null,
       });
 
       return reply.status(201).send(ok(created));
@@ -189,6 +200,44 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         try {
           const grant = requirePermission(req, 'practice.assign');
           return reply.send(ok(await listAssignees(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-03: the people a practice can be opened for (active members of the organization).
+    app.get(
+      '/practices/holders',
+      { config: { permission: 'practice.assign' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.assign');
+          return reply.send(ok(await listHolderCandidates(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-03: sets the holder of a practice, or gives it back to its creator (`userId: null`).
+    app.post(
+      '/practices/:id/holder',
+      { config: { permission: 'practice.assign' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.assign');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          const body = PracticeHolderBodySchema.parse(req.body);
+          const result = await setPracticeHolder(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            holderUserId: body.userId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
         } catch (err: unknown) {
           const mapped = mapErrorToHttp(err);
           return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

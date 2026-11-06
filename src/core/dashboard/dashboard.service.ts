@@ -1,3 +1,4 @@
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
 
 import type { ComplianceService } from '../compliance/compliance.service.js';
@@ -53,7 +54,7 @@ export async function dashboardSummary(
 ): Promise<DashboardSummary> {
   const practiceWhere: Prisma.PracticeWhereInput = {
     tenantId: input.tenantId,
-    ...(input.practiceUserId ? { userId: input.practiceUserId } : {}),
+    ...(input.practiceUserId ? personPracticesWhere(input.practiceUserId) : {}),
   };
   // A document needs a look when the reader asked for a check, until a person confirms it (A1).
   const review: Prisma.PracticeAttachmentWhereInput = {
@@ -63,7 +64,7 @@ export async function dashboardSummary(
   };
   const attachmentWhere: Prisma.PracticeAttachmentWhereInput = {
     tenantId: input.tenantId,
-    ...(input.practiceUserId ? { practice: { userId: input.practiceUserId } } : {}),
+    ...(input.practiceUserId ? { practice: personPracticesWhere(input.practiceUserId) } : {}),
   };
 
   const [groups, recent, toReview, unreadable, documents, deadlines] = await Promise.all([

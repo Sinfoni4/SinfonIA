@@ -7,9 +7,27 @@ import type { PracticeDTO } from '../types/domain.js';
 import type { PrismaLike } from '../types/prisma.js';
 import type { PracticeStatus } from '@prisma/client';
 
+/**
+ * AGX-03: the practices of a person, those they created and those opened for them (holder). Every
+ * "own" filter on practices goes through these two, so the holder reaches what the creator does.
+ */
+export function personPracticesWhere(userId: string): Prisma.PracticeWhereInput {
+  return { OR: [{ userId }, { holderUserId: userId }] };
+}
+
+export function personPracticesSql(userId: string): Prisma.Sql {
+  return Prisma.sql`("user_id" = ${userId}::uuid OR "holder_user_id" = ${userId}::uuid)`;
+}
+
+/** B2 `assigned` scope: the person's practices and those they follow. */
+function reachableWhere(userId: string): Prisma.PracticeWhereInput {
+  return { OR: [{ userId }, { holderUserId: userId }, { assignedTo: userId }] };
+}
+
 export type PracticeListFilter = {
+  /** The practices of this person: created by them or opened for them (AGX-03). */
   userId?: string;
-  /** B2: practices created by this person or assigned to them. */
+  /** B2: practices of this person or assigned to them. */
   reachableBy?: string;
   /** A4: practices followed by this person, or `none` for those followed by nobody. */
   assignedTo?: string;
@@ -39,6 +57,7 @@ type PracticeRow = {
   createdAt: Date;
   updatedAt: Date;
   assignedTo?: string | null;
+  holderUserId?: string | null;
 };
 
 function toPracticeDTO(row: PracticeRow): PracticeDTO {
@@ -52,6 +71,7 @@ function toPracticeDTO(row: PracticeRow): PracticeDTO {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     assignedTo: row.assignedTo ?? null,
+    holderUserId: row.holderUserId ?? null,
   };
 }
 
@@ -60,7 +80,13 @@ export class PracticeRepository {
 
   async createPractice(
     tenantId: string,
-    data: { userId: string; status?: PracticeStatus; payload: unknown },
+    data: {
+      userId: string;
+      status?: PracticeStatus;
+      payload: unknown;
+      /** AGX-03: checked by the caller (an active member of the organization). */
+      holderUserId?: string | null;
+    },
   ): Promise<PracticeDTO> {
     requireTenantId(tenantId);
     try {
@@ -76,6 +102,7 @@ export class PracticeRepository {
         data: {
           tenantId,
           userId: data.userId,
+          holderUserId: data.holderUserId ?? null,
           status: data.status ?? 'CREATED',
           payload: data.payload as never,
         },
@@ -121,12 +148,11 @@ export class PracticeRepository {
 
       const where: Prisma.PracticeWhereInput = {
         tenantId,
-        ...(filter?.userId ? { userId: filter.userId } : {}),
-        ...(filter?.reachableBy
-          ? {
-              AND: [{ OR: [{ userId: filter.reachableBy }, { assignedTo: filter.reachableBy }] }],
-            }
-          : {}),
+        // AND keeps these ORs apart from the search OR below.
+        AND: [
+          ...(filter?.userId ? [personPracticesWhere(filter.userId)] : []),
+          ...(filter?.reachableBy ? [reachableWhere(filter.reachableBy)] : []),
+        ],
         ...(filter?.assignedTo
           ? { assignedTo: filter.assignedTo === 'none' ? null : filter.assignedTo }
           : {}),
@@ -182,7 +208,7 @@ export class PracticeRepository {
   ): Promise<Array<{ id: string; name: string | null; createdAt: Date }>> {
     requireTenantId(tenantId);
     const conditions: Prisma.Sql[] = [Prisma.sql`"tenant_id" = ${tenantId}::uuid`];
-    if (options.userId) conditions.push(Prisma.sql`"user_id" = ${options.userId}::uuid`);
+    if (options.userId) conditions.push(personPracticesSql(options.userId));
     if (options.from) conditions.push(Prisma.sql`"created_at" >= ${options.from}`);
     if (options.to) conditions.push(Prisma.sql`"created_at" < ${options.to}`);
     if (options.after) {
@@ -222,12 +248,11 @@ export class PracticeRepository {
 
       const where: Prisma.PracticeWhereInput = {
         tenantId,
-        ...(filter?.userId ? { userId: filter.userId } : {}),
-        ...(filter?.reachableBy
-          ? {
-              AND: [{ OR: [{ userId: filter.reachableBy }, { assignedTo: filter.reachableBy }] }],
-            }
-          : {}),
+        // AND keeps these ORs apart from the search OR below.
+        AND: [
+          ...(filter?.userId ? [personPracticesWhere(filter.userId)] : []),
+          ...(filter?.reachableBy ? [reachableWhere(filter.reachableBy)] : []),
+        ],
         ...(filter?.assignedTo
           ? { assignedTo: filter.assignedTo === 'none' ? null : filter.assignedTo }
           : {}),
@@ -259,10 +284,10 @@ export class PracticeRepository {
       // Rows and total in one query (one connection instead of two in parallel): under concurrent
       // load the second connection made requests wait for the pool.
       const conditions: Prisma.Sql[] = [Prisma.sql`"tenant_id" = ${tenantId}::uuid`];
-      if (filter?.userId) conditions.push(Prisma.sql`"user_id" = ${filter.userId}::uuid`);
+      if (filter?.userId) conditions.push(personPracticesSql(filter.userId));
       if (filter?.reachableBy) {
         conditions.push(
-          Prisma.sql`("user_id" = ${filter.reachableBy}::uuid OR "assigned_to" = ${filter.reachableBy}::uuid)`,
+          Prisma.sql`(${personPracticesSql(filter.reachableBy)} OR "assigned_to" = ${filter.reachableBy}::uuid)`,
         );
       }
       if (filter?.assignedTo === 'none') conditions.push(Prisma.sql`"assigned_to" IS NULL`);
@@ -281,7 +306,8 @@ export class PracticeRepository {
       const rows = await this.prisma.$queryRaw<Array<PracticeRow & { total: bigint }>>`
         SELECT "id", "tenant_id" AS "tenantId", "user_id" AS "userId", "status", "version",
                "payload", "created_at" AS "createdAt", "updated_at" AS "updatedAt",
-               "assigned_to" AS "assignedTo", count(*) OVER () AS "total"
+               "assigned_to" AS "assignedTo", "holder_user_id" AS "holderUserId",
+               count(*) OVER () AS "total"
         FROM "practice"
         WHERE ${Prisma.join(conditions, ' AND ')}
         ORDER BY ${orderColumn} ${orderDirection}
