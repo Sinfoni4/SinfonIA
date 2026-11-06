@@ -39,6 +39,8 @@ export type BackupHealth = {
   /** Whether the backup folder can be read now (e.g. the USB disk is connected). */
   reachable: boolean;
   last: { at: Date; tables: number | null; attachments: number | null } | null;
+  /** The last restore check (npm run db:verify-backup) of any backup of this database. */
+  restoreCheck: { at: Date; ok: boolean; backupAt: Date } | null;
 };
 
 const DISK_CHECK_MS = 10 * 60_000;
@@ -113,7 +115,7 @@ export async function backupHealth(
   backupDir: string | null,
   databaseName: string | null,
 ): Promise<BackupHealth> {
-  if (!backupDir) return { configured: false, reachable: false, last: null };
+  if (!backupDir) return { configured: false, reachable: false, last: null, restoreCheck: null };
   let folders: string[];
   try {
     folders = (await readdir(backupDir, { withFileTypes: true }))
@@ -121,9 +123,10 @@ export async function backupHealth(
       .map((e) => e.name)
       .filter((name) => !databaseName || name.startsWith(`${databaseName}_`));
   } catch {
-    return { configured: true, reachable: false, last: null };
+    return { configured: true, reachable: false, last: null, restoreCheck: null };
   }
   let last: BackupHealth['last'] = null;
+  let restoreCheck: BackupHealth['restoreCheck'] = null;
   for (const folder of folders) {
     let manifest: Manifest;
     try {
@@ -134,6 +137,21 @@ export async function backupHealth(
       continue; // No manifest: the backup did not finish.
     }
     if (databaseName && manifest.database !== databaseName) continue;
+    try {
+      const check = JSON.parse(
+        await readFile(path.join(backupDir, folder, 'restore-check.json'), 'utf8'),
+      ) as { checkedAt?: unknown; ok?: unknown; backupCreatedAt?: unknown };
+      const at = typeof check.checkedAt === 'string' ? new Date(check.checkedAt) : null;
+      if (at && !Number.isNaN(at.getTime()) && (!restoreCheck || at > restoreCheck.at)) {
+        restoreCheck = {
+          at,
+          ok: check.ok === true,
+          backupAt: new Date(String(check.backupCreatedAt)),
+        };
+      }
+    } catch {
+      // Not checked yet.
+    }
     const at = typeof manifest.createdAt === 'string' ? new Date(manifest.createdAt) : null;
     if (!at || Number.isNaN(at.getTime())) continue;
     if (last && last.at >= at) continue;
@@ -143,5 +161,5 @@ export async function backupHealth(
       attachments: typeof manifest.storage?.files === 'number' ? manifest.storage.files : null,
     };
   }
-  return { configured: true, reachable: true, last };
+  return { configured: true, reachable: true, last, restoreCheck };
 }

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 
 import { ApiError, describeError, type Me, type Role } from '../api/client';
 import {
@@ -12,6 +13,7 @@ import {
   ROLE_NAMES,
   ROLES,
   SCOPE_LABELS,
+  ASSIGNABLE,
   type CustomRole,
   type Invitation,
   type Member,
@@ -115,7 +117,9 @@ function Members({ me }: { me: Me }) {
               return (
                 <tr key={m.userId}>
                   <td data-label="Persona">
-                    {m.email ?? <span className="muted">account della chat, senza email</span>}
+                    <Link to={`/persone/${m.userId}`}>
+                      {m.email ?? <span className="muted">account della chat, senza email</span>}
+                    </Link>
                     {self && <span className="badge">tu</span>}
                   </td>
                   <td data-label="Ruolo">
@@ -366,7 +370,9 @@ function CustomRoles({ me }: { me: Me }) {
                     {Object.entries(r.permissions).map(([p, scope]) => (
                       <li key={p}>
                         {permissionLabel(p)}
-                        {scope === 'own' && <span className="muted"> ({SCOPE_LABELS.own})</span>}
+                        {scope !== 'tenant' && (
+                          <span className="muted"> ({SCOPE_LABELS[scope]})</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -432,6 +438,9 @@ function CustomRoles({ me }: { me: Me }) {
                   }
                 >
                   <option value="tenant">{SCOPE_LABELS.tenant}</option>
+                  {ASSIGNABLE.includes(permission) && (
+                    <option value="assigned">{SCOPE_LABELS.assigned}</option>
+                  )}
                   <option value="own">{SCOPE_LABELS.own}</option>
                 </select>
               )}

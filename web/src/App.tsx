@@ -11,6 +11,7 @@ import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
 import { InvitationPage } from './pages/InvitationPage';
 import { LoginPage } from './pages/LoginPage';
+import { MemberCardPage } from './pages/MemberCardPage';
 import { MembershipsPage, NetworkMembersPage, NetworkStatsPage } from './pages/NetworkPages';
 import { NewPracticePage } from './pages/NewPracticePage';
 import { PeoplePage } from './pages/PeoplePage';
@@ -61,6 +62,7 @@ export function App() {
         <Route path="assistenza" element={<AssistancePage me={me} />} />
         <Route path="export" element={<ExportPage me={me} />} />
         <Route path="persone" element={<PeoplePage me={me} />} />
+        <Route path="persone/:userId" element={<MemberCardPage me={me} />} />
         <Route path="attivita" element={<ActivityPage me={me} />} />
         <Route path="attivita/assistente" element={<AssistantUsagePage me={me} />} />
         <Route path="impostazioni" element={<SettingsPage me={me} />} />

@@ -72,6 +72,27 @@ describe('state of the system (A5)', () => {
       '1 documenti non letti nelle ultime 24 ore.',
       '1 allegati non hanno più il file sul disco.',
       "L'ultimo backup è di 14 giorni fa.",
+      'Nessuna verifica del ripristino negli ultimi 30 giorni (npm run db:verify-backup).',
+    ]);
+    const backup = (restoreCheck: { at: string; ok: boolean } | null) => ({
+      configured: true,
+      reachable: true,
+      last: { at: '2026-11-19T22:00:00Z', tables: 26, attachments: 5 },
+      restoreCheck: restoreCheck && { ...restoreCheck, backupAt: '2026-11-19T22:00:00Z' },
+    });
+    expect(
+      healthWarnings({ ...HEALTHY, backup: backup({ at: '2026-11-20T01:00:00Z', ok: true }) }, now),
+    ).toEqual([]);
+    expect(
+      healthWarnings(
+        { ...HEALTHY, backup: backup({ at: '2026-11-20T01:00:00Z', ok: false }) },
+        now,
+      ),
+    ).toEqual(["L'ultima verifica del ripristino non è riuscita."]);
+    expect(
+      healthWarnings({ ...HEALTHY, backup: backup({ at: '2026-10-01T01:00:00Z', ok: true }) }, now),
+    ).toEqual([
+      'Nessuna verifica del ripristino negli ultimi 30 giorni (npm run db:verify-backup).',
     ]);
     expect(
       healthWarnings(

@@ -72,6 +72,8 @@ export type PracticeView = {
 export type PracticePaginationParams = {
   tenantId: string;
   userId?: string;
+  /** B2: practices created by this person or assigned to them. */
+  reachableBy?: string;
   assignedTo?: string;
   status?: PracticeState;
   search?: string;
@@ -262,6 +264,7 @@ export class PracticeApplicationService {
 
     const result = await this.repository.findPracticesPaginated(input.tenantId, {
       userId: input.userId,
+      reachableBy: input.reachableBy,
       assignedTo: input.assignedTo,
       status: input.status,
       search: input.search,
@@ -284,11 +287,20 @@ export class PracticeApplicationService {
     tenantId: string;
     practiceId: string;
     userId?: string;
+    /** B2: reachable when created by this person or assigned to them. */
+    reachableBy?: string;
   }): Promise<PracticeView> {
     requireDatabase();
 
     const dto = await this.repository.getPracticeById(input.tenantId, input.practiceId);
     if (input.userId && dto.userId !== input.userId) {
+      throw new NotFoundError('Practice not found');
+    }
+    if (
+      input.reachableBy &&
+      dto.userId !== input.reachableBy &&
+      dto.assignedTo !== input.reachableBy
+    ) {
       throw new NotFoundError('Practice not found');
     }
     return toView(dto);
@@ -453,6 +465,7 @@ export class PracticeApplicationService {
     tenantId: string;
     practiceId: string;
     userId?: string;
+    reachableBy?: string;
   }): Promise<PracticeAttachmentDTO[]> {
     requireDatabase();
 
@@ -460,6 +473,7 @@ export class PracticeApplicationService {
       tenantId: input.tenantId,
       practiceId: input.practiceId,
       userId: input.userId,
+      reachableBy: input.reachableBy,
     });
 
     return this.attachmentRepository.listAttachmentsByPractice(input.tenantId, input.practiceId);
@@ -474,12 +488,14 @@ export class PracticeApplicationService {
     practiceId: string;
     attachmentId: string;
     userId?: string;
+    reachableBy?: string;
   }): Promise<{ fileName: string; mimeType: string; content: Buffer }> {
     requireDatabase();
     await this.getPractice({
       tenantId: input.tenantId,
       practiceId: input.practiceId,
       userId: input.userId,
+      reachableBy: input.reachableBy,
     });
     const attachment = await this.attachmentRepository.getAttachmentById(
       input.tenantId,

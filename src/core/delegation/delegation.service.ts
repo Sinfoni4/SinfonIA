@@ -55,11 +55,22 @@ function addMonths(date: Date, months: number): Date {
  */
 export function maxValidUntil(operations: readonly GrantOperation[], now = new Date()): Date {
   const sensitive = operations.some((o) => SENSITIVE.includes(o));
-  const last = addMonths(now, sensitive ? MAX_MONTHS_SENSITIVE : MAX_MONTHS);
-  return new Date(
-    Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate(), 23, 59, 59, 999),
+  // «Today» is the Italian calendar day, as for the dashboard and the end date it sends
+  // (`<date>T23:59:59+01:00`): just after midnight in Italy it is still yesterday in UTC.
+  const [y, m, d] = ITALIAN_DAY.format(now).split('-').map(Number) as [number, number, number];
+  const last = addMonths(
+    new Date(Date.UTC(y, m - 1, d, 12)),
+    sensitive ? MAX_MONTHS_SENSITIVE : MAX_MONTHS,
   );
+  return new Date(`${last.toISOString().slice(0, 10)}T23:59:59.999+01:00`);
 }
+
+const ITALIAN_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Rome',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 /** Checks operations and end date against D3; returns the operations without duplicates. */
 export function checkDelegation(

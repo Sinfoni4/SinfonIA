@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { can, scopedUserId } from '../../../core/authz/authorization.service.js';
+import { can, practiceReach, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
@@ -112,12 +112,11 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       const auth = grant.principal;
       const query = PracticeListQuerySchema.parse(req.query);
 
-      // Own-scoped callers see only their practices; tenant-scoped ones may filter by user.
-      const targetUserId = scopedUserId(grant, query.userId);
-
+      // Own-scoped callers see only their practices, `assigned` ones also those they follow;
+      // tenant-scoped ones may filter by user.
       const result = await deps.practiceService.listPracticesPaginated({
         tenantId: auth.tenantId,
-        userId: targetUserId,
+        ...practiceReach(grant, query.userId),
         assignedTo: query.assignedTo === 'me' ? auth.userId : query.assignedTo,
         status: query.status,
         search: query.search,
@@ -227,12 +226,10 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       const auth = grant.principal;
       const params = PracticeIdParamsSchema.parse(req.params);
 
-      const targetUserId = scopedUserId(grant);
-
       const practice = await deps.practiceService.getPractice({
         tenantId: auth.tenantId,
         practiceId: params.id,
-        userId: targetUserId,
+        ...practiceReach(grant),
       });
 
       // The next states the caller may set (B6): the dashboard shows only valid actions, the
@@ -347,12 +344,10 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         const auth = grant.principal;
         const params = PracticeAttachmentParamsSchema.parse(req.params);
 
-        const targetUserId = scopedUserId(grant);
-
         const attachments = await deps.practiceService.listAttachments({
           tenantId: auth.tenantId,
           practiceId: params.id,
-          userId: targetUserId,
+          ...practiceReach(grant),
         });
 
         return reply.status(200).send(ok(attachments));
@@ -375,7 +370,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
           tenantId: grant.principal.tenantId,
           practiceId: params.id,
           attachmentId: params.attachmentId,
-          userId: scopedUserId(grant),
+          ...practiceReach(grant),
         });
         // Never cached, always downloaded (no rendering of uploaded content in the browser).
         return reply

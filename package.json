@@ -28,6 +28,7 @@
     "db:studio": "prisma studio",
     "db:backup": "tsx scripts/backup/encrypted-backup.ts",
     "db:restore": "tsx scripts/backup/encrypted-restore.ts",
+    "db:verify-backup": "tsx scripts/backup/verify-latest-backup.ts",
     "storage:orphans": "tsx scripts/storage/report-orphans.ts",
     "staging:start": "tsx scripts/staging/start.ts",
     "postinstall": "prisma generate",

@@ -12,6 +12,7 @@ import {
   setScheduledExport,
   setTenantScope,
 } from '../../../core/identity/member-access.service.js';
+import { memberCard } from '../../../core/identity/member-card.service.js';
 import {
   changeMemberRole,
   listMembers,
@@ -44,7 +45,7 @@ const InvitationParamsSchema = z.object({ invitationId: z.string().uuid() });
 
 // B2: custom roles. Permissions only from the catalog; the service checks them on the base role.
 const CustomPermissionsSchema = z
-  .partialRecord(z.enum(PERMISSIONS), z.enum(['own', 'tenant']))
+  .partialRecord(z.enum(PERMISSIONS), z.enum(['own', 'assigned', 'tenant']))
   .refine((p) => Object.keys(p).length <= PERMISSIONS.length);
 const RoleIdParamsSchema = z.object({ roleId: z.string().uuid() });
 const CreateRoleBodySchema = z
@@ -221,6 +222,18 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
       },
     );
   }
+
+  // Cantiere 3 (item 43): one member in one view, for the administrators.
+  app.get('/members/:userId', { config: { permission: 'members.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'members.read').principal;
+      const { userId } = MemberParamsSchema.parse(req.params);
+      return reply.send(ok(await memberCard(deps.prisma, auth.tenantId, userId)));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
 
   // --- B2: custom roles --------------------------------------------------------------------
 

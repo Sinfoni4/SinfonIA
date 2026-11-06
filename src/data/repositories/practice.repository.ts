@@ -9,6 +9,8 @@ import type { PracticeStatus } from '@prisma/client';
 
 export type PracticeListFilter = {
   userId?: string;
+  /** B2: practices created by this person or assigned to them. */
+  reachableBy?: string;
   /** A4: practices followed by this person, or `none` for those followed by nobody. */
   assignedTo?: string;
   status?: PracticeStatus;
@@ -103,6 +105,7 @@ export class PracticeRepository {
     tenantId: string,
     filter?: {
       userId?: string;
+      reachableBy?: string;
       assignedTo?: string;
       status?: PracticeStatus;
       search?: string;
@@ -119,6 +122,11 @@ export class PracticeRepository {
       const where: Prisma.PracticeWhereInput = {
         tenantId,
         ...(filter?.userId ? { userId: filter.userId } : {}),
+        ...(filter?.reachableBy
+          ? {
+              AND: [{ OR: [{ userId: filter.reachableBy }, { assignedTo: filter.reachableBy }] }],
+            }
+          : {}),
         ...(filter?.assignedTo
           ? { assignedTo: filter.assignedTo === 'none' ? null : filter.assignedTo }
           : {}),
@@ -215,6 +223,11 @@ export class PracticeRepository {
       const where: Prisma.PracticeWhereInput = {
         tenantId,
         ...(filter?.userId ? { userId: filter.userId } : {}),
+        ...(filter?.reachableBy
+          ? {
+              AND: [{ OR: [{ userId: filter.reachableBy }, { assignedTo: filter.reachableBy }] }],
+            }
+          : {}),
         ...(filter?.assignedTo
           ? { assignedTo: filter.assignedTo === 'none' ? null : filter.assignedTo }
           : {}),
@@ -247,6 +260,11 @@ export class PracticeRepository {
       // load the second connection made requests wait for the pool.
       const conditions: Prisma.Sql[] = [Prisma.sql`"tenant_id" = ${tenantId}::uuid`];
       if (filter?.userId) conditions.push(Prisma.sql`"user_id" = ${filter.userId}::uuid`);
+      if (filter?.reachableBy) {
+        conditions.push(
+          Prisma.sql`("user_id" = ${filter.reachableBy}::uuid OR "assigned_to" = ${filter.reachableBy}::uuid)`,
+        );
+      }
       if (filter?.assignedTo === 'none') conditions.push(Prisma.sql`"assigned_to" IS NULL`);
       else if (filter?.assignedTo) {
         conditions.push(Prisma.sql`"assigned_to" = ${filter.assignedTo}::uuid`);

@@ -16,7 +16,7 @@ export const ExecutorContextSchema = z.object({
   role: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']),
   // B2: the custom role of the requester (null = the base role). Required as well: a context
   // that does not say it is refused rather than run with the whole base role.
-  customPermissions: z.record(z.string(), z.enum(['own', 'tenant'])).nullable(),
+  customPermissions: z.record(z.string(), z.enum(['own', 'assigned', 'tenant'])).nullable(),
 });
 
 export type ExecutorContext = z.infer<typeof ExecutorContextSchema>;
