@@ -120,6 +120,8 @@ export type ConversationDeps = {
     listPractices?: PracticeApplicationService['listPractices'];
   };
   complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
+  /** AGX-06: the person's practices with an open document request, proposed first for a file. */
+  practicesWithOpenRequests?: (input: { tenantId: string; userId: string }) => Promise<string[]>;
   /** The AI for free text; a ChatAnswer also says when it asked a question back. */
   handleMessage: (input: string, identity: ConversationIdentity) => Promise<string | ChatAnswer>;
   /**
@@ -657,9 +659,14 @@ export class ConversationService {
             expiresAt: Date.now() + CLARIFICATION_MS,
           });
         }
+        const answered = uploadResult.fulfilledRequest;
         await reply(
           `📁 Pratica: ${practice.name}\n` +
             formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult) +
+            // AGX-06: the file answered a request of the practice.
+            (answered
+              ? `\n📎 Ho risposto alla richiesta: ${answered.expectedLabel ?? `«${answered.message}»`}.`
+              : '') +
             (askConfirmation
               ? '\nSe i dati sono giusti rispondi «conferma»; per correggerli usa la dashboard ' +
                 '(«Da verificare»).'
@@ -729,7 +736,10 @@ export class ConversationService {
             limit: ATTACHMENT_PRACTICE_LOOKUP_LIMIT,
           })
         : [];
-      const target = resolveAttachmentTarget(practices, text);
+      const requested = deps.practicesWithOpenRequests
+        ? await deps.practicesWithOpenRequests({ tenantId: tenant.id, userId: dbUser.id })
+        : [];
+      const target = resolveAttachmentTarget(practices, text, requested);
 
       if (target.type === 'none') {
         await reply(

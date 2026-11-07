@@ -69,6 +69,21 @@ export type DocumentChecklist = {
   counts: Record<ChecklistState, number>;
 };
 
+/** AGX-06: a request for a document on a practice, answered with a file. */
+export type DocumentRequest = {
+  id: string;
+  practiceId: string;
+  expectedKey: string | null;
+  expectedLabel: string | null;
+  message: string;
+  dueDate: string | null;
+  status: 'OPEN' | 'FULFILLED' | 'CANCELLED';
+  createdAt: string;
+  fulfilledAt: string | null;
+  fulfilledAttachmentId: string | null;
+  cancelledAt: string | null;
+};
+
 /** A document the practice's type expects (from the module). */
 export type ExpectedDocument = { key: string; label: string; required: boolean };
 

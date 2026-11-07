@@ -13,6 +13,13 @@ import {
   rejectAttachment,
   setAttachmentExpectedKey,
 } from '../../../core/practice/document-checklist.js';
+import {
+  cancelDocumentRequest,
+  createDocumentRequest,
+  fulfilRequestManually,
+  listDocumentRequests,
+  listOpenDocumentRequests,
+} from '../../../core/practice/document-request.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
 import { listHolderCandidates, setPracticeHolder } from '../../../core/practice/practice-holder.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
@@ -24,6 +31,9 @@ import { fail, ok } from '../errors/http.errors.js';
 import {
   AttachmentExpectedBodySchema,
   AttachmentRejectionBodySchema,
+  DocumentRequestBodySchema,
+  DocumentRequestFulfilBodySchema,
+  DocumentRequestParamsSchema,
   PracticeAssignBodySchema,
   PracticeAttachmentParamsSchema,
   PracticeAttachmentQuerySchema,
@@ -168,6 +178,126 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         try {
           const grant = requirePermission(req, 'practice.assign');
           return reply.send(ok(await listAssignees(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-06: the document requests of a practice, for whoever reaches it.
+    app.get(
+      '/practices/:id/document-requests',
+      { config: { permission: 'practice.read' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.read');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          await deps.practiceService.getPractice({
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            ...practiceReach(grant),
+          });
+          return reply.send(
+            ok(
+              await listDocumentRequests(prisma, {
+                tenantId: grant.principal.tenantId,
+                practiceId: id,
+              }),
+            ),
+          );
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-06: asking for, cancelling and linking documents is for who checks the documents of the
+    // whole organization (like a rejection).
+    const staffGrant = (req: Parameters<typeof requirePermission>[0]) => {
+      const grant = requirePermission(req, 'attachment.validate');
+      if (grant.scope !== 'tenant') throw new PermissionDeniedError('attachment.validate');
+      return grant;
+    };
+
+    app.get(
+      '/document-requests',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          return reply.send(ok(await listOpenDocumentRequests(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    app.post(
+      '/practices/:id/document-requests',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          const body = DocumentRequestBodySchema.parse(req.body);
+          const created = await createDocumentRequest(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            expectedKey: body.expectedKey ?? null,
+            message: body.message,
+            dueDate: body.dueDate ?? null,
+            actorUserId: grant.principal.userId,
+            requesterOrgId: grant.principal.tenantId,
+            channel: req.headers['x-sinfonia-client'] === 'web' ? 'web' : 'api',
+          });
+          return reply.status(201).send(ok(created));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    app.post(
+      '/practices/:id/document-requests/:requestId/cancel',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          const { id, requestId } = DocumentRequestParamsSchema.parse(req.params);
+          await cancelDocumentRequest(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            requestId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok({ cancelled: true }));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    app.post(
+      '/practices/:id/document-requests/:requestId/fulfil',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          const { id, requestId } = DocumentRequestParamsSchema.parse(req.params);
+          const body = DocumentRequestFulfilBodySchema.parse(req.body);
+          const result = await fulfilRequestManually(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            requestId,
+            attachmentId: body.attachmentId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
         } catch (err: unknown) {
           const mapped = mapErrorToHttp(err);
           return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

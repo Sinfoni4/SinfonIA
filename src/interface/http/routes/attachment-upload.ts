@@ -15,7 +15,11 @@ export type AttachmentUpload = {
   hint?: string;
   /** AGX-05: the expected document of the practice this file is. */
   expectedKey?: string;
+  /** AGX-06: the open request this file answers. */
+  requestId?: string;
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Room for the JSON envelope around the base64 content (file name, MIME type, hint).
 const BASE64_ENVELOPE_BYTES = 64 * 1024;
@@ -33,15 +37,17 @@ function readBase64Upload(body: unknown): AttachmentUpload {
     content: Buffer.from(parsed.contentBase64, 'base64'),
     hint: parsed.hint,
     expectedKey: parsed.expectedKey,
+    requestId: parsed.requestId,
   };
 }
 
 // Reads every part, so the optional "hint" and "expectedKey" fields are accepted before or after
 // the file.
 async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUpload> {
-  let file: Omit<AttachmentUpload, 'hint' | 'expectedKey'> | undefined;
+  let file: Omit<AttachmentUpload, 'hint' | 'expectedKey' | 'requestId'> | undefined;
   let hint: string | undefined;
   let expectedKey: string | undefined;
+  let requestId: string | undefined;
   try {
     for await (const part of req.parts()) {
       if (part.type === 'file') {
@@ -53,6 +59,9 @@ async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUploa
         hint = String(part.value);
       } else if (part.fieldname === 'expectedKey') {
         expectedKey = String(part.value).trim().slice(0, 60) || undefined;
+      } else if (part.fieldname === 'requestId') {
+        const value = String(part.value).trim();
+        requestId = UUID.test(value) ? value : undefined;
       }
     }
   } catch (err: unknown) {
@@ -64,7 +73,7 @@ async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUploa
   if (!file) {
     throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
   }
-  return { ...file, hint, expectedKey };
+  return { ...file, hint, expectedKey, requestId };
 }
 
 export function readAttachmentUpload(req: FastifyRequest): Promise<AttachmentUpload> {

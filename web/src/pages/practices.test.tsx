@@ -524,4 +524,91 @@ describe('practices (FE2)', () => {
       ).toEqual({ expectedKey: 'identity', file: 'id.pdf' }),
     );
   });
+
+  it('asks for a document, and lets the holder answer it with a file (AGX-06)', async () => {
+    const request = {
+      id: 'r-1',
+      practiceId: P1,
+      expectedKey: 'identity',
+      expectedLabel: "Documento d'identità del titolare",
+      message: 'Fronte e retro',
+      dueDate: '2026-11-20',
+      status: 'OPEN',
+      createdAt: '2026-11-05T10:00:00.000Z',
+      fulfilledAt: null,
+      fulfilledAttachmentId: null,
+      cancelledAt: null,
+    };
+    const module = {
+      id: 'agri',
+      label: 'Agricoltura',
+      description: '',
+      defaultKind: 'agri',
+      deadlineCategories: [],
+      practiceTypes: [
+        {
+          kind: 'agri',
+          label: 'Agricola',
+          typeLabel: 'agricultural practice',
+          fields: [],
+          subStates: [],
+          expectedDocuments: [
+            { key: 'identity', label: "Documento d'identità del titolare", required: true },
+          ],
+        },
+      ],
+    };
+    api('ADMIN', {
+      'GET /modules/current': () => ok(module),
+      [`GET /practices/${P1}`]: () => ok({ ...practice({ kind: 'agri' }), allowedTransitions: [] }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+      [`GET /practices/${P1}/document-requests`]: () => ok([]),
+      [`POST /practices/${P1}/document-requests`]: () => ({
+        status: 201,
+        body: { success: true, data: request },
+      }),
+    });
+    const first = openAt(`/pratiche/${P1}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Chiedi un documento' }));
+    await user.selectOptions(screen.getByLabelText('Documento'), 'identity');
+    await user.type(screen.getByLabelText('Cosa serve'), 'Fronte e retro');
+    await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === 'POST' && c.path === `/practices/${P1}/document-requests`)
+          ?.body,
+      ).toEqual({ expectedKey: 'identity', message: 'Fronte e retro', dueDate: null }),
+    );
+    first.unmount();
+
+    // The holder sees the open request and says the file answers it.
+    api('MEMBER', {
+      'GET /modules/current': () => ok(module),
+      [`GET /practices/${P1}`]: () => ok({ ...practice({ kind: 'agri' }), allowedTransitions: [] }),
+      [`GET /practices/${P1}/attachments`]: () => ok([]),
+      [`GET /practices/${P1}/document-requests`]: () => ok([request]),
+      [`POST /practices/${P1}/attachments`]: () => ({
+        status: 201,
+        body: { success: true, data: {} },
+      }),
+    });
+    openAt(`/pratiche/${P1}`);
+    const list = await screen.findByRole('region', { name: 'Richieste di documenti' });
+    expect(within(list).getByText('Fronte e retro')).toBeTruthy();
+    expect(within(list).getByText('aperta')).toBeTruthy();
+    expect(within(list).queryByRole('button', { name: 'Chiedi un documento' })).toBeNull();
+    const file = new File(['%PDF'], 'carta.pdf', { type: 'application/pdf' });
+    await user.upload(screen.getByLabelText('File (PDF o immagine)'), file);
+    await user.selectOptions(
+      screen.getByLabelText('Risponde a una richiesta? (facoltativo)'),
+      'r-1',
+    );
+    await user.click(screen.getByRole('button', { name: 'Carica' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === 'POST' && c.path === `/practices/${P1}/attachments`)?.body,
+      ).toEqual({ requestId: 'r-1', file: 'carta.pdf' }),
+    );
+  });
 });

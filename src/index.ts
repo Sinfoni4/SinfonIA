@@ -38,11 +38,14 @@ import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
 import {
   AttachmentRejectedHandler,
+  DocumentRequestedHandler,
+  DocumentRequestFulfilledHandler,
   PracticeAssignedHandler,
   PracticeHolderSetHandler,
   PracticeStatusHandler,
 } from './core/outbox/practice-status.handler.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
+import { practicesWithOpenRequests } from './core/practice/document-request.js';
 import { moduleOfTenant } from './core/practice/practice-module.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
@@ -239,6 +242,8 @@ async function main() {
       requestAssistance(prisma, input),
     // AGX-12a: «🏢 La mia azienda» in chat; the full codes only to who manages it, audited.
     companyCard: (actor: Principal) => getCompanyCard(prisma, complianceService, actor),
+    practicesWithOpenRequests: (input: { tenantId: string; userId: string }) =>
+      practicesWithOpenRequests(prisma, input),
     revealCompanyIdentifiers: (actor: Principal, channel: string) =>
       revealCompanyIdentifiers(prisma, actor, channel),
     memory: conversationMemory,
@@ -366,6 +371,12 @@ async function main() {
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
       ),
       new AttachmentRejectedHandler(prisma, outboxChannels),
+      new DocumentRequestedHandler(prisma, outboxChannels),
+      new DocumentRequestFulfilledHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
+      ),
       new PracticeHolderSetHandler(
         prisma,
         outboxChannels,
