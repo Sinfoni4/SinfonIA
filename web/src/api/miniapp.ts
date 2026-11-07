@@ -154,8 +154,17 @@ export function describeFeed(item: MiniAppSummary['feed'][number]): {
 }
 
 /** The tint of a feed item: requests amber, problems red, the rest green. */
-export function feedTone(type: string): 'ok' | 'ask' | 'bad' {
+export function feedTone(type: string): 'ok' | 'ask' | 'bad' | 'info' {
   if (type === 'DOCUMENT_REQUESTED') return 'ask';
   if (type === 'ATTACHMENT_REJECTED' || type === 'ATTACHMENT_READ_FAILED') return 'bad';
+  if (type === 'PRACTICE_CREATED' || type === 'PRACTICE_STATE_CHANGED') return 'info';
   return 'ok';
 }
+
+/** The type of a practice in Italian (the API's label is the module's internal one). */
+export const KIND_LABELS: Record<string, string> = {
+  agri: 'Pratica agricola',
+  music: 'Pratica musicale',
+  artist: 'Pratica artista',
+  generic: 'Pratica',
+};
