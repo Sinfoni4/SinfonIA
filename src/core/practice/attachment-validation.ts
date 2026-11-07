@@ -243,6 +243,10 @@ export async function validateAttachment(
         validatedData: data,
         validatedAt,
         validatedBy: input.actorUserId,
+        // AGX-05: a person confirmed the data after a rejection: the file counts again.
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null,
       },
     });
     await new AuditService(tx).logEvent({
@@ -287,6 +291,8 @@ const PLACEHOLDER_EMAIL = /@local\.invalid$/i;
 export function reviewQueueWhere(): Prisma.PracticeAttachmentWhereInput {
   return {
     validatedAt: null,
+    // AGX-05: a rejected file waits for a new one, not for a check.
+    rejectedAt: null,
     OR: [
       { ocrStatus: 'FAILED' },
       { ocrStatus: 'COMPLETED', ocrResult: { path: ['reviewRequired'], equals: true } },

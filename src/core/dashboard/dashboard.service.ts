@@ -61,6 +61,7 @@ export async function dashboardSummary(
     ocrStatus: 'COMPLETED',
     ocrResult: { path: ['reviewRequired'], equals: true },
     validatedAt: null,
+    rejectedAt: null,
   };
   const attachmentWhere: Prisma.PracticeAttachmentWhereInput = {
     tenantId: input.tenantId,
@@ -77,10 +78,13 @@ export async function dashboardSummary(
     }),
     prisma.practiceAttachment.count({ where: { ...attachmentWhere, ...review } }),
     prisma.practiceAttachment.count({
-      where: { ...attachmentWhere, ocrStatus: 'FAILED', validatedAt: null },
+      where: { ...attachmentWhere, ocrStatus: 'FAILED', validatedAt: null, rejectedAt: null },
     }),
     prisma.practiceAttachment.findMany({
-      where: { ...attachmentWhere, OR: [review, { ocrStatus: 'FAILED', validatedAt: null }] },
+      where: {
+        ...attachmentWhere,
+        OR: [review, { ocrStatus: 'FAILED', validatedAt: null, rejectedAt: null }],
+      },
       orderBy: { createdAt: 'desc' },
       take: LIST_SIZE,
       select: {

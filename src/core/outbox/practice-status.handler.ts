@@ -1,3 +1,4 @@
+import { ATTACHMENT_REJECTED } from '../practice/document-checklist.js';
 import { PRACTICE_ASSIGNED } from '../practice/practice-assignment.js';
 import { PRACTICE_HOLDER_SET, practiceRecipient } from '../practice/practice-holder.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
@@ -7,6 +8,7 @@ import { chatDeliveriesTo } from './outbox.recipients.js';
 import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbox.delivery.js';
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
+import type { AttachmentRejectedPayload } from '../practice/document-checklist.js';
 import type { PracticeAssignedPayload } from '../practice/practice-assignment.js';
 import type { PracticeHolderSetPayload } from '../practice/practice-holder.js';
 import type { PracticeState } from '../types/workflow.types.js';
@@ -135,6 +137,46 @@ export class PracticeHolderSetHandler implements OutboxEventHandler {
       `📂 È stata aperta per te la pratica «${name}».\n` +
       'Puoi mandarmi qui i documenti: ti chiederò sempre a quale pratica allegarli.' +
       (this.dashboardUrl ? `\n${this.dashboardUrl}/pratiche/${payload.practiceId}` : '');
+    return chatDeliveriesTo(
+      this.prisma,
+      message.tenantId,
+      this.channels,
+      (notifier, chatId) => notifier.sendMessage(chatId, text),
+      { userIds: [payload.userId] },
+    );
+  }
+}
+
+/**
+ * AGX-05: whoever the practice belongs to hears that a document was rejected, with the reason, so
+ * they can send a new one. Nothing is sent if the file was confirmed or removed meanwhile, or the
+ * practice changed hands.
+ */
+export class AttachmentRejectedHandler implements OutboxEventHandler {
+  readonly eventType = ATTACHMENT_REJECTED;
+
+  constructor(
+    private readonly prisma: PrismaLike,
+    private readonly channels: OutboxChannels,
+  ) {}
+
+  async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
+    const payload = message.payload as AttachmentRejectedPayload;
+    const file = await this.prisma.practiceAttachment.findFirst({
+      where: { id: payload.attachmentId, tenantId: message.tenantId },
+      select: {
+        fileName: true,
+        rejectedAt: true,
+        rejectionReason: true,
+        practice: { select: { payload: true, userId: true, holderUserId: true } },
+      },
+    });
+    if (!file?.rejectedAt || practiceRecipient(file.practice) !== payload.userId) return [];
+    const name = readPracticePayload(file.practice.payload).name ?? 'senza nome';
+    const text =
+      `❌ Il documento «${file.fileName}» della pratica «${name}» non è stato accettato.\n` +
+      (file.rejectionReason ? `Motivo: ${file.rejectionReason}\n` : '') +
+      'Mandane uno nuovo qui in chat: ti chiederò a quale pratica allegarlo.';
     return chatDeliveriesTo(
       this.prisma,
       message.tenantId,

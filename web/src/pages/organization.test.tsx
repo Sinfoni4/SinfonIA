@@ -193,6 +193,11 @@ describe('activity helpers', () => {
     expect(
       describeEvent(event({ type: 'PRACTICE_CREATED', practice: { id: 'p', name: 'PAC 2026' } })),
     ).toBe('Pratica «PAC 2026» creata per giulia@coop.it');
+    expect(
+      describeEvent(
+        event({ type: 'ATTACHMENT_REJECTED', practice: { id: 'p', name: 'PAC 2026' } }),
+      ),
+    ).toBe('Pratica «PAC 2026»: documento respinto');
   });
 
   it('builds the log query from a group of events and whole days', () => {

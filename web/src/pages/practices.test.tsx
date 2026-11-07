@@ -411,4 +411,117 @@ describe('practices (FE2)', () => {
       userId: OTHER,
     });
   });
+
+  it('shows the document checklist and lets staff link and reject a file (AGX-05)', async () => {
+    const module = {
+      id: 'agri',
+      label: 'Agricoltura',
+      description: '',
+      defaultKind: 'agri',
+      deadlineCategories: [],
+      practiceTypes: [
+        {
+          kind: 'agri',
+          label: 'Agricola',
+          typeLabel: 'agricultural practice',
+          fields: [],
+          subStates: [],
+          expectedDocuments: [
+            { key: 'farm_file', label: 'Fascicolo aziendale aggiornato', required: true },
+            { key: 'identity', label: "Documento d'identità del titolare", required: true },
+          ],
+        },
+      ],
+    };
+    api('ADMIN', {
+      'GET /modules/current': () => ok(module),
+      [`GET /practices/${P1}`]: () => ok({ ...practice({ kind: 'agri' }), allowedTransitions: [] }),
+      [`GET /practices/${P1}/checklist`]: () =>
+        ok({
+          complete: false,
+          counts: { missing: 1, to_verify: 0, valid: 0, rejected: 1 },
+          items: [
+            {
+              key: 'farm_file',
+              label: 'Fascicolo aziendale aggiornato',
+              required: true,
+              state: 'rejected',
+              attachment: { id: 'a-1', fileName: 'fascicolo.pdf' },
+              rejectionReason: 'Pagina mancante',
+            },
+            {
+              key: 'identity',
+              label: "Documento d'identità del titolare",
+              required: true,
+              state: 'missing',
+              attachment: null,
+              rejectionReason: null,
+            },
+          ],
+        }),
+      [`GET /practices/${P1}/attachments`]: () =>
+        ok([
+          {
+            id: 'a-2',
+            practiceId: P1,
+            fileName: 'carta.pdf',
+            mimeType: 'application/pdf',
+            fileSize: 1000,
+            ocrStatus: 'COMPLETED',
+            ocrResult: null,
+            validatedData: null,
+            validatedAt: null,
+            expectedKey: null,
+            rejectedAt: null,
+            rejectionReason: null,
+            createdAt: '2026-11-02T10:00:00.000Z',
+          },
+        ]),
+      [`POST /practices/${P1}/attachments/a-2/expected`]: () => ok({ expectedKey: 'identity' }),
+      [`POST /practices/${P1}/attachments/a-2/rejection`]: () => ok({ rejectedAt: 'x' }),
+      [`POST /practices/${P1}/attachments`]: () => ({
+        status: 201,
+        body: { success: true, data: {} },
+      }),
+    });
+    openAt(`/pratiche/${P1}`);
+    const user = userEvent.setup();
+    const list = await screen.findByRole('region', { name: 'Documenti previsti' });
+    expect(within(list).getByText('Documenti obbligatori validi: 0 su 2.')).toBeTruthy();
+    expect(within(list).getByText('respinto')).toBeTruthy();
+    expect(within(list).getByText('Motivo: Pagina mancante')).toBeTruthy();
+    expect(within(list).getByText('mancante')).toBeTruthy();
+
+    await user.selectOptions(await screen.findByLabelText('Documento previsto'), 'identity');
+    await waitFor(() =>
+      expect(calls.find((c) => c.path.endsWith('/a-2/expected'))?.body).toEqual({
+        expectedKey: 'identity',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Rifiuta' }));
+    const confirm = screen.getByRole('button', { name: 'Conferma rifiuto' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText('Motivo del rifiuto'), 'Illeggibile');
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(calls.find((c) => c.path.endsWith('/a-2/rejection'))?.body).toEqual({
+        reason: 'Illeggibile',
+      }),
+    );
+
+    // The upload says which expected document the file is.
+    const file = new File(['%PDF'], 'id.pdf', { type: 'application/pdf' });
+    await user.upload(screen.getByLabelText('File (PDF o immagine)'), file);
+    await user.selectOptions(
+      screen.getByLabelText('Quale documento previsto è? (facoltativo)'),
+      'identity',
+    );
+    await user.click(screen.getByRole('button', { name: 'Carica' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === 'POST' && c.path === `/practices/${P1}/attachments`)?.body,
+      ).toEqual({ expectedKey: 'identity', file: 'id.pdf' }),
+    );
+  });
 });

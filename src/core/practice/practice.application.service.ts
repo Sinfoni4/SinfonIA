@@ -12,6 +12,7 @@ import { authorize, scopedUserId, type Principal } from '../authz/authorization.
 import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/attachment.errors.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
+import { requireExpectedKey } from './document-checklist.js';
 import { isPersonPractice } from './practice-holder.js';
 import { moduleOfTenant, resolvePracticeCreation, visibleSubState } from './practice-module.js';
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
@@ -377,6 +378,8 @@ export class PracticeApplicationService {
      * not only the uploader's own (they are not a member of it).
      */
     delegated?: boolean;
+    /** AGX-05: the expected document of the practice's type this file is. */
+    expectedKey?: string | null;
   }): Promise<{
     attachment: PracticeAttachmentDTO;
     practice: PracticeView;
@@ -390,6 +393,7 @@ export class PracticeApplicationService {
       ...(input.delegated ? {} : { userId: input.userId }),
     });
 
+    if (input.expectedKey) requireExpectedKey(practice.payload, input.expectedKey);
     const mimeType = this.validateAttachment(input.content);
     const contentHash = createHash('sha256').update(input.content).digest('hex');
     const duplicateOf = await this.findDuplicate(
@@ -433,6 +437,7 @@ export class PracticeApplicationService {
         ocrStatus,
         ocrResult,
         contentHash,
+        expectedKey: input.expectedKey ?? null,
       });
     } catch (err: unknown) {
       // Without its record the stored file could never be listed or deleted: remove it.

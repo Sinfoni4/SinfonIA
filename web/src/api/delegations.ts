@@ -2,7 +2,7 @@
 
 import type { CurrentModule } from './modules';
 import type { OrganizationType } from './organization';
-import type { Attachment, Practice } from './practices';
+import type { Attachment, DocumentChecklist, Practice } from './practices';
 
 export type GrantOperation = 'READ' | 'CREATE' | 'UPDATE' | 'APPROVE' | 'DELETE' | 'EXPORT';
 export type GrantState = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'REVOKED';
@@ -53,6 +53,8 @@ export type DelegationInUse = {
 /** AGX-04: a practice of the grantor, with its documents, read through a delegation. */
 export type DelegatedPracticeDetail = Practice & {
   attachments: Attachment[];
+  /** AGX-05: the documents the practice's type expects, with their state (older APIs: none). */
+  checklist?: DocumentChecklist;
   delegation: DelegationInUse;
   module: CurrentModule;
 };

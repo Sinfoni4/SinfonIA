@@ -23,7 +23,12 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 export class PracticeModuleError extends Error {
   readonly statusCode = 400;
   constructor(
-    readonly code: 'KIND_NOT_IN_MODULE' | 'INVALID_FIELDS' | 'INVALID_SUB_STATE',
+    readonly code:
+      | 'KIND_NOT_IN_MODULE'
+      | 'INVALID_FIELDS'
+      | 'INVALID_SUB_STATE'
+      // AGX-05: not a document the practice's type expects.
+      | 'INVALID_EXPECTED_DOCUMENT',
     message: string,
   ) {
     super(message);

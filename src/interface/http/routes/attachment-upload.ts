@@ -13,6 +13,8 @@ export type AttachmentUpload = {
   mimeType: string;
   content: Buffer;
   hint?: string;
+  /** AGX-05: the expected document of the practice this file is. */
+  expectedKey?: string;
 };
 
 // Room for the JSON envelope around the base64 content (file name, MIME type, hint).
@@ -30,13 +32,16 @@ function readBase64Upload(body: unknown): AttachmentUpload {
     mimeType: parsed.mimeType,
     content: Buffer.from(parsed.contentBase64, 'base64'),
     hint: parsed.hint,
+    expectedKey: parsed.expectedKey,
   };
 }
 
-// Reads every part, so the optional "hint" field is accepted before or after the file.
+// Reads every part, so the optional "hint" and "expectedKey" fields are accepted before or after
+// the file.
 async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUpload> {
-  let file: Omit<AttachmentUpload, 'hint'> | undefined;
+  let file: Omit<AttachmentUpload, 'hint' | 'expectedKey'> | undefined;
   let hint: string | undefined;
+  let expectedKey: string | undefined;
   try {
     for await (const part of req.parts()) {
       if (part.type === 'file') {
@@ -46,6 +51,8 @@ async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUploa
         }
       } else if (part.fieldname === 'hint') {
         hint = String(part.value);
+      } else if (part.fieldname === 'expectedKey') {
+        expectedKey = String(part.value).trim().slice(0, 60) || undefined;
       }
     }
   } catch (err: unknown) {
@@ -57,7 +64,7 @@ async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUploa
   if (!file) {
     throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
   }
-  return { ...file, hint };
+  return { ...file, hint, expectedKey };
 }
 
 export function readAttachmentUpload(req: FastifyRequest): Promise<AttachmentUpload> {

@@ -17,6 +17,11 @@ export type PracticeAttachmentDTO = {
   /** A1: the data confirmed by a person, and when; null until then. */
   validatedData: unknown;
   validatedAt: Date | null;
+  /** AGX-05: the expected document of the practice's type this file is, if linked. */
+  expectedKey: string | null;
+  /** AGX-05: rejected by a person, with the reason (shown to whoever reaches the practice). */
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -33,6 +38,9 @@ function toAttachmentDTO(row: {
   ocrResult: unknown;
   validatedData?: unknown;
   validatedAt?: Date | null;
+  expectedKey?: string | null;
+  rejectedAt?: Date | null;
+  rejectionReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): PracticeAttachmentDTO {
@@ -48,6 +56,9 @@ function toAttachmentDTO(row: {
     ocrResult: row.ocrResult,
     validatedData: row.validatedData ?? null,
     validatedAt: row.validatedAt ?? null,
+    expectedKey: row.expectedKey ?? null,
+    rejectedAt: row.rejectedAt ?? null,
+    rejectionReason: row.rejectionReason ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -68,6 +79,8 @@ export class AttachmentRepository {
       ocrResult?: unknown;
       /** AGX-01: SHA-256 of the content. */
       contentHash?: string;
+      /** AGX-05: checked by the caller against the module. */
+      expectedKey?: string | null;
     },
   ): Promise<PracticeAttachmentDTO> {
     requireTenantId(tenantId);
@@ -83,6 +96,7 @@ export class AttachmentRepository {
           ocrStatus: data.ocrStatus ?? 'PENDING',
           ocrResult: data.ocrResult ? (data.ocrResult as never) : undefined,
           contentHash: data.contentHash,
+          expectedKey: data.expectedKey ?? null,
         },
       });
       return toAttachmentDTO(row);

@@ -81,7 +81,19 @@ export const PracticeAttachmentBodySchema = z.object({
   mimeType: z.string().trim().min(1).default('application/octet-stream'),
   contentBase64: z.string().min(1, 'File content (base64) is required'),
   hint: z.string().optional(),
+  /** AGX-05: the expected document of the practice's type this file is. */
+  expectedKey: z.string().trim().min(1).max(60).optional(),
 });
+
+/** AGX-05: links a file to an expected document of the practice, or unlinks it (null). */
+export const AttachmentExpectedBodySchema = z
+  .object({ expectedKey: z.string().trim().min(1).max(60).nullable() })
+  .strict();
+
+/** AGX-05: a rejection always says why. */
+export const AttachmentRejectionBodySchema = z
+  .object({ reason: z.string().trim().min(3).max(500) })
+  .strict();
 
 export type PracticeTransitionParams = z.infer<typeof PracticeTransitionParamsSchema>;
 export type PracticeTransitionBody = z.infer<typeof PracticeTransitionBodySchema>;

@@ -74,7 +74,8 @@ export type AuditEvent = {
       | 'subState'
       | 'cleared'
       | 'taxCode'
-      | 'vatNumber',
+      | 'vatNumber'
+      | 'expectedKey',
       string | number | boolean
     >
   >;
@@ -117,6 +118,8 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_HOLDER_CHANGED',
       'PRACTICE_SUB_STATE_CHANGED',
       'ATTACHMENT_VALIDATED',
+      'ATTACHMENT_EXPECTED_SET',
+      'ATTACHMENT_REJECTED',
     ],
   },
   network: {
@@ -214,6 +217,7 @@ const DELEGATED_ACTIONS: Record<string, string> = {
   upload: 'caricamento di un documento',
   validation: 'verifica dei dati di un documento',
   sub_state: 'cambio di fase',
+  expected: 'collegamento di un documento previsto',
 };
 
 const TOPIC_LABELS: Record<string, string> = {
@@ -331,6 +335,12 @@ export function describeEvent(event: AuditEvent): string {
       return `Pratica ${practice}: da ${stateName(d.from)} a ${stateName(d.to)}`;
     case 'PRACTICE_DELETED':
       return `Pratica ${practice} eliminata`;
+    case 'ATTACHMENT_EXPECTED_SET':
+      return d.cleared === true
+        ? `Pratica ${practice}: documento scollegato dai documenti previsti`
+        : `Pratica ${practice}: documento collegato a un documento previsto`;
+    case 'ATTACHMENT_REJECTED':
+      return `Pratica ${practice}: documento respinto`;
     case 'PRACTICE_HOLDER_CHANGED':
       return event.target
         ? `Pratica ${practice}: titolare ${target}`
