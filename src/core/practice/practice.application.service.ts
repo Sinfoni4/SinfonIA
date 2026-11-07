@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { defaultDocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AttachmentRepository } from '../../data/repositories/attachment.repository.js';
+import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { PracticeRepository } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { defaultStorageService, type StorageService } from '../../data/storage/storage.service.js';
@@ -13,6 +14,7 @@ import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/att
 import { attachmentUsage, recordUsage } from '../usage/usage.service.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
+import { ATTACHMENT_OCR, type AttachmentOcrPayload } from './attachment-ocr.js';
 import { requireExpectedKey } from './document-checklist.js';
 import {
   fulfilWithAttachment,
@@ -187,6 +189,8 @@ export class PracticeApplicationService {
 
   private readonly maxAttachmentBytes: number;
 
+  private readonly retryFailedOcr: boolean;
+
   constructor(
     private readonly prisma: PrismaClient,
     options?: {
@@ -194,6 +198,11 @@ export class PracticeApplicationService {
       ocrService?: DocumentOcrService;
       attachmentRepository?: AttachmentRepository;
       maxAttachmentBytes?: number;
+      /**
+       * AGX-08: a failed read is retried in the background (default). Off, the file is marked
+       * FAILED at once, as before, for processes that run no outbox dispatcher.
+       */
+      retryFailedOcr?: boolean;
     },
   ) {
     this.workflow = new PracticeWorkflow(prisma);
@@ -202,6 +211,7 @@ export class PracticeApplicationService {
     this.storageService = options?.storageService ?? defaultStorageService;
     this.ocrService = options?.ocrService ?? defaultDocumentOcrService;
     this.maxAttachmentBytes = options?.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
+    this.retryFailedOcr = options?.retryFailedOcr ?? true;
   }
 
   getMaxAttachmentBytes(): number {
@@ -438,7 +448,8 @@ export class PracticeApplicationService {
       mimeType,
     );
 
-    let ocrStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED';
+    // AGX-08: a failed read waits for the background one (PENDING) instead of failing at once.
+    let ocrStatus: 'COMPLETED' | 'FAILED' | 'PENDING' = 'COMPLETED';
     let ocrResult: DocumentOcrResult | undefined;
     try {
       ocrResult = await this.ocrService.processDocument(
@@ -448,7 +459,7 @@ export class PracticeApplicationService {
         input.hint,
       );
     } catch {
-      ocrStatus = 'FAILED';
+      ocrStatus = this.retryFailedOcr ? 'PENDING' : 'FAILED';
     }
 
     let attachment: PracticeAttachmentDTO;
@@ -500,6 +511,20 @@ export class PracticeApplicationService {
             practiceId: input.practiceId,
           })),
         );
+        // AGX-08: the read is tried again in the background, with the file's own record.
+        if (ocrStatus === 'PENDING') {
+          await new OutboxRepository(tx).createMessage({
+            tenantId: input.tenantId,
+            eventType: ATTACHMENT_OCR,
+            payload: {
+              attachmentId: attachment.id,
+              practiceId: input.practiceId,
+              userId: input.userId,
+              channel: input.channel ?? null,
+              actorOrgId: input.actorOrgId ?? null,
+            } satisfies AttachmentOcrPayload,
+          });
+        }
       });
     } catch (err: unknown) {
       // A file without its trace is not kept: the person sends it again.

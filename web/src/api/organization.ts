@@ -120,6 +120,8 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ATTACHMENT_VALIDATED',
       'ATTACHMENT_EXPECTED_SET',
       'ATTACHMENT_REJECTED',
+      'ATTACHMENT_READ_RETRIED',
+      'ATTACHMENT_READ_FAILED',
       'DOCUMENT_REQUESTED',
       'DOCUMENT_REQUEST_FULFILLED',
       'DOCUMENT_REQUEST_CANCELLED',
@@ -346,6 +348,10 @@ export function describeEvent(event: AuditEvent): string {
       return d.cleared === true
         ? `Pratica ${practice}: documento scollegato dai documenti previsti`
         : `Pratica ${practice}: documento collegato a un documento previsto`;
+    case 'ATTACHMENT_READ_RETRIED':
+      return `Pratica ${practice}: documento letto al nuovo tentativo`;
+    case 'ATTACHMENT_READ_FAILED':
+      return `Pratica ${practice}: documento non leggibile, da controllare a mano`;
     case 'ATTACHMENT_REJECTED':
       return `Pratica ${practice}: documento respinto`;
     case 'DOCUMENT_REQUESTED':

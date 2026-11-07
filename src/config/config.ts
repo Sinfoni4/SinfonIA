@@ -95,6 +95,9 @@ const ConfigSchema = z
     SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
     OUTBOX_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(500).default(5_000),
     OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
+    // AGX-08: background reads of a document whose first read failed, before the manual check.
+    // Never more than OUTBOX_MAX_ATTEMPTS.
+    OCR_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     // Shared secret for signing webhook deliveries; webhooks are not sent without it.
     OUTBOX_WEBHOOK_SECRET: z.string().min(32).optional(),
     // WhatsApp Business Cloud API: the channel is on only when all four values are set.

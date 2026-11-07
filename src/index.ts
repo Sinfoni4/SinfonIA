@@ -3,6 +3,7 @@ import { DecisionEngine } from './ai/decision/decision.engine.js';
 import { ExecutorService } from './ai/execution/executor.service.js';
 import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
+import { defaultDocumentOcrService } from './ai/ocr/document-ocr.service.js';
 import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
 import {
   createAzureOpenAIProvider,
@@ -33,6 +34,10 @@ import {
   AssistanceRequestedHandler,
   AssistanceUpdatedHandler,
 } from './core/outbox/assistance.handler.js';
+import {
+  AttachmentOcrHandler,
+  AttachmentReadHandler,
+} from './core/outbox/attachment-ocr.handler.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
@@ -189,9 +194,10 @@ async function main() {
     llm,
     log: config.NODE_ENV === 'development' ? logger : undefined,
   });
+  const storageService = createStorageService(config);
   const practiceService = new PracticeApplicationService(prisma, {
     maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES,
-    storageService: createStorageService(config),
+    storageService,
   });
   const executorService = new ExecutorService({ practiceService });
   // A02: the AI gets the sector instructions of the organization's module.
@@ -371,6 +377,13 @@ async function main() {
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
       ),
       new AttachmentRejectedHandler(prisma, outboxChannels),
+      // AGX-08: a document whose first read failed is read again, then the sender is told.
+      new AttachmentOcrHandler(prisma, {
+        ocrService: defaultDocumentOcrService,
+        storageService,
+        maxAttempts: Math.min(config.OCR_MAX_ATTEMPTS, config.OUTBOX_MAX_ATTEMPTS),
+      }),
+      new AttachmentReadHandler(prisma, outboxChannels),
       new DocumentRequestedHandler(prisma, outboxChannels),
       new DocumentRequestFulfilledHandler(
         prisma,
