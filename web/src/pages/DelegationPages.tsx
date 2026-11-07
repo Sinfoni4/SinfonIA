@@ -30,6 +30,7 @@ import {
   type PracticeState,
 } from '../api/practices';
 import { DocumentChecklist } from '../components/DocumentChecklist';
+import { DocumentRequests } from '../components/DocumentRequests';
 import { missingRequired, PracticeFieldInputs } from '../components/PracticeFieldInputs';
 import { useSession } from '../session/session';
 
@@ -747,6 +748,17 @@ export function DelegatedPracticeDetailPage() {
       </section>
 
       {p.checklist && <DocumentChecklist checklist={p.checklist} />}
+      {p.documentRequests && (
+        <DocumentRequests
+          practiceId={practiceId}
+          basePath={base}
+          requests={p.documentRequests}
+          expected={type?.expectedDocuments ?? []}
+          attachments={p.attachments}
+          canManage={canUpdate}
+          refreshKeys={[key]}
+        />
+      )}
 
       <section className="card" aria-labelledby="attachments-title">
         <h2 id="attachments-title">Allegati</h2>
@@ -770,6 +782,7 @@ export function DelegatedPracticeDetailPage() {
             basePath={base}
             refreshKey={key}
             expected={type?.expectedDocuments ?? []}
+            openRequests={(p.documentRequests ?? []).filter((r) => r.status === 'OPEN')}
           />
         )}
       </section>

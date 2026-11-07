@@ -120,6 +120,9 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ATTACHMENT_VALIDATED',
       'ATTACHMENT_EXPECTED_SET',
       'ATTACHMENT_REJECTED',
+      'DOCUMENT_REQUESTED',
+      'DOCUMENT_REQUEST_FULFILLED',
+      'DOCUMENT_REQUEST_CANCELLED',
     ],
   },
   network: {
@@ -218,6 +221,9 @@ const DELEGATED_ACTIONS: Record<string, string> = {
   validation: 'verifica dei dati di un documento',
   sub_state: 'cambio di fase',
   expected: 'collegamento di un documento previsto',
+  document_request: 'richiesta di un documento',
+  document_request_cancel: 'richiesta di un documento annullata',
+  document_request_fulfil: 'file collegato a una richiesta',
 };
 
 const TOPIC_LABELS: Record<string, string> = {
@@ -341,6 +347,12 @@ export function describeEvent(event: AuditEvent): string {
         : `Pratica ${practice}: documento collegato a un documento previsto`;
     case 'ATTACHMENT_REJECTED':
       return `Pratica ${practice}: documento respinto`;
+    case 'DOCUMENT_REQUESTED':
+      return `Pratica ${practice}: richiesto un documento${channel}`;
+    case 'DOCUMENT_REQUEST_FULFILLED':
+      return `Pratica ${practice}: ricevuto il documento richiesto`;
+    case 'DOCUMENT_REQUEST_CANCELLED':
+      return `Pratica ${practice}: richiesta di un documento annullata`;
     case 'PRACTICE_HOLDER_CHANGED':
       return event.target
         ? `Pratica ${practice}: titolare ${target}`

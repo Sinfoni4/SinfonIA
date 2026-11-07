@@ -17,6 +17,12 @@ import {
   practiceChecklist,
   setAttachmentExpectedKey,
 } from '../../../core/practice/document-checklist.js';
+import {
+  cancelDocumentRequest,
+  createDocumentRequest,
+  fulfilRequestManually,
+  listDocumentRequests,
+} from '../../../core/practice/document-request.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
 import { deadlineCategoriesOf } from '../../../modules/registry.js';
 import { requirePermission } from '../auth/guards.js';
@@ -24,6 +30,8 @@ import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
   AttachmentExpectedBodySchema,
+  DocumentRequestBodySchema,
+  DocumentRequestFulfilBodySchema,
   PracticeAttachmentQuerySchema,
   PracticeCreateBodySchema,
   PracticeExportBodySchema,
@@ -65,6 +73,7 @@ const IssueBodySchema = z
 const IdSchema = z.object({ id: z.string().uuid() });
 const PracticeParamsSchema = z.object({ id: z.string().uuid(), practiceId: z.string().uuid() });
 const AttachmentParamsSchema = PracticeParamsSchema.extend({ attachmentId: z.string().uuid() });
+const RequestParamsSchema = PracticeParamsSchema.extend({ requestId: z.string().uuid() });
 /** AGX-04: a practice opened through a delegation: name, kind and fields, never an owner. */
 const DelegatedCreateBodySchema = PracticeCreateBodySchema.pick({
   name: true,
@@ -245,7 +254,11 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
       userId: grant.principal.userId,
       currentOrgId: grant.principal.tenantId,
       operation,
-    }).then((a) => ({ access: a, userId: grant.principal.userId }));
+    }).then((a) => ({
+      access: a,
+      userId: grant.principal.userId,
+      orgId: grant.principal.tenantId,
+    }));
   };
 
   app.get('/grants/:id/practices', { config: { permission: 'grant.use' } }, async (req, reply) => {
@@ -297,6 +310,11 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
             attachments,
             // AGX-05: what is still missing, to check or rejected.
             checklist: await practiceChecklist(deps.prisma, {
+              tenantId: a.grantorOrgId,
+              practiceId,
+            }),
+            // AGX-06: the document requests of the practice.
+            documentRequests: await listDocumentRequests(deps.prisma, {
               tenantId: a.grantorOrgId,
               practiceId,
             }),
@@ -468,6 +486,67 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
       }
     },
   );
+
+  // AGX-06: asking for a document through a delegation with UPDATE (the network for a company).
+  // Who asked hears the answer in their own organization, while the delegation lets them read.
+  app.post(
+    '/grants/:id/practices/:practiceId/document-requests',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id, practiceId } = PracticeParamsSchema.parse(req.params);
+        const body = DocumentRequestBodySchema.parse(req.body);
+        const { access: a, userId, orgId } = await access(req, id, 'UPDATE');
+        const created = await createDocumentRequest(deps.prisma, {
+          tenantId: a.grantorOrgId,
+          practiceId,
+          expectedKey: body.expectedKey ?? null,
+          message: body.message,
+          dueDate: body.dueDate ?? null,
+          actorUserId: userId,
+          requesterOrgId: orgId,
+          grantId: a.grantId,
+          channel: 'delegation',
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'document_request', {
+          practiceId,
+          requestId: created.id,
+        });
+        return reply.status(201).send(ok(created));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  for (const [path, action] of [
+    ['cancel', 'document_request_cancel'],
+    ['fulfil', 'document_request_fulfil'],
+  ] as const) {
+    app.post(
+      `/grants/:id/practices/:practiceId/document-requests/:requestId/${path}`,
+      { config: { permission: 'grant.use' } },
+      async (req, reply) => {
+        try {
+          const { id, practiceId, requestId } = RequestParamsSchema.parse(req.params);
+          const body =
+            path === 'fulfil' ? DocumentRequestFulfilBodySchema.parse(req.body) : undefined;
+          const { access: a, userId } = await access(req, id, 'UPDATE');
+          const input = { tenantId: a.grantorOrgId, practiceId, requestId, actorUserId: userId };
+          const result = body
+            ? await fulfilRequestManually(deps.prisma, {
+                ...input,
+                attachmentId: body.attachmentId,
+              })
+            : (await cancelDocumentRequest(deps.prisma, input), { cancelled: true });
+          await auditDelegatedUse(deps.prisma, a, userId, action, { practiceId, requestId });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          return sendError(reply, err);
+        }
+      },
+    );
+  }
 
   app.post(
     '/grants/:id/practices/:practiceId/sub-state',

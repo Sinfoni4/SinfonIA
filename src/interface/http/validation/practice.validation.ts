@@ -83,7 +83,32 @@ export const PracticeAttachmentBodySchema = z.object({
   hint: z.string().optional(),
   /** AGX-05: the expected document of the practice's type this file is. */
   expectedKey: z.string().trim().min(1).max(60).optional(),
+  /** AGX-06: the open request this file answers. */
+  requestId: z.string().uuid().optional(),
 });
+
+/** AGX-06: a request for a document: an expected one (or anything, with no key) and why. */
+export const DocumentRequestBodySchema = z
+  .object({
+    expectedKey: z.string().trim().min(1).max(60).nullable().optional(),
+    message: z.string().trim().min(3).max(1000),
+    dueDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+  })
+  .strict();
+
+export const DocumentRequestParamsSchema = z.object({
+  id: z.string().uuid(),
+  requestId: z.string().uuid(),
+});
+
+/** AGX-06: staff link a file of the practice to an open request. */
+export const DocumentRequestFulfilBodySchema = z
+  .object({ attachmentId: z.string().uuid() })
+  .strict();
 
 /** AGX-05: links a file to an expected document of the practice, or unlinks it (null). */
 export const AttachmentExpectedBodySchema = z

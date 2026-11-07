@@ -18,6 +18,7 @@ import {
   usefulSummary,
   type Attachment,
   type DocumentChecklist as Checklist,
+  type DocumentRequest,
   type ExpectedDocument,
   type HolderCandidate,
   type PracticeDetail,
@@ -25,6 +26,7 @@ import {
 } from '../api/practices';
 import { VALIDATION_FIELDS, type DocumentType } from '../api/review';
 import { DocumentChecklist } from '../components/DocumentChecklist';
+import { DocumentRequests } from '../components/DocumentRequests';
 import { ValidationForm } from '../components/ValidationForm';
 import { useSession } from '../session/session';
 
@@ -71,6 +73,13 @@ export function PracticeDetailPage({ me }: { me: Me }) {
   const checklist = useQuery({
     queryKey: ['checklist', id],
     queryFn: () => api<Checklist>(`/practices/${id}/checklist`),
+    enabled: practice.isSuccess,
+    retry: false,
+  });
+  // AGX-06: the requests for documents of the practice.
+  const requests = useQuery({
+    queryKey: ['document-requests', id],
+    queryFn: () => api<DocumentRequest[]>(`/practices/${id}/document-requests`),
     enabled: practice.isSuccess,
     retry: false,
   });
@@ -260,6 +269,22 @@ export function PracticeDetailPage({ me }: { me: Me }) {
         </section>
       )}
 
+      {requests.data && (
+        <DocumentRequests
+          practiceId={id}
+          requests={requests.data}
+          expected={type?.expectedDocuments ?? []}
+          attachments={attachments.data ?? []}
+          // The backend refuses it to anyone who does not check the whole organization.
+          canManage={me.current.role !== 'MEMBER'}
+          refreshKeys={[
+            ['document-requests', id],
+            ['attachments', id],
+            ['checklist', id],
+          ]}
+        />
+      )}
+
       <section className="card" aria-labelledby="attachments-title">
         <h2 id="attachments-title">Allegati</h2>
         {attachments.isError && (
@@ -282,7 +307,13 @@ export function PracticeDetailPage({ me }: { me: Me }) {
             />
           ))}
         </ul>
-        {canUpload && <UploadForm practiceId={id} expected={type?.expectedDocuments ?? []} />}
+        {canUpload && (
+          <UploadForm
+            practiceId={id}
+            expected={type?.expectedDocuments ?? []}
+            openRequests={(requests.data ?? []).filter((r) => r.status === 'OPEN')}
+          />
+        )}
       </section>
     </>
   );
@@ -530,18 +561,22 @@ export function UploadForm({
   basePath,
   refreshKey,
   expected = [],
+  openRequests = [],
 }: {
   practiceId: string;
   basePath?: string;
   refreshKey?: readonly unknown[];
   /** AGX-05: the documents the practice's type expects, to say which one the file is. */
   expected?: readonly ExpectedDocument[];
+  /** AGX-06: the open requests the file can answer. */
+  openRequests?: readonly DocumentRequest[];
 }) {
   const { api } = useSession();
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
   const [hint, setHint] = useState('');
   const [expectedKey, setExpectedKey] = useState('');
+  const [requestId, setRequestId] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
   const upload = useMutation({
@@ -551,6 +586,7 @@ export function UploadForm({
       // The hint goes before the file: the backend reads the fields in order.
       if (hint.trim()) form.append('hint', hint.trim());
       if (expectedKey) form.append('expectedKey', expectedKey);
+      if (requestId) form.append('requestId', requestId);
       form.append('file', file);
       const query = allowDuplicate ? '?allowDuplicate=true' : '';
       return api(`${basePath ?? `/practices/${practiceId}`}/attachments${query}`, {
@@ -561,10 +597,12 @@ export function UploadForm({
     onSuccess: async () => {
       setHint('');
       setExpectedKey('');
+      setRequestId('');
       setFile(null);
       if (input.current) input.current.value = '';
       await queryClient.invalidateQueries({ queryKey: refreshKey ?? ['attachments', practiceId] });
       await queryClient.invalidateQueries({ queryKey: ['checklist', practiceId] });
+      await queryClient.invalidateQueries({ queryKey: ['document-requests', practiceId] });
     },
   });
 
@@ -588,6 +626,19 @@ export function UploadForm({
         accept="application/pdf,image/*"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
+      {openRequests.length > 0 && (
+        <>
+          <label htmlFor="request-id">Risponde a una richiesta? (facoltativo)</label>
+          <select id="request-id" value={requestId} onChange={(e) => setRequestId(e.target.value)}>
+            <option value="">No</option>
+            {openRequests.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.expectedLabel ?? r.message}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       {expected.length > 0 && (
         <>
           <label htmlFor="expected-key">Quale documento previsto è? (facoltativo)</label>

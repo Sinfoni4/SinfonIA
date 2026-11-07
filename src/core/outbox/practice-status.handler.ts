@@ -1,4 +1,6 @@
-import { ATTACHMENT_REJECTED } from '../practice/document-checklist.js';
+import { resolveDelegatedAccess } from '../delegation/delegation.service.js';
+import { ATTACHMENT_REJECTED, expectedDocumentsOf } from '../practice/document-checklist.js';
+import { DOCUMENT_REQUEST_FULFILLED, DOCUMENT_REQUESTED } from '../practice/document-request.js';
 import { PRACTICE_ASSIGNED } from '../practice/practice-assignment.js';
 import { PRACTICE_HOLDER_SET, practiceRecipient } from '../practice/practice-holder.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
@@ -9,6 +11,10 @@ import type { OutboxChannels, OutboxDelivery, OutboxEventHandler } from './outbo
 import type { ClaimedOutboxMessage } from '../../data/repositories/outbox.repository.js';
 import type { PrismaLike } from '../../data/types/prisma.js';
 import type { AttachmentRejectedPayload } from '../practice/document-checklist.js';
+import type {
+  DocumentRequestedPayload,
+  DocumentRequestFulfilledPayload,
+} from '../practice/document-request.js';
 import type { PracticeAssignedPayload } from '../practice/practice-assignment.js';
 import type { PracticeHolderSetPayload } from '../practice/practice-holder.js';
 import type { PracticeState } from '../types/workflow.types.js';
@@ -177,6 +183,115 @@ export class AttachmentRejectedHandler implements OutboxEventHandler {
       `❌ Il documento «${file.fileName}» della pratica «${name}» non è stato accettato.\n` +
       (file.rejectionReason ? `Motivo: ${file.rejectionReason}\n` : '') +
       'Mandane uno nuovo qui in chat: ti chiederò a quale pratica allegarlo.';
+    return chatDeliveriesTo(
+      this.prisma,
+      message.tenantId,
+      this.channels,
+      (notifier, chatId) => notifier.sendMessage(chatId, text),
+      { userIds: [payload.userId] },
+    );
+  }
+}
+
+const shortDay = (date: Date) => date.toISOString().slice(0, 10).split('-').reverse().join('/');
+
+/**
+ * AGX-06: whoever the practice belongs to hears that a document is asked for, with what is
+ * needed, so they can send it in chat. Nothing is sent if the request was closed meanwhile or the
+ * practice changed hands.
+ */
+export class DocumentRequestedHandler implements OutboxEventHandler {
+  readonly eventType = DOCUMENT_REQUESTED;
+
+  constructor(
+    private readonly prisma: PrismaLike,
+    private readonly channels: OutboxChannels,
+  ) {}
+
+  async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
+    const payload = message.payload as DocumentRequestedPayload;
+    const request = await this.prisma.documentRequest.findFirst({
+      where: { id: payload.requestId, tenantId: message.tenantId, status: 'OPEN' },
+      select: {
+        message: true,
+        expectedKey: true,
+        dueDate: true,
+        practice: { select: { payload: true, userId: true, holderUserId: true } },
+      },
+    });
+    if (!request || practiceRecipient(request.practice) !== payload.userId) return [];
+    const name = readPracticePayload(request.practice.payload).name ?? 'senza nome';
+    const label = request.expectedKey
+      ? expectedDocumentsOf(request.practice.payload).find((d) => d.key === request.expectedKey)
+          ?.label
+      : undefined;
+    const text = [
+      `📎 Per la pratica «${name}» serve un documento${label ? `: ${label}` : ''}.`,
+      `«${request.message}»`,
+      ...(request.dueDate ? [`Entro il ${shortDay(request.dueDate)}.`] : []),
+      'Mandalo qui in chat: ti chiederò a quale pratica allegarlo.',
+    ].join('\n');
+    return chatDeliveriesTo(
+      this.prisma,
+      message.tenantId,
+      this.channels,
+      (notifier, chatId) => notifier.sendMessage(chatId, text),
+      { userIds: [payload.userId] },
+    );
+  }
+}
+
+/**
+ * AGX-06: who asked for a document hears that it arrived, in their own organization. Through a
+ * delegation, only while it still lets them read the practice; with the link to it when the
+ * dashboard address is known.
+ */
+export class DocumentRequestFulfilledHandler implements OutboxEventHandler {
+  readonly eventType = DOCUMENT_REQUEST_FULFILLED;
+
+  constructor(
+    private readonly prisma: PrismaLike,
+    private readonly channels: OutboxChannels,
+    /** Base address of the dashboard (`…/app`), when known. */
+    private readonly dashboardUrl?: string,
+  ) {}
+
+  async resolveDeliveries(message: ClaimedOutboxMessage): Promise<OutboxDelivery[]> {
+    const payload = message.payload as DocumentRequestFulfilledPayload;
+    const request = await this.prisma.documentRequest.findFirst({
+      where: {
+        id: payload.requestId,
+        requesterOrgId: message.tenantId,
+        requestedBy: payload.userId,
+        status: 'FULFILLED',
+      },
+      select: {
+        practiceId: true,
+        grantId: true,
+        message: true,
+        practice: { select: { payload: true } },
+      },
+    });
+    if (!request) return [];
+    if (request.grantId) {
+      try {
+        await resolveDelegatedAccess(this.prisma, {
+          grantId: request.grantId,
+          userId: payload.userId,
+          currentOrgId: message.tenantId,
+          operation: 'READ',
+        });
+      } catch {
+        return [];
+      }
+    }
+    const name = readPracticePayload(request.practice.payload).name ?? 'senza nome';
+    const path = request.grantId
+      ? `/deleghe/${request.grantId}/pratiche/${request.practiceId}`
+      : `/pratiche/${request.practiceId}`;
+    const text =
+      `📥 È arrivato il documento richiesto per la pratica «${name}»: «${request.message}».` +
+      (this.dashboardUrl ? `\n${this.dashboardUrl}${path}` : '');
     return chatDeliveriesTo(
       this.prisma,
       message.tenantId,

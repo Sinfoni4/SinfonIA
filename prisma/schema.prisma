@@ -61,6 +61,7 @@ model Tenant {
   grantsGiven         AccessGrant[]          @relation("GrantGrantor")
   grantsReceived      AccessGrant[]          @relation("GrantGranteeOrg")
   assistanceRequests  AssistanceRequest[]
+  documentRequests    DocumentRequest[]
 
   @@map("tenant")
 }
@@ -156,11 +157,12 @@ model Practice {
   /// AGX-03: the person the practice was opened for; null = the creator.
   holderUserId String?        @map("holder_user_id") @db.Uuid
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
-  assignee    User?                @relation("PracticeAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
-  holder      User?                @relation("PracticeHolder", fields: [holderUserId], references: [id], onDelete: SetNull)
-  attachments PracticeAttachment[]
+  tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignee         User?                @relation("PracticeAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  holder           User?                @relation("PracticeHolder", fields: [holderUserId], references: [id], onDelete: SetNull)
+  attachments      PracticeAttachment[]
+  documentRequests DocumentRequest[]
 
   @@index([tenantId])
   @@index([tenantId, assignedTo])
@@ -784,4 +786,40 @@ model AssistanceRequest {
   @@index([tenantId, status, createdAt])
   @@index([tenantId, userId, status])
   @@map("assistance_request")
+}
+
+/// AGX-06: a request for a document on a practice, answered by the holder with a file.
+enum DocumentRequestStatus {
+  OPEN
+  FULFILLED
+  CANCELLED
+}
+
+model DocumentRequest {
+  id                    String                @id @default(uuid()) @db.Uuid
+  tenantId              String                @map("tenant_id") @db.Uuid
+  practiceId            String                @map("practice_id") @db.Uuid
+  /// An expected document of the practice's type (AGX-05), or null for anything else.
+  expectedKey           String?               @map("expected_key")
+  message               String
+  dueDate               DateTime?             @map("due_date") @db.Date
+  status                DocumentRequestStatus @default(OPEN)
+  requestedBy           String?               @map("requested_by") @db.Uuid
+  /// Where who asked hears the answer: their organization (another one through a delegation).
+  requesterOrgId        String?               @map("requester_org_id") @db.Uuid
+  grantId               String?               @map("grant_id") @db.Uuid
+  fulfilledAttachmentId String?               @map("fulfilled_attachment_id") @db.Uuid
+  fulfilledBy           String?               @map("fulfilled_by") @db.Uuid
+  fulfilledAt           DateTime?             @map("fulfilled_at")
+  cancelledBy           String?               @map("cancelled_by") @db.Uuid
+  cancelledAt           DateTime?             @map("cancelled_at")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([practiceId, status])
+  @@map("document_request")
 }

@@ -13,6 +13,11 @@ import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/att
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
 import { requireExpectedKey } from './document-checklist.js';
+import {
+  fulfilWithAttachment,
+  requireOpenRequest,
+  type FulfilledRequest,
+} from './document-request.js';
 import { isPersonPractice } from './practice-holder.js';
 import { moduleOfTenant, resolvePracticeCreation, visibleSubState } from './practice-module.js';
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
@@ -380,10 +385,14 @@ export class PracticeApplicationService {
     delegated?: boolean;
     /** AGX-05: the expected document of the practice's type this file is. */
     expectedKey?: string | null;
+    /** AGX-06: the open request this file answers; otherwise matched when unambiguous. */
+    requestId?: string;
   }): Promise<{
     attachment: PracticeAttachmentDTO;
     practice: PracticeView;
     ocrResult?: DocumentOcrResult;
+    /** AGX-06: the request this file fulfilled, if any. */
+    fulfilledRequest?: FulfilledRequest | null;
   }> {
     requireDatabase();
 
@@ -394,6 +403,13 @@ export class PracticeApplicationService {
     });
 
     if (input.expectedKey) requireExpectedKey(practice.payload, input.expectedKey);
+    if (input.requestId) {
+      await requireOpenRequest(this.prisma, {
+        tenantId: input.tenantId,
+        practiceId: input.practiceId,
+        requestId: input.requestId,
+      });
+    }
     const mimeType = this.validateAttachment(input.content);
     const contentHash = createHash('sha256').update(input.content).digest('hex');
     const duplicateOf = await this.findDuplicate(
@@ -509,10 +525,27 @@ export class PracticeApplicationService {
       updatedPractice = toView(updatedDto);
     }
 
+    // AGX-06: the file answers an open request of the practice. The file is kept even if the
+    // request changed meanwhile (cancelled, answered by another file).
+    let fulfilledRequest: FulfilledRequest | null = null;
+    try {
+      fulfilledRequest = await fulfilWithAttachment(this.prisma, {
+        tenantId: input.tenantId,
+        practiceId: input.practiceId,
+        attachmentId: attachment.id,
+        expectedKey: attachment.expectedKey,
+        actorUserId: input.userId,
+        requestId: input.requestId,
+      });
+    } catch {
+      fulfilledRequest = null;
+    }
+
     return {
       attachment,
       practice: updatedPractice,
       ocrResult,
+      fulfilledRequest,
     };
   }
 

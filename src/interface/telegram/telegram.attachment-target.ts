@@ -31,10 +31,13 @@ const TERMINAL_STATES = new Set(['COMPLETED', 'FAILED']);
 /**
  * @param practices the user's practices, most recent first
  * @param caption text sent with the file; a practice named in it is proposed first
+ * @param requested AGX-06: practices with an open document request for the user; when only one
+ *   of them is open (and the caption names none) it is proposed first
  */
 export function resolveAttachmentTarget(
   practices: AttachmentCandidate[],
   caption: string,
+  requested: readonly string[] = [],
 ): AttachmentTarget {
   const open = practices.filter((p) => !TERMINAL_STATES.has(p.status));
   // Closed practices are offered only when nothing is open, and never proposed as the likely one.
@@ -51,6 +54,10 @@ export function resolveAttachmentTarget(
       return name.length >= 3 && paddedCaption.includes(` ${name} `);
     });
     if (named.length === 1) likely = named[0];
+  }
+  if (!likely) {
+    const asked = open.filter((p) => requested.includes(p.id));
+    if (asked.length === 1) likely = asked[0];
   }
   if (!likely && open.length === 1) likely = open[0];
 
