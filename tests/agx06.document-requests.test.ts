@@ -192,7 +192,6 @@ describe.runIf(Boolean(DATABASE_URL))('document requests along the path §H (AGX
       {
         name: 'telegram',
         identity: {
-          link: () => Promise.resolve(null),
           resolve: () =>
             Promise.resolve({
               tenant,

@@ -39,6 +39,7 @@ import type { AppConfig } from '../../config/config.js';
 import type { PrincipalResolver } from '../../core/authz/authorization.service.js';
 import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
+import type { ChannelLinkService } from '../../core/identity/channel-link.service.js';
 import type { LoginService } from '../../core/identity/login.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
@@ -72,6 +73,8 @@ export type ServerDeps = {
   prisma?: PrismaClient;
   /** Email login and invitations (MF6); routes absent when not given. */
   login?: LoginService;
+  /** AGX-10: verified chat links, listed and revoked from the dashboard. */
+  channelLinks?: ChannelLinkService;
 };
 
 /** Access tokens issued by a login session last 10 minutes (§5, D7). */
@@ -189,7 +192,11 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(whatsappRoutes, deps.whatsappWebhook);
   }
   if (deps.prisma) {
-    void app.register(membersRoutes, { prisma: deps.prisma, login: deps.login });
+    void app.register(membersRoutes, {
+      prisma: deps.prisma,
+      login: deps.login,
+      channelLinks: deps.channelLinks,
+    });
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
     void app.register(assistanceRoutes, { prisma: deps.prisma });
     void app.register(networkRoutes, { prisma: deps.prisma });

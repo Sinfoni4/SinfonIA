@@ -5,6 +5,7 @@ import { describeError, type Me, type Role } from '../api/client';
 import { CATEGORY_LABELS, daysLabel, isoToItalian, type DeadlineCategory } from '../api/compliance';
 import { ROLE_NAMES } from '../api/members';
 import { formatDate, STATE_LABELS, type PracticeState } from '../api/practices';
+import { ChatLinks } from '../components/ChatLinks';
 import { useSession } from '../session/session';
 
 type CardPractice = {
@@ -122,6 +123,8 @@ export function MemberCardPage({ me }: { me: Me }) {
               </dd>
             </dl>
           </section>
+
+          <ChatLinks mode="member" userId={userId} orgId={me.current.orgId} />
 
           <section className="card" aria-labelledby="card-practices">
             <h2 id="card-practices">Pratiche</h2>

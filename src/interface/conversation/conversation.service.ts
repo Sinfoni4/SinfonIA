@@ -36,6 +36,7 @@ import {
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 
+import { ChatLinkFlow, NOT_LINKED_TEXT, type ChannelLinkPort } from './chat-link.flow.js';
 import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
@@ -89,8 +90,6 @@ export type InboundMessage = {
 };
 
 export interface ChannelIdentityProvider {
-  /** Links the sender to the tenant of an invite code; null when the code is unknown. */
-  link(inviteCode: string, senderId: string): Promise<string | null>;
   /**
    * Throws TenantNotLinkedError when the sender is not linked to any tenant, and
    * OrganizationChoiceRequiredError when they belong to several organizations.
@@ -153,6 +152,11 @@ export type ConversationDeps = {
     actor: Principal,
     channel: string,
   ) => Promise<{ taxCode: string | null; vatNumber: string | null } | null>;
+  /**
+   * AGX-10 / MF7: the verified link (/accedi with a code by email). Absent where email login is
+   * off: then nobody can link, since an organization's invite code no longer does.
+   */
+  channelLinks?: ChannelLinkPort;
   /** Defaults to process memory; production passes the database one. */
   memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
@@ -162,6 +166,8 @@ export type ChannelOptions = {
   /** Channel name, used in logs and to keep users of different channels apart. */
   name: 'telegram' | 'whatsapp';
   identity: ChannelIdentityProvider;
+  /** How the channel stores a sender id (WhatsApp: digits only); defaults to as it is. */
+  normalizeSender?: (senderId: string) => string;
   /** Largest file the channel lets the bot download (Telegram: 20 MB). */
   maxDownloadBytes?: number;
   /** Added to the reply when a compressed photo gives a read that needs review. */
@@ -268,7 +274,6 @@ export const TELEGRAM_COMPRESSED_PHOTO_TIP =
 export const VOICE_NOT_SUPPORTED =
   '🎙️ I messaggi vocali non sono ancora supportati: scrivi la richiesta come testo.';
 
-const LINK_COMMAND = /^\/?start\s+(\S+)/i;
 const SCHEDULED_EXPORT_COMMAND = /^(attiva|disattiva)\s+export\s+pianificato$/i;
 const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
 const CARD_COMMAND =
@@ -469,7 +474,24 @@ export class ConversationService {
     private readonly channel: ChannelOptions,
   ) {
     this.memory = deps.memory ?? new InMemoryConversationMemory();
+    this.linkFlow = new ChatLinkFlow(
+      deps.channelLinks,
+      channel.name === 'telegram' ? 'TELEGRAM' : 'WHATSAPP',
+      async (result) => {
+        const names = result.organizations.map((o) => o.name);
+        const first = result.organizations[0];
+        const tenant = first
+          ? await this.channel.identity.tenantFor?.(first.orgId).catch(() => null)
+          : null;
+        return (
+          `✅ Account collegato${names.length > 0 ? ` a ${names.join(', ')}` : ''}.\n\n` +
+          getModule(tenant?.module).welcome
+        );
+      },
+    );
   }
+
+  private readonly linkFlow: ChatLinkFlow;
 
   async handle(message: InboundMessage, reply: Reply): Promise<void> {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -540,18 +562,10 @@ export class ConversationService {
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
 
-    const inviteCode = LINK_COMMAND.exec(trimmed)?.[1];
-    if (inviteCode) {
-      const tenantId = await this.channel.identity.link(inviteCode, message.senderId);
-      if (!tenantId) {
-        await reply('Codice invito non valido');
-        return;
-      }
-      deps.log?.info({ tenantId, requestId, channel: this.channel.name }, 'User linked to tenant');
-      // A02: the welcome of the organization's module.
-      const linked = await this.channel.identity.tenantFor?.(tenantId).catch(() => null);
-      await reply(getModule(linked?.module).welcome);
-      return;
+    // AGX-10: /accedi, /collegamenti, /scollega and their answers, before the person is known.
+    if (!message.file) {
+      const sender = this.channel.normalizeSender?.(message.senderId) ?? message.senderId;
+      if (await this.linkFlow.handle(sender, trimmed, reply)) return;
     }
 
     const orgCommand = ORG_COMMAND.exec(trimmed);
@@ -565,9 +579,7 @@ export class ConversationService {
       }
     } catch (err: unknown) {
       if (err instanceof TenantNotLinkedError) {
-        await reply(
-          'Il tuo account non è ancora collegato a nessuna organizzazione.\nScrivi `start <codice invito>`.',
-        );
+        await reply(NOT_LINKED_TEXT);
         return;
       }
       if (!(err instanceof OrganizationChoiceRequiredError)) throw err;

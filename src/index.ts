@@ -24,6 +24,7 @@ import {
 import { ComplianceService } from './core/compliance/compliance.service.js';
 import { GrantExpiringHandler } from './core/delegation/grant-reminders.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
+import { ChannelLinkService } from './core/identity/channel-link.service.js';
 import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
 import {
@@ -230,8 +231,18 @@ async function main() {
     contextService,
     formatResponse: formatTelegramResponse,
   });
+  // MF6 and AGX-10: email login and the verified chat link share the (simulated) email sender;
+  // both exist only where email login is on, never in production until a provider exists (D11).
+  const emailSender = new SimulatedEmailSender();
+  const channelLinks = config.AUTH_EMAIL_LOGIN
+    ? new ChannelLinkService(prisma, emailSender, config.AUTH_SECRET, {
+        exposeCodes: config.AUTH_DEV_SHOW_CODE,
+        log: logger,
+      })
+    : undefined;
   const conversationDeps = {
     prisma,
+    ...(channelLinks ? { channelLinks } : {}),
     // A2: «Modifica» under a document points to the dashboard page of the documents to verify.
     ...(config.WEB_PUBLIC_URL ? { reviewUrl: `${config.WEB_PUBLIC_URL}/app/verifica` } : {}),
     scheduledExport: (orgId: string, userId: string, enabled: boolean) =>
@@ -282,13 +293,14 @@ async function main() {
     // Email login (MF6): only where enabled, never in production until a provider exists (D11).
     ...(config.AUTH_EMAIL_LOGIN
       ? {
-          login: new LoginService(prisma, new SimulatedEmailSender(), config.AUTH_SECRET, {
+          login: new LoginService(prisma, emailSender, config.AUTH_SECRET, {
             log: logger,
             exposeCodes: config.AUTH_DEV_SHOW_CODE,
             webUrl: config.WEB_PUBLIC_URL,
           }),
         }
       : {}),
+    ...(channelLinks ? { channelLinks } : {}),
     practiceService,
     complianceService,
     tracer,

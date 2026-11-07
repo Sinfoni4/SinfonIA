@@ -319,7 +319,6 @@ describeWithDb('authorization: current behaviour (characterization, not normativ
         {
           name: 'telegram',
           identity: {
-            link: () => Promise.resolve(null),
             resolve: () =>
               Promise.resolve({
                 tenant: { id: seed.tenantId } as never,

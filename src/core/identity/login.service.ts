@@ -14,6 +14,7 @@ import { isPlatformAdmin, resolvePlatformPrincipal } from '../authz/platform.js'
 
 import { revokeAllSessions } from './revocation.service.js';
 
+import type { PrismaTx } from '../../data/types/prisma.js';
 import type { EmailSender } from '../email/email.sender.js';
 import type { OrganizationType, PrismaClient, UserRole } from '@prisma/client';
 
@@ -636,56 +637,69 @@ export class LoginService {
     const challenge = await this.consumeChallenge(challengeId, code, 'INVITATION');
     if (challenge.email !== invitation.email) throw new LoginError();
 
-    const userId = await withTransaction(this.prisma, async (tx) => {
-      const accepted = await tx.invitation.updateMany({
-        where: { id: invitation.id, acceptedAt: null, revokedAt: null },
-        data: { acceptedAt: this.now() },
-      });
-      if (accepted.count !== 1) throw new InvitationError('Invito non valido o scaduto');
-      const existing = await tx.user.findMany({
-        where: { email: { equals: invitation.email, mode: 'insensitive' }, status: 'ACTIVE' },
-        select: { id: true },
-        take: 2,
-      });
-      if (existing.length > 1) {
-        throw new InvitationError("L'email appartiene a più account: serve l'amministratore");
-      }
-      let id: string;
-      if (existing.length === 1) {
-        id = existing[0].id;
-        await tx.membership.upsert({
-          where: { userId_orgId: { userId: id, orgId: invitation.orgId } },
-          create: { userId: id, orgId: invitation.orgId, role: invitation.role, invitedBy: null },
-          update: {
-            role: invitation.role,
-            status: 'ACTIVE',
-            revokedAt: null,
-            revokedBy: null,
-            revocationReason: null,
-            // B2: a custom role is built on the previous role.
-            customRoleId: null,
-          },
-        });
-      } else {
-        // New person, with the membership of the invitation (MF12 step 3).
-        const created = await new UserRepository(tx).createUser(invitation.orgId, {
-          email: invitation.email,
-          role: invitation.role,
-          emailVerifiedAt: this.now(),
-        });
-        id = created.id;
-      }
-      await tx.invitation.update({ where: { id: invitation.id }, data: { acceptedBy: id } });
-      await new AuditService(tx).logEvent({
-        tenantId: invitation.orgId,
-        userId: id,
-        eventType: 'INVITATION_ACCEPTED',
-        payload: { invitationId: invitation.id, role: invitation.role },
-      });
-      return id;
-    });
+    const userId = await withTransaction(this.prisma, (tx) =>
+      acceptInvitationIn(tx, invitation, this.now()),
+    );
     return this.openSession(userId);
   }
+}
+
+/**
+ * Accepts a valid invitation inside the caller's transaction, once the invited email is proven: a
+ * membership for the existing person with that email, otherwise a new person (MF6; AGX-10 also
+ * accepts from the chat, with the code sent to that same email). Returns the person's id.
+ */
+export async function acceptInvitationIn(
+  tx: PrismaTx,
+  invitation: { id: string; orgId: string; email: string; role: UserRole },
+  now: Date,
+): Promise<string> {
+  const accepted = await tx.invitation.updateMany({
+    where: { id: invitation.id, acceptedAt: null, revokedAt: null },
+    data: { acceptedAt: now },
+  });
+  if (accepted.count !== 1) throw new InvitationError('Invito non valido o scaduto');
+  const existing = await tx.user.findMany({
+    where: { email: { equals: invitation.email, mode: 'insensitive' }, status: 'ACTIVE' },
+    select: { id: true },
+    take: 2,
+  });
+  if (existing.length > 1) {
+    throw new InvitationError("L'email appartiene a più account: serve l'amministratore");
+  }
+  let id: string;
+  if (existing.length === 1) {
+    id = existing[0].id;
+    await tx.membership.upsert({
+      where: { userId_orgId: { userId: id, orgId: invitation.orgId } },
+      create: { userId: id, orgId: invitation.orgId, role: invitation.role, invitedBy: null },
+      update: {
+        role: invitation.role,
+        status: 'ACTIVE',
+        revokedAt: null,
+        revokedBy: null,
+        revocationReason: null,
+        // B2: a custom role is built on the previous role.
+        customRoleId: null,
+      },
+    });
+  } else {
+    // New person, with the membership of the invitation (MF12 step 3).
+    const created = await new UserRepository(tx).createUser(invitation.orgId, {
+      email: invitation.email,
+      role: invitation.role,
+      emailVerifiedAt: now,
+    });
+    id = created.id;
+  }
+  await tx.invitation.update({ where: { id: invitation.id }, data: { acceptedBy: id } });
+  await new AuditService(tx).logEvent({
+    tenantId: invitation.orgId,
+    userId: id,
+    eventType: 'INVITATION_ACCEPTED',
+    payload: { invitationId: invitation.id, role: invitation.role },
+  });
+  return id;
 }
 
 export class InvitationError extends Error {

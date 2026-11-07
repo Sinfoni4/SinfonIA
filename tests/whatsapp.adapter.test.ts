@@ -8,10 +8,13 @@ import { InterpreterService } from '../src/ai/interpreter/interpreter.service.js
 import { NormalizerService } from '../src/ai/normalization/normalizer.service.js';
 import { loadConfig } from '../src/config/config.js';
 import { COMPLIANCE_DEADLINE_REMINDER } from '../src/core/compliance/compliance.service.js';
+import { SimulatedEmailSender } from '../src/core/email/email.sender.js';
+import { ChannelLinkService } from '../src/core/identity/channel-link.service.js';
 import { ComplianceReminderHandler } from '../src/core/outbox/compliance-reminder.handler.js';
 import { DeliveryError } from '../src/core/outbox/outbox.delivery.js';
 import { provisionTenant } from '../src/core/tenant/tenant.provisioning.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
+import { UserRepository } from '../src/data/repositories/user.repository.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { attachMessageHandler } from '../src/interface/telegram/telegram.bot.js';
 import {
@@ -293,7 +296,6 @@ function fakeConversationDeps() {
   } as unknown as ConversationDeps;
 }
 const linkedIdentity: ChannelIdentityProvider = {
-  link: () => Promise.resolve(tenant.id),
   resolve: () => Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
 };
 
@@ -394,29 +396,42 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
     await prisma.$disconnect();
   });
 
-  it('links a phone number with an invite code, then knows the sender', async () => {
+  it('links a phone number with /accedi and a code by email, then knows the sender', async () => {
     const { tenantId, inviteCode } = await provisionTenant(prisma, {
       name: `t-wa-${randomUUID()}`,
     });
+    const email = `wa-${randomUUID().slice(0, 8)}@agx10.local`;
+    const user = await new UserRepository(prisma).createUser(tenantId, { email, role: 'MEMBER' });
     const phone = `39${String(Date.now()).slice(-9)}`;
     const wa = fakeWhatsAppClient();
     const deps = fakeConversationDeps();
-    const channel = new WhatsAppChannel(wa.client, { ...deps, prisma });
+    const mail = new SimulatedEmailSender();
+    const channelLinks = new ChannelLinkService(prisma, mail, 'x'.repeat(40));
+    const channel = new WhatsAppChannel(wa.client, { ...deps, prisma, channelLinks });
+    const say = (id: string, text: string) =>
+      channel.receive(webhook(textMessage(id, phone, text)));
 
-    await channel.receive(webhook(textMessage('l1', phone, 'lista pratiche')));
+    await say('l1', 'lista pratiche');
     expect(wa.sent.at(-1)).toContain('non è ancora collegato');
+    // AGX-10: the invite code of the organization no longer links.
+    await say('l2', `start ${inviteCode}`);
+    expect(wa.sent.at(-1)).toContain('/accedi');
+    await say('l3', '/accedi');
+    await say('l4', email);
+    const code = /\b(\d{6})\b/.exec(mail.lastTo(email)?.text ?? '')?.[1] ?? '';
+    await say('l5', code);
+    expect(wa.sent.at(-1)).toContain('Account collegato');
+    const identity = await prisma.channelIdentity.findFirstOrThrow({
+      where: { channel: 'WHATSAPP', externalId: phone, revokedAt: null },
+    });
+    expect(identity.userId).toBe(user.id);
 
-    await channel.receive(webhook(textMessage('l2', phone, `start ${inviteCode}`)));
-    expect(wa.sent.at(-1)).toContain('Sei stato collegato');
-    const identity = await prisma.whatsappIdentity.findFirst({ where: { phoneNumber: phone } });
-    expect(identity?.tenantId).toBe(tenantId);
-
-    await channel.receive(webhook(textMessage('l3', phone, 'lista pratiche')));
+    await say('l6', 'lista pratiche');
     expect(deps.practiceService.executeCommand).toHaveBeenCalledWith(
       { type: 'LIST_PRACTICES', payload: {} },
       {
         tenantId,
-        userId: identity!.userId,
+        userId: user.id,
         role: 'MEMBER',
         disabledFeatures: [],
         customPermissions: null,
@@ -453,19 +468,18 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
   });
 
   it('delivers deadline reminders to the admins linked on WhatsApp', async () => {
-    const { tenantId, inviteCode } = await provisionTenant(prisma, {
+    const { tenantId } = await provisionTenant(prisma, {
       name: `t-wa-rem-${randomUUID()}`,
     });
     const phone = `39${String(Date.now() + 7).slice(-9)}`;
-    const wa = fakeWhatsAppClient();
-    await new WhatsAppChannel(wa.client, { ...fakeConversationDeps(), prisma }).receive(
-      webhook(textMessage('r1', phone, `start ${inviteCode}`)),
-    );
-    // Linked users start as MEMBER: promote to ADMIN, as an administrator would.
-    const identity = await prisma.whatsappIdentity.findFirstOrThrow({
-      where: { phoneNumber: phone },
+    // An administrator whose WhatsApp number is linked (AGX-10: verified with /accedi).
+    const admin = await new UserRepository(prisma).createUser(tenantId, {
+      email: `wa-admin-${randomUUID().slice(0, 8)}@agx10.local`,
+      role: 'ADMIN',
     });
-    await prisma.user.update({ where: { id: identity.userId }, data: { role: 'ADMIN' } });
+    await prisma.channelIdentity.create({
+      data: { userId: admin.id, channel: 'WHATSAPP', externalId: phone, verifiedAt: new Date() },
+    });
 
     const sent: Array<[string, string]> = [];
     const whatsapp: ChatNotifier = {

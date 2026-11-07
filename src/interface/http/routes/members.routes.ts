@@ -19,15 +19,28 @@ import {
   reactivateMembership,
   revokeMembership,
 } from '../../../core/identity/revocation.service.js';
-import { requirePermission } from '../auth/guards.js';
+import { NotFoundError } from '../../../data/errors/errors.js';
+import { requirePermission, requirePrincipal } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
+import type { ChannelLinkService } from '../../../core/identity/channel-link.service.js';
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback } from 'fastify';
 
-export type MembersRoutesDeps = { prisma: PrismaClient; login?: LoginService };
+export type MembersRoutesDeps = {
+  prisma: PrismaClient;
+  login?: LoginService;
+  /** AGX-10: verified chat links; absent where email login is off (nobody can link there). */
+  channelLinks?: ChannelLinkService;
+};
+
+const ChannelParamsSchema = z.object({ id: z.string().uuid() });
+const MemberChannelParamsSchema = z.object({
+  userId: z.string().uuid(),
+  linkId: z.string().uuid(),
+});
 
 const MemberParamsSchema = z.object({ userId: z.string().uuid() });
 const RevokeBodySchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
@@ -234,6 +247,86 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
       return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
     }
   });
+
+  // --- AGX-10 / MF7: chat links ----------------------------------------------------------------
+
+  // One's own links (Telegram, WhatsApp), to see and revoke them from the profile.
+  app.get('/me/channels', { config: { permission: 'authenticated' } }, async (req, reply) => {
+    try {
+      const auth = requirePrincipal(req);
+      return reply.send(
+        ok({
+          links: deps.channelLinks ? await deps.channelLinks.list(auth.userId) : [],
+          linkingAvailable: Boolean(deps.channelLinks),
+        }),
+      );
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
+
+  app.post(
+    '/me/channels/:id/revoke',
+    { config: { permission: 'authenticated' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePrincipal(req);
+        const { id } = ChannelParamsSchema.parse(req.params);
+        if (!deps.channelLinks) throw new NotFoundError('Link not found');
+        await deps.channelLinks.revoke({
+          identityId: id,
+          ownerUserId: auth.userId,
+          actor: { userId: auth.userId },
+        });
+        return reply.send(ok({ revoked: true }));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  // The links of a member, for the administrators: revoking one stops the bot recognizing it.
+  app.get(
+    '/members/:userId/channels',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        const { userId } = MemberParamsSchema.parse(req.params);
+        const member = await deps.prisma.membership.count({
+          where: { userId, orgId: auth.tenantId },
+        });
+        if (member === 0) throw new NotFoundError('Member not found');
+        return reply.send(ok(deps.channelLinks ? await deps.channelLinks.list(userId) : []));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  app.post(
+    '/members/:userId/channels/:linkId/revoke',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        const { userId, linkId } = MemberChannelParamsSchema.parse(req.params);
+        if (!deps.channelLinks) throw new NotFoundError('Link not found');
+        await deps.channelLinks.revoke({
+          identityId: linkId,
+          ownerUserId: userId,
+          actor: { userId: auth.userId, orgId: auth.tenantId },
+        });
+        return reply.send(ok({ revoked: true }));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
 
   // --- B2: custom roles --------------------------------------------------------------------
 

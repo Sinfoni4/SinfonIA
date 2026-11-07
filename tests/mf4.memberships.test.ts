@@ -79,8 +79,9 @@ describe.runIf(Boolean(DATABASE_URL))('MF4 memberships', () => {
   });
 
   it('joins a second organization with the same account: a membership, not a new person', async () => {
-    const provider = createTelegramIdentityProvider(prisma);
-    expect(await provider.link(inviteB, telegramId)).toBe(tenantB.id);
+    // AGX-10: a second organization comes from an accepted invitation (the old invite code of an
+    // organization no longer links): one more membership of the same person.
+    await prisma.membership.create({ data: { userId, orgId: tenantB.id, role: 'MEMBER' } });
     // One person behind the Telegram account (MF12: the link is in channel_identity).
     const links = await prisma.channelIdentity.findMany({
       where: { channel: 'TELEGRAM', externalId: telegramId, revokedAt: null },
@@ -134,8 +135,6 @@ describe.runIf(Boolean(DATABASE_URL))('MF4 memberships', () => {
       data: { status: 'REVOKED', revokedAt: new Date() },
     });
     expect(await ask(tenantB.id)).toBeNull();
-    // A revoked membership is not reactivated by the old invite code.
-    expect(await createTelegramIdentityProvider(prisma).link(inviteB, telegramId)).toBeNull();
 
     await prisma.tenant.update({ where: { id: tenantA.id }, data: { status: 'SUSPENDED' } });
     expect(await ask(tenantA.id)).toBeNull();

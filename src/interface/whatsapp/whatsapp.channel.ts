@@ -1,10 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getTenantById } from '../../core/tenant/tenant.store.js';
-import {
-  normalizePhoneNumber,
-  WhatsappIdentityRepository,
-} from '../../data/repositories/whatsapp-identity.repository.js';
+import { normalizePhoneNumber } from '../../data/repositories/whatsapp-identity.repository.js';
 import { errorLabel } from '../../shared/errors.js';
 import { createMembershipIdentityProvider } from '../conversation/channel.identity.js';
 import { ConversationService, VOICE_NOT_SUPPORTED } from '../conversation/conversation.service.js';
@@ -104,15 +101,11 @@ export function parseWebhookPayload(payload: unknown): WhatsAppIncoming[] {
   return messages;
 }
 
-/** WhatsApp users are identified by their phone number, linked to a user with an invite code. */
+/** WhatsApp users are identified by their phone number, linked with /accedi (AGX-10). */
 export function createWhatsAppIdentityProvider(prisma: PrismaClient): ChannelIdentityProvider {
-  const identities = new WhatsappIdentityRepository(prisma);
-  const provider = createMembershipIdentityProvider(prisma, 'WHATSAPP', (tenantId, phone) =>
-    identities.ensureLinkedUser(tenantId, phone),
-  );
+  const provider = createMembershipIdentityProvider(prisma, 'WHATSAPP');
   // Numbers are stored digits only, as the Cloud API sends them.
   return {
-    link: (code, phone) => provider.link(code, normalizePhoneNumber(phone)),
     resolve: (phone) => provider.resolve(normalizePhoneNumber(phone)),
     tenantFor: (tenantId) => getTenantById(prisma, tenantId),
   };
@@ -140,6 +133,7 @@ export class WhatsAppChannel {
     this.conversation = new ConversationService(deps, {
       name: 'whatsapp',
       identity,
+      normalizeSender: normalizePhoneNumber,
       compressedPhotoTip: WHATSAPP_COMPRESSED_PHOTO_TIP,
       // AGX-01: a file waiting for an answer is downloaded again from its media id.
       downloadRef: (mediaId) => this.downloadMedia(mediaId),

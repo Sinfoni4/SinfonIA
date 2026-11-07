@@ -41,7 +41,6 @@ function chat(deps: { handleMessage?: Fake; executeCommand?: Fake }) {
     {
       name: 'telegram',
       identity: {
-        link: () => Promise.resolve(null),
         resolve: () =>
           Promise.resolve({
             tenant: { id: 't-1', name: 'Azienda' } as Tenant,
