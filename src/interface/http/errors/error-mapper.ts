@@ -20,6 +20,7 @@ import { CustomRoleError } from '../../../core/authz/custom-roles.service.js';
 import { PlatformAccessError } from '../../../core/authz/platform.js';
 import { DelegationError } from '../../../core/delegation/delegation.service.js';
 import { FeatureDisabledError } from '../../../core/features/features.js';
+import { ChannelLinkError } from '../../../core/identity/channel-link.service.js';
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
@@ -65,6 +66,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof CustomRoleError ||
     err instanceof MemberAccessError ||
     err instanceof LoginError ||
+    err instanceof ChannelLinkError ||
     err instanceof InvitationError ||
     err instanceof OrganizationSettingsError ||
     err instanceof CompanyIdentifiersError ||

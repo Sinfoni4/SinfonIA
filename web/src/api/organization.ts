@@ -75,7 +75,8 @@ export type AuditEvent = {
       | 'cleared'
       | 'taxCode'
       | 'vatNumber'
-      | 'expectedKey',
+      | 'expectedKey'
+      | 'ref',
       string | number | boolean
     >
   >;
@@ -98,6 +99,8 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'INVITATION_CREATED',
       'INVITATION_ACCEPTED',
       'INVITATION_REVOKED',
+      'CHANNEL_LINKED',
+      'CHANNEL_UNLINKED',
       'MEMBER_ADDED',
       'MEMBER_ROLE_CHANGED',
       'MEMBERSHIP_REVOKED',
@@ -187,6 +190,8 @@ const CHANNEL_LABELS: Record<string, string> = {
   api: 'API',
   telegram: 'Telegram',
   whatsapp: 'WhatsApp',
+  TELEGRAM: 'Telegram',
+  WHATSAPP: 'WhatsApp',
 };
 
 const PERIOD_LABELS: Record<string, string> = {
@@ -278,6 +283,14 @@ export function describeEvent(event: AuditEvent): string {
       return `Invito accettato come ${roleName(d.role)}`;
     case 'INVITATION_REVOKED':
       return 'Invito revocato';
+    case 'CHANNEL_LINKED':
+      return `Chat collegata con codice via email${channel}${typeof d.ref === 'string' ? ` ${d.ref}` : ''}`;
+    case 'CHANNEL_UNLINKED':
+      return d.by === 'admin'
+        ? `Chat di ${target} scollegata da un amministratore${channel}`
+        : d.by === 'replaced'
+          ? `Chat sostituita da un nuovo collegamento${channel}`
+          : `Chat scollegata${channel}`;
     case 'MEMBER_ADDED':
       return `${target} aggiunto come ${roleName(d.role)}`;
     case 'MEMBER_ROLE_CHANGED':

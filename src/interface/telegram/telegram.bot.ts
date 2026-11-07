@@ -1,4 +1,3 @@
-import { UserRepository } from '../../data/repositories/user.repository.js';
 import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
 import { createMembershipIdentityProvider } from '../conversation/channel.identity.js';
@@ -123,9 +122,7 @@ process.once('beforeExit', () => {
 
 /** Telegram users are identified by their numeric Telegram user id (channel identity). */
 export function createTelegramIdentityProvider(prisma: PrismaClient): ChannelIdentityProvider {
-  return createMembershipIdentityProvider(prisma, 'TELEGRAM', async (tenantId, telegramId) => ({
-    userId: (await new UserRepository(prisma).ensureTelegramUser(tenantId, telegramId)).id,
-  }));
+  return createMembershipIdentityProvider(prisma, 'TELEGRAM');
 }
 
 // Exported for tests, which drive it with a fake client.
@@ -166,7 +163,12 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
 
   // A pressed button is the same as writing its answer, from the person who pressed it.
   bot.on('callback_query', async (query) => {
-    if (query.from.is_bot || !query.message || !query.data) {
+    if (
+      query.from.is_bot ||
+      !query.message ||
+      !query.data ||
+      query.message.chat.type !== 'private'
+    ) {
       await bot.answerCallbackQuery(query.id);
       return;
     }
@@ -182,7 +184,8 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
   });
 
   bot.on('message', async (msg) => {
-    if (!msg.from || msg.from.is_bot) return;
+    // AGX-10 / MF7: only private chats; in a group the bot stays silent (nobody is identified there).
+    if (!msg.from || msg.from.is_bot || msg.chat.type !== 'private') return;
     const chatId = msg.chat.id;
     const reply = replyIn(chatId);
     // Without a text, a voice message would otherwise get no answer at all.

@@ -41,7 +41,6 @@ function setup(reviewRequired: boolean) {
     {
       name: 'telegram',
       identity: {
-        link: () => Promise.resolve(null),
         resolve: () =>
           Promise.resolve({ tenant, userId: 'u-1', role: 'MEMBER', customPermissions: null }),
       },

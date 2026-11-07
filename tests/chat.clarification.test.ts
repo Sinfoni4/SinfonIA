@@ -47,7 +47,6 @@ function setup(answers: Array<string | ChatAnswer>) {
     {
       name: 'telegram',
       identity: {
-        link: () => Promise.resolve(null),
         resolve: () =>
           Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
       },

@@ -280,6 +280,45 @@ describe('people (FE4)', () => {
     expect(screen.getByText('fattura.pdf')).toBeTruthy();
   });
 
+  it('lets an administrator revoke the chat linked to a member (AGX-10)', async () => {
+    const GIULIA = 'u0000000-0000-4000-8000-000000000002';
+    const LINK = 'c0000000-0000-4000-8000-000000000009';
+    api('ADMIN', {
+      [`GET /members/${GIULIA}`]: () =>
+        ok({
+          userId: GIULIA,
+          email: 'giulia@coop.it',
+          role: 'MEMBER',
+          customRole: null,
+          status: 'ACTIVE',
+          since: '2026-09-01T10:00:00.000Z',
+          practices: { total: 0, open: 0, items: [] },
+          assigned: [],
+          deadlines: [],
+          documents: { total: 0, toReview: 0, items: [] },
+        }),
+      [`GET /members/${GIULIA}/channels`]: () =>
+        ok([
+          {
+            id: LINK,
+            channel: 'TELEGRAM',
+            ref: '…123',
+            linkedAt: '2026-11-07T10:00:00.000Z',
+            verified: true,
+            lastUsedAt: null,
+          },
+        ]),
+      [`POST /members/${GIULIA}/channels/${LINK}/revoke`]: () => ok({ revoked: true }),
+    });
+    openAt(`/persone/${GIULIA}`);
+    expect(await screen.findByText(/Telegram …123, dal/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Scollega' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Sì, scollega' }));
+    await waitFor(() =>
+      expect(posted(`/members/${GIULIA}/channels/${LINK}/revoke`)).toHaveLength(1),
+    );
+  });
+
   it('revokes with an optional reason and explains the last-admin refusal', async () => {
     api('ADMIN', {
       'POST /members/u0000000-0000-4000-8000-000000000002/revoke': () => failure(409, 'LAST_ADMIN'),
