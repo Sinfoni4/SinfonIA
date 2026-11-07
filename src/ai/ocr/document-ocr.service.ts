@@ -92,6 +92,7 @@ export class DocumentOcrService {
       extraction: {
         source: extraction.source,
         pages: extraction.pages,
+        ...(extraction.ocrPages !== undefined ? { ocrPages: extraction.ocrPages } : {}),
         confidence:
           typeof extraction.confidence === 'number'
             ? Math.round(extraction.confidence * 10) / 10

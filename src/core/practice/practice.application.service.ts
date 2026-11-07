@@ -10,6 +10,7 @@ import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { authorize, scopedUserId, type Principal } from '../authz/authorization.service.js';
 import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/attachment.errors.js';
+import { attachmentUsage, recordUsage } from '../usage/usage.service.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
 import { requireExpectedKey } from './document-checklist.js';
@@ -226,6 +227,8 @@ export class PracticeApplicationService {
      * the audit as the creator; the practice still belongs to `userId`.
      */
     actorUserId?: string;
+    /** AGX-07: the organization that acts through a delegation, for the usage events. */
+    actorOrgId?: string;
   }): Promise<PracticeView> {
     const name = input.name.trim();
     if (!name) throw new NotFoundError('Practice name is required');
@@ -247,6 +250,7 @@ export class PracticeApplicationService {
       metadata: fields ? { ...metadata, fields } : metadata,
       holderUserId: input.holderUserId,
       actorUserId: input.actorUserId,
+      actorOrgId: input.actorOrgId,
     });
     return toView(dto);
   }
@@ -256,12 +260,15 @@ export class PracticeApplicationService {
     userId: string;
     practiceId: string;
     nextState: PracticeState;
+    /** AGX-07: the organization that acts through a delegation, for the usage events. */
+    actorOrgId?: string;
   }): Promise<PracticeView> {
     const dto = await this.workflow.transitionPractice({
       tenantId: input.tenantId,
       userId: input.userId,
       practiceId: input.practiceId,
       nextState: input.nextState,
+      actorOrgId: input.actorOrgId,
     });
     return toView(dto);
   }
@@ -387,6 +394,8 @@ export class PracticeApplicationService {
     expectedKey?: string | null;
     /** AGX-06: the open request this file answers; otherwise matched when unambiguous. */
     requestId?: string;
+    /** AGX-07: the organization that sends it through a delegation, for the usage events. */
+    actorOrgId?: string;
   }): Promise<{
     attachment: PracticeAttachmentDTO;
     practice: PracticeView;
@@ -463,20 +472,34 @@ export class PracticeApplicationService {
       throw err;
     }
 
-    // AGX-01: every file received leaves a trace, without its name or content.
+    // AGX-01: every file received leaves a trace, without its name or content. AGX-07: with its
+    // usage (the document, and the pages read with OCR), in the same transaction.
+    const usage = attachmentUsage(attachment.id, ocrResult);
     try {
-      await new AuditService(this.prisma).logEvent({
-        tenantId: input.tenantId,
-        userId: input.userId,
-        eventType: 'ATTACHMENT_ADDED',
-        payload: {
-          practiceId: input.practiceId,
-          attachmentId: attachment.id,
-          ocrStatus,
-          documentType: ocrResult?.documentType ?? null,
-          channel: input.channel ?? null,
-          duplicateOf: duplicateOf?.attachmentId ?? null,
-        },
+      await withTransaction(this.prisma, async (tx) => {
+        await new AuditService(tx).logEvent({
+          tenantId: input.tenantId,
+          userId: input.userId,
+          eventType: 'ATTACHMENT_ADDED',
+          payload: {
+            practiceId: input.practiceId,
+            attachmentId: attachment.id,
+            ocrStatus,
+            documentType: ocrResult?.documentType ?? null,
+            channel: input.channel ?? null,
+            duplicateOf: duplicateOf?.attachmentId ?? null,
+          },
+        });
+        await recordUsage(
+          tx,
+          usage.map((u) => ({
+            ...u,
+            tenantId: input.tenantId,
+            actorOrgId: input.actorOrgId,
+            userId: input.userId,
+            practiceId: input.practiceId,
+          })),
+        );
       });
     } catch (err: unknown) {
       // A file without its trace is not kept: the person sends it again.

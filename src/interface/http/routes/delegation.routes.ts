@@ -335,12 +335,13 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
       try {
         const { id, practiceId } = PracticeParamsSchema.parse(req.params);
         const body = PracticeTransitionBodySchema.parse(req.body);
-        const { access: a, userId } = await access(req, id, 'UPDATE');
+        const { access: a, userId, orgId } = await access(req, id, 'UPDATE');
         const practice = await deps.practiceService.transitionPractice({
           tenantId: a.grantorOrgId,
           userId,
           practiceId,
           nextState: body.nextState,
+          actorOrgId: orgId,
         });
         await auditDelegatedUse(deps.prisma, a, userId, 'transition', {
           practiceId,
@@ -359,12 +360,13 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
     try {
       const { id } = IdSchema.parse(req.params);
       const body = DelegatedCreateBodySchema.parse(req.body);
-      const { access: a, userId } = await access(req, id, 'CREATE');
+      const { access: a, userId, orgId } = await access(req, id, 'CREATE');
       const owner = await delegatedPracticeOwner(deps.prisma, a);
       const practice = await deps.practiceService.createPractice({
         tenantId: a.grantorOrgId,
         userId: owner,
         actorUserId: userId,
+        actorOrgId: orgId,
         name: body.name,
         kind: body.kind,
         fields: body.fields,
@@ -416,7 +418,7 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
         const { id, practiceId } = PracticeParamsSchema.parse(req.params);
         const { allowDuplicate } = PracticeAttachmentQuerySchema.parse(req.query);
         // The delegation is checked before the file is read.
-        const { access: a, userId } = await access(req, id, 'UPDATE');
+        const { access: a, userId, orgId } = await access(req, id, 'UPDATE');
         const upload = await readAttachmentUpload(req);
         const result = await deps.practiceService.addAttachment({
           tenantId: a.grantorOrgId,
@@ -426,6 +428,7 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
           allowDuplicate,
           channel: 'delegation',
           delegated: true,
+          actorOrgId: orgId,
         });
         await auditDelegatedUse(deps.prisma, a, userId, 'upload', {
           practiceId,

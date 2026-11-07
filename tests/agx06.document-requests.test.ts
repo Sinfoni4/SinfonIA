@@ -2,7 +2,7 @@
  * AGX-06: requests for documents (integration), in both directions, along the critical path §H:
  * farmer → chat → document → TerreFVG dashboard (through a delegation) → check → request for a
  * missing document → the farmer hears it in chat and answers with the file → who asked hears it →
- * check → closure → the farmer is told. Consumption (AGX-07) is not part of it yet.
+ * check → closure → the farmer is told → the usage of each step is recorded (AGX-07).
  */
 import { randomUUID } from 'node:crypto';
 
@@ -383,6 +383,23 @@ describe.runIf(Boolean(DATABASE_URL))('document requests along the path §H (AGX
       (await call('POST', delegated('/document-requests'), operator(), { message: 'Ancora una' }))
         .statusCode,
     ).toBe(409);
+  });
+
+  it('5. every step left its usage, the network’s ones with the network as actor (AGX-07)', async () => {
+    const usage = await prisma.usageEvent.findMany({
+      where: { practiceId },
+      orderBy: { createdAt: 'asc' },
+      select: { kind: true, actorOrgId: true },
+    });
+    expect(usage).toEqual([
+      // Opened by the company for the farmer.
+      { kind: 'PRACTICE_OPENED', actorOrgId: null },
+      // The farm file and the identity document, both sent by the farmer in chat.
+      { kind: 'DOCUMENT_RECEIVED', actorOrgId: null },
+      { kind: 'DOCUMENT_REQUESTED', actorOrgId: org.network },
+      { kind: 'DOCUMENT_RECEIVED', actorOrgId: null },
+      { kind: 'PRACTICE_COMPLETED', actorOrgId: org.network },
+    ]);
   });
 
   it('leaves a file unmatched when several requests could fit, for staff to link', async () => {

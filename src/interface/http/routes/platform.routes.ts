@@ -14,9 +14,17 @@ import {
   setOrganizationModules,
   setOrganizationSuspended,
 } from '../../../core/platform/platform.service.js';
+import {
+  platformUsage,
+  reverseUsageEvent,
+  type UsageRates,
+} from '../../../core/usage/usage.service.js';
+import { AuditService } from '../../../data/services/audit.service.js';
 import { requirePlatform } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
+
+import { StatsQuerySchema } from './network.routes.js';
 
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
@@ -31,6 +39,8 @@ export type PlatformRoutesDeps = {
   services?: ConfiguredServices;
   /** Attachment folder and backup folder, for the system health (never shown). */
   locations?: HealthLocations;
+  /** AGX-07: euro per unit of usage (USAGE_RATES), for the internal cost. */
+  usageRates?: UsageRates;
 };
 
 const NO_SERVICES: ConfiguredServices = {
@@ -86,6 +96,8 @@ const CreateBodySchema = z
   .strict();
 
 const IdParamsSchema = z.object({ id: z.string().uuid() });
+
+const ReverseBodySchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
 
 const SuspendBodySchema = z
   .object({
@@ -290,6 +302,57 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       requirePlatform(req);
       const { days } = UsageQuerySchema.parse(req.query);
       return reply.send(ok(await aiUsage(deps.prisma, days)));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-07: usage of every organization in a fixed period, with the internal cost.
+  app.get('/platform/usage', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await platformUsage(deps.prisma, {
+            kind: query.period,
+            previous: query.previous,
+            rates: deps.usageRates ?? {},
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-07: a wrong event is reversed by a new one, with the reason; both logs record it.
+  app.post('/platform/usage/:id/reverse', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = ReverseBodySchema.parse(req.body);
+      const reversal = await reverseUsageEvent(
+        deps.prisma,
+        { eventId: id, reason: body.reason, actorUserId: userId },
+        async (tx, event) => {
+          await tx.platformAuditLog.create({
+            data: {
+              actorUserId: userId,
+              action: 'USAGE_EVENT_REVERSED',
+              orgId: event.tenantId,
+              payload: { eventId: id, reversalId: event.reversalId, reason: body.reason },
+            },
+          });
+          await new AuditService(tx).logEvent({
+            tenantId: event.tenantId,
+            userId: null,
+            eventType: 'USAGE_EVENT_REVERSED',
+            payload: { byPlatform: true, eventId: id, reversalId: event.reversalId },
+          });
+        },
+      );
+      return reply.status(201).send(ok(reversal));
     } catch (err: unknown) {
       return sendError(reply, err);
     }

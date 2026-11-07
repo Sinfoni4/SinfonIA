@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 
 import { resolvePlatformPrincipal } from '../../core/authz/platform.js';
+import { parseUsageRates } from '../../core/usage/usage.service.js';
 import { runtimeState } from '../../runtime/runtime.state.js';
 
 import { createAuthHook, isPublicPath } from './auth/auth.hook.js';
@@ -234,6 +235,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
           backupDir: config.BACKUP_DIR ? path.resolve(config.BACKUP_DIR) : null,
           databaseName: databaseNameOf(config.DATABASE_URL),
         },
+        usageRates: parseUsageRates(config.USAGE_RATES),
       });
     }
   }

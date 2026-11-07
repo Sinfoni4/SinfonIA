@@ -40,6 +40,7 @@ import { DocumentRequestError } from '../../../core/practice/document-request.js
 import { AssignmentError } from '../../../core/practice/practice-assignment.js';
 import { HolderError } from '../../../core/practice/practice-holder.js';
 import { PracticeModuleError } from '../../../core/practice/practice-module.js';
+import { UsageReversalError } from '../../../core/usage/usage.service.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -75,6 +76,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof HolderError ||
     err instanceof RejectionError ||
     err instanceof DocumentRequestError ||
+    err instanceof UsageReversalError ||
     err instanceof PracticeModuleError ||
     err instanceof NetworkError ||
     err instanceof DelegationError

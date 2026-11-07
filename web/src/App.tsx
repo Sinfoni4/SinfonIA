@@ -25,6 +25,7 @@ import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { OrganizationUsagePage } from './pages/UsagePages';
 import { useSession } from './session/session';
 
 /** The pages follow the session: login, choice of the organization, then the dashboard. */
@@ -73,6 +74,7 @@ export function App() {
         <Route path="persone/:userId" element={<MemberCardPage me={me} />} />
         <Route path="attivita" element={<ActivityPage me={me} />} />
         <Route path="attivita/assistente" element={<AssistantUsagePage me={me} />} />
+        <Route path="attivita/consumi" element={<OrganizationUsagePage me={me} />} />
         <Route path="impostazioni" element={<SettingsPage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

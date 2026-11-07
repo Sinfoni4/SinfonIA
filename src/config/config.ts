@@ -76,6 +76,9 @@ const ConfigSchema = z
     STORAGE_LOCAL_DIR: z.string().min(1).optional(),
     // Folder of the encrypted backups (npm run db:backup): the console shows the last one.
     BACKUP_DIR: z.string().min(1).optional(),
+    // AGX-07: euro per unit of usage, JSON (e.g. {"OCR_PAGES":0.002}); only for the internal cost
+    // shown in the platform console. Checked at start: a wrong value stops it.
+    USAGE_RATES: unsetIfEmpty(z.string().optional()),
     S3_BUCKET: z.string().min(1).optional(),
     // Default region: Milan, to keep attachments inside the EU.
     S3_REGION: z.string().min(1).default('eu-south-1'),

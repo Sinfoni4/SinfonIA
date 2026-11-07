@@ -41,6 +41,7 @@ import { formatDate } from '../api/practices';
 import { useSession } from '../session/session';
 
 import { AiUsagePage, HealthPage } from './PlatformHealthPages';
+import { PlatformUsagePage } from './UsagePages';
 
 /**
  * FE7: the platform console (docs/PROGETTO_FRONTEND_V2.md §5): organizations, new organization,
@@ -56,6 +57,7 @@ export function PlatformApp({ admin }: { admin: PlatformAdmin }) {
         <Route path="piattaforma/registro" element={<AuditPage />} />
         <Route path="piattaforma/salute" element={<HealthPage />} />
         <Route path="piattaforma/consumi-ia" element={<AiUsagePage />} />
+        <Route path="piattaforma/consumi" element={<PlatformUsagePage />} />
         <Route path="*" element={<Navigate to="/piattaforma" replace />} />
       </Route>
     </Routes>
@@ -92,6 +94,7 @@ function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
           <NavLink to="/piattaforma/registro">Registro</NavLink>
           <NavLink to="/piattaforma/salute">Salute</NavLink>
           <NavLink to="/piattaforma/consumi-ia">Consumi IA</NavLink>
+          <NavLink to="/piattaforma/consumi">Consumi</NavLink>
         </nav>
         <nav aria-label="Account">
           {admin.organizations.length > 0 && (
