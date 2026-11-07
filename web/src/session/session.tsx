@@ -46,6 +46,11 @@ type Session = {
   startInvitation: (token: string) => Promise<{ challengeId: string; devCode?: string }>;
   /** P9: accepts the invitation with the code and opens the session, like a login. */
   acceptInvitation: (token: string, challengeId: string, code: string) => Promise<void>;
+  /**
+   * Telegram Mini App: opens the session of the person whose Telegram account is linked, with the
+   * data Telegram signed when it opened the app.
+   */
+  telegramLogin: (initData: string) => Promise<void>;
   enter: (orgId: string) => Promise<void>;
   /** FE7: the platform console, with its own token (G1). */
   enterPlatform: () => Promise<void>;
@@ -66,6 +71,22 @@ const SessionContext = createContext<Session | null>(null);
 const LAST_ORG = 'sinfonia.lastOrganization';
 /** Where the tokens are for, instead of an organization id: the platform console. */
 const PLATFORM = 'platform';
+
+/**
+ * Telegram Mini App: the signed data of the opening, from the address Telegram opens
+ * (`#tgWebAppData=…`), or from its script when present. Removed from the address once read.
+ */
+export function telegramInitData(): string | null {
+  const fromScript = (window as unknown as { Telegram?: { WebApp?: { initData?: string } } })
+    .Telegram?.WebApp?.initData;
+  if (fromScript) return fromScript;
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+  const data = new URLSearchParams(hash).get('tgWebAppData');
+  if (data) {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  return data;
+}
 
 // Storage can be missing or blocked (private windows): the session works without it.
 function rememberOrg(orgId: string | null) {
@@ -208,6 +229,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Once per page, also under React's development double effects.
     if (started.current) return;
     started.current = true;
+    // Telegram Mini App: a new opening logs in again, whatever was remembered.
+    const initData = window.location.pathname.startsWith('/app/tg') ? telegramInitData() : null;
+    if (initData) {
+      request<{ organizations: Organization[]; platform?: boolean }>('/auth/telegram-webapp', {
+        method: 'POST',
+        body: { initData },
+      })
+        .then((session) => openedRef.current(session))
+        .catch(() =>
+          setState({
+            status: 'anonymous',
+            notice:
+              'Questo account Telegram non è ancora collegato a SinfonIA: scrivi /accedi al bot.',
+          }),
+        );
+      return;
+    }
     const org = lastOrg();
     if (!org) {
       setState({ status: 'anonymous' });
@@ -250,6 +288,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     },
     [enter, enterPlatform],
+  );
+
+  // The startup effect runs before `opened` exists: it calls the latest one through a ref.
+  const openedRef = useRef(opened);
+  openedRef.current = opened;
+
+  const telegramLogin = useCallback(
+    async (initData: string) =>
+      opened(
+        await request<{ organizations: Organization[]; platform?: boolean }>(
+          '/auth/telegram-webapp',
+          { method: 'POST', body: { initData } },
+        ),
+      ),
+    [opened],
   );
 
   const leavePlatform = useCallback(async () => {
@@ -319,6 +372,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       verifyLogin,
       startInvitation,
       acceptInvitation,
+      telegramLogin,
       enter,
       enterPlatform,
       leavePlatform,
@@ -334,6 +388,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       verifyLogin,
       startInvitation,
       acceptInvitation,
+      telegramLogin,
       enter,
       enterPlatform,
       leavePlatform,

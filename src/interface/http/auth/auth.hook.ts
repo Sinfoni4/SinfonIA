@@ -25,6 +25,9 @@ export const PUBLIC_PATHS = new Set([
   '/auth/logout',
   '/auth/invitations/start',
   '/auth/invitations/accept',
+  // Telegram Mini App: the opening is signed by Telegram; the dev route exists only in development.
+  '/auth/telegram-webapp',
+  '/auth/telegram-webapp/dev',
 ]);
 
 /**
