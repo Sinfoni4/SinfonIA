@@ -70,6 +70,13 @@ export function formatAttachmentResult(
   ocrStatus: string,
   ocrResult: DocumentOcrResult | undefined,
 ): string {
+  // AGX-08: the first read failed; it is tried again in the background and the person is told.
+  if (ocrStatus === 'PENDING') {
+    return (
+      '✅ Documento salvato sulla pratica.\n' +
+      '⏳ Non sono riuscito a leggerlo subito: riprovo tra poco e ti scrivo come è andata.'
+    );
+  }
   if (!ocrResult || ocrStatus === 'FAILED') {
     return '✅ Documento salvato sulla pratica.\n⚠️ Non è stato possibile leggerne il contenuto: verrà controllato manualmente.';
   }
