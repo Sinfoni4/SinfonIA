@@ -6,7 +6,7 @@ import {
   practiceReach,
   scopedUserId,
 } from '../../../core/authz/authorization.service.js';
-import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
+import { DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
 import { listHolderCandidates, setPracticeHolder } from '../../../core/practice/practice-holder.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
@@ -17,7 +17,6 @@ import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
   PracticeAssignBodySchema,
-  PracticeAttachmentBodySchema,
   PracticeAttachmentParamsSchema,
   PracticeAttachmentQuerySchema,
   PracticeCreateBodySchema,
@@ -30,9 +29,11 @@ import {
   PracticeTransitionParamsSchema,
 } from '../validation/practice.validation.js';
 
+import { attachmentBodyLimit, readAttachmentUpload } from './attachment-upload.js';
+
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 
 const AttachmentDownloadParamsSchema = z.object({
   id: z.string().uuid(),
@@ -45,48 +46,6 @@ export type PracticeRoutesDeps = {
   /** A4: assignment of practices; without a database the routes are not registered. */
   prisma?: PrismaClient;
 };
-
-type AttachmentUpload = { fileName: string; mimeType: string; content: Buffer; hint?: string };
-
-// Room for the JSON envelope around the base64 content (file name, MIME type, hint).
-const BASE64_ENVELOPE_BYTES = 64 * 1024;
-
-function readBase64Upload(body: unknown): AttachmentUpload {
-  const parsed = PracticeAttachmentBodySchema.parse(body);
-  return {
-    fileName: parsed.fileName,
-    mimeType: parsed.mimeType,
-    content: Buffer.from(parsed.contentBase64, 'base64'),
-    hint: parsed.hint,
-  };
-}
-
-// Reads every part, so the optional "hint" field is accepted before or after the file.
-async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUpload> {
-  let file: Omit<AttachmentUpload, 'hint'> | undefined;
-  let hint: string | undefined;
-  try {
-    for await (const part of req.parts()) {
-      if (part.type === 'file') {
-        const content = await part.toBuffer();
-        if (part.fieldname === 'file') {
-          file = { fileName: part.filename, mimeType: part.mimetype, content };
-        }
-      } else if (part.fieldname === 'hint') {
-        hint = String(part.value);
-      }
-    }
-  } catch (err: unknown) {
-    if ((err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
-      throw new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'The attached file is too large');
-    }
-    throw err;
-  }
-  if (!file) {
-    throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
-  }
-  return { ...file, hint };
-}
 
 export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, deps, done) => {
   const maxAttachmentBytes = deps.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
@@ -357,7 +316,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   app.post(
     '/practices/:id/attachments',
     {
-      bodyLimit: Math.ceil((maxAttachmentBytes * 4) / 3) + BASE64_ENVELOPE_BYTES,
+      bodyLimit: attachmentBodyLimit(maxAttachmentBytes),
       config: { permission: 'attachment.create' },
     },
     async (req, reply) => {
@@ -366,9 +325,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         const auth = requirePermission(req, 'attachment.create').principal;
         const params = PracticeAttachmentParamsSchema.parse(req.params);
         const { allowDuplicate } = PracticeAttachmentQuerySchema.parse(req.query);
-        const upload = req.isMultipart()
-          ? await readMultipartUpload(req)
-          : readBase64Upload(req.body);
+        const upload = await readAttachmentUpload(req);
 
         const result = await deps.practiceService.addAttachment({
           tenantId: auth.tenantId,

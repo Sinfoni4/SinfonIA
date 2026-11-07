@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   auditDelegatedUse,
+  delegatedPracticeOwner,
   issueGrant,
   listIssuedGrants,
   listReceivedGrants,
@@ -11,15 +12,25 @@ import {
   revokeGrant,
   setBeneficiary,
 } from '../../../core/delegation/delegation.service.js';
+import { validateAttachment } from '../../../core/practice/attachment-validation.js';
+import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
+import { deadlineCategoriesOf } from '../../../modules/registry.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  PracticeAttachmentQuerySchema,
+  PracticeCreateBodySchema,
   PracticeExportBodySchema,
   PracticeListQuerySchema,
+  PracticeSubStateBodySchema,
   PracticeTransitionBodySchema,
 } from '../validation/practice.validation.js';
 
+import { ValidationBodySchema } from './attachment-review.routes.js';
+import { attachmentBodyLimit, readAttachmentUpload } from './attachment-upload.js';
+
+import type { DelegatedAccess } from '../../../core/delegation/delegation.service.js';
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
@@ -48,9 +59,34 @@ const IssueBodySchema = z
   .strict();
 const IdSchema = z.object({ id: z.string().uuid() });
 const PracticeParamsSchema = z.object({ id: z.string().uuid(), practiceId: z.string().uuid() });
+const AttachmentParamsSchema = PracticeParamsSchema.extend({ attachmentId: z.string().uuid() });
+/** AGX-04: a practice opened through a delegation: name, kind and fields, never an owner. */
+const DelegatedCreateBodySchema = PracticeCreateBodySchema.pick({
+  name: true,
+  kind: true,
+  fields: true,
+}).strict();
 const RenewBodySchema = z.object({ validUntil: DateSchema }).strict();
 const RevokeBodySchema = z.object({ reason: z.string().max(500).optional() }).strict();
 const PersonBodySchema = z.object({ userId: z.string().uuid() }).strict();
+
+/** What the dashboard shows of a delegation while working through it. */
+function delegationView(a: DelegatedAccess) {
+  return { grantorName: a.grantorName, operations: a.operations, validUntil: a.validUntil };
+}
+
+/** AGX-04: the kinds, fields and steps of the grantor's module, for creating and updating. */
+async function moduleView(prisma: PrismaClient, orgId: string) {
+  const module = await moduleOfTenant(prisma, orgId);
+  return {
+    id: module.id,
+    label: module.label,
+    description: module.description,
+    defaultKind: module.defaultKind,
+    practiceTypes: module.practiceTypes,
+    deadlineCategories: deadlineCategoriesOf(module),
+  };
+}
 
 function sendError(reply: FastifyReply, err: unknown) {
   const mapped = mapErrorToHttp(err);
@@ -196,7 +232,7 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
   const access = (
     req: Parameters<typeof requirePermission>[0],
     grantId: string,
-    operation: 'READ' | 'UPDATE' | 'EXPORT',
+    operation: 'READ' | 'CREATE' | 'UPDATE' | 'EXPORT',
   ) => {
     const grant = requirePermission(req, 'grant.use');
     return resolveDelegatedAccess(deps.prisma, {
@@ -225,11 +261,8 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
       return reply.send(
         ok({
           ...result,
-          delegation: {
-            grantorName: a.grantorName,
-            operations: a.operations,
-            validUntil: a.validUntil,
-          },
+          delegation: delegationView(a),
+          module: await moduleView(deps.prisma, a.grantorOrgId),
         }),
       );
     } catch (err: unknown) {
@@ -253,7 +286,14 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
           practiceId,
         });
         await auditDelegatedUse(deps.prisma, a, userId, 'read', { practiceId });
-        return reply.send(ok({ ...practice, attachments }));
+        return reply.send(
+          ok({
+            ...practice,
+            attachments,
+            delegation: delegationView(a),
+            module: await moduleView(deps.prisma, a.grantorOrgId),
+          }),
+        );
       } catch (err: unknown) {
         return sendError(reply, err);
       }
@@ -279,6 +319,139 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
           to: body.nextState,
         });
         return reply.send(ok(practice));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // AGX-04: opens a practice for the grantor. It belongs to whoever issued the delegation (or an
+  // administrator of the grantor); the person who acted is recorded in both audit events.
+  app.post('/grants/:id/practices', { config: { permission: 'grant.use' } }, async (req, reply) => {
+    try {
+      const { id } = IdSchema.parse(req.params);
+      const body = DelegatedCreateBodySchema.parse(req.body);
+      const { access: a, userId } = await access(req, id, 'CREATE');
+      const owner = await delegatedPracticeOwner(deps.prisma, a);
+      const practice = await deps.practiceService.createPractice({
+        tenantId: a.grantorOrgId,
+        userId: owner,
+        actorUserId: userId,
+        name: body.name,
+        kind: body.kind,
+        fields: body.fields,
+      });
+      await auditDelegatedUse(deps.prisma, a, userId, 'create', { practiceId: practice.id });
+      return reply.status(201).send(ok(practice));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.get(
+    '/grants/:id/practices/:practiceId/attachments/:attachmentId/download',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id, practiceId, attachmentId } = AttachmentParamsSchema.parse(req.params);
+        const { access: a, userId } = await access(req, id, 'READ');
+        const file = await deps.practiceService.downloadAttachment({
+          tenantId: a.grantorOrgId,
+          practiceId,
+          attachmentId,
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'download', { practiceId, attachmentId });
+        // Same headers as the download of one's own documents: never cached, never rendered.
+        return reply
+          .header('cache-control', 'no-store')
+          .header('x-content-type-options', 'nosniff')
+          .header(
+            'content-disposition',
+            `attachment; filename="${file.fileName.replace(/[^\w.-]/g, '_')}"`,
+          )
+          .type(file.mimeType)
+          .send(file.content);
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    '/grants/:id/practices/:practiceId/attachments',
+    {
+      bodyLimit: attachmentBodyLimit(deps.practiceService.getMaxAttachmentBytes()),
+      config: { permission: 'grant.use' },
+    },
+    async (req, reply) => {
+      try {
+        const { id, practiceId } = PracticeParamsSchema.parse(req.params);
+        const { allowDuplicate } = PracticeAttachmentQuerySchema.parse(req.query);
+        // The delegation is checked before the file is read.
+        const { access: a, userId } = await access(req, id, 'UPDATE');
+        const upload = await readAttachmentUpload(req);
+        const result = await deps.practiceService.addAttachment({
+          tenantId: a.grantorOrgId,
+          userId,
+          practiceId,
+          ...upload,
+          allowDuplicate,
+          channel: 'delegation',
+          delegated: true,
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'upload', {
+          practiceId,
+          attachmentId: result.attachment.id,
+        });
+        return reply.status(201).send(ok(result));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    '/grants/:id/practices/:practiceId/attachments/:attachmentId/validation',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id, practiceId, attachmentId } = AttachmentParamsSchema.parse(req.params);
+        const body = ValidationBodySchema.parse(req.body);
+        const { access: a, userId } = await access(req, id, 'UPDATE');
+        const result = await validateAttachment(deps.prisma, {
+          tenantId: a.grantorOrgId,
+          practiceId,
+          attachmentId,
+          actorUserId: userId,
+          data: body,
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'validation', {
+          practiceId,
+          attachmentId,
+        });
+        return reply.send(ok(result));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    '/grants/:id/practices/:practiceId/sub-state',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id, practiceId } = PracticeParamsSchema.parse(req.params);
+        const body = PracticeSubStateBodySchema.parse(req.body);
+        const { access: a, userId } = await access(req, id, 'UPDATE');
+        const result = await setPracticeSubState(deps.prisma, {
+          tenantId: a.grantorOrgId,
+          practiceId,
+          subState: body.subState,
+          actorUserId: userId,
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'sub_state', { practiceId });
+        return reply.send(ok(result));
       } catch (err: unknown) {
         return sendError(reply, err);
       }

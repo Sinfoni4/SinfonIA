@@ -209,6 +209,11 @@ const DELEGATED_ACTIONS: Record<string, string> = {
   read: 'dettaglio di una pratica',
   transition: 'cambio di stato',
   export: 'export',
+  create: 'nuova pratica',
+  download: 'download di un documento',
+  upload: 'caricamento di un documento',
+  validation: 'verifica dei dati di un documento',
+  sub_state: 'cambio di fase',
 };
 
 const TOPIC_LABELS: Record<string, string> = {

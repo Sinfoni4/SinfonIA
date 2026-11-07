@@ -270,13 +270,24 @@ export function PracticeDetailPage({ me }: { me: Me }) {
   );
 }
 
-function AttachmentItem({
+/**
+ * One document of a practice: download, data read or confirmed, and their check. AGX-04: also
+ * used through a delegation, with its own base path, and without the check when not allowed.
+ */
+export function AttachmentItem({
   practiceId,
   attachment,
+  basePath,
+  refreshKey,
+  canValidate = true,
 }: {
   practiceId: string;
   attachment: Attachment;
+  basePath?: string;
+  refreshKey?: readonly unknown[];
+  canValidate?: boolean;
 }) {
+  const base = basePath ?? `/practices/${practiceId}`;
   const { download } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
@@ -288,9 +299,7 @@ function AttachmentItem({
   const save = async () => {
     setError(null);
     try {
-      const { blob, fileName } = await download(
-        `/practices/${practiceId}/attachments/${attachment.id}/download`,
-      );
+      const { blob, fileName } = await download(`${base}/attachments/${attachment.id}/download`);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -355,17 +364,20 @@ function AttachmentItem({
           )}
         </details>
       )}
-      {(attachment.ocrStatus === 'COMPLETED' || attachment.ocrStatus === 'FAILED') && (
-        <button type="button" className="link" onClick={() => setVerifying((v) => !v)}>
-          {verifying ? 'Chiudi' : confirmed ? 'Correggi i dati' : 'Verifica i dati'}
-        </button>
-      )}
+      {canValidate &&
+        (attachment.ocrStatus === 'COMPLETED' || attachment.ocrStatus === 'FAILED') && (
+          <button type="button" className="link" onClick={() => setVerifying((v) => !v)}>
+            {verifying ? 'Chiudi' : confirmed ? 'Correggi i dati' : 'Verifica i dati'}
+          </button>
+        )}
       {verifying && (
         <ValidationForm
           practiceId={practiceId}
           attachmentId={attachment.id}
           documentType={known.documentType}
           known={known.fields}
+          basePath={basePath}
+          refreshKey={refreshKey}
           onDone={() => setVerifying(false)}
         />
       )}
@@ -400,7 +412,16 @@ function readValues(attachment: Attachment): {
   return { documentType, fields };
 }
 
-function UploadForm({ practiceId }: { practiceId: string }) {
+/** Upload of a document. AGX-04: also through a delegation, with its own base path. */
+export function UploadForm({
+  practiceId,
+  basePath,
+  refreshKey,
+}: {
+  practiceId: string;
+  basePath?: string;
+  refreshKey?: readonly unknown[];
+}) {
   const { api } = useSession();
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
@@ -415,13 +436,16 @@ function UploadForm({ practiceId }: { practiceId: string }) {
       if (hint.trim()) form.append('hint', hint.trim());
       form.append('file', file);
       const query = allowDuplicate ? '?allowDuplicate=true' : '';
-      return api(`/practices/${practiceId}/attachments${query}`, { method: 'POST', form });
+      return api(`${basePath ?? `/practices/${practiceId}`}/attachments${query}`, {
+        method: 'POST',
+        form,
+      });
     },
     onSuccess: async () => {
       setHint('');
       setFile(null);
       if (input.current) input.current.value = '';
-      await queryClient.invalidateQueries({ queryKey: ['attachments', practiceId] });
+      await queryClient.invalidateQueries({ queryKey: refreshKey ?? ['attachments', practiceId] });
     },
   });
 

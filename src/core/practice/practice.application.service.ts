@@ -215,6 +215,11 @@ export class PracticeApplicationService {
      * it (`practice.assign`); here it must be an active member of the organization.
      */
     holderUserId?: string | null;
+    /**
+     * AGX-04: who acts, when not the owner (a person working through a delegation): recorded in
+     * the audit as the creator; the practice still belongs to `userId`.
+     */
+    actorUserId?: string;
   }): Promise<PracticeView> {
     const name = input.name.trim();
     if (!name) throw new NotFoundError('Practice name is required');
@@ -235,6 +240,7 @@ export class PracticeApplicationService {
       kind,
       metadata: fields ? { ...metadata, fields } : metadata,
       holderUserId: input.holderUserId,
+      actorUserId: input.actorUserId,
     });
     return toView(dto);
   }
@@ -366,6 +372,11 @@ export class PracticeApplicationService {
     allowDuplicate?: boolean;
     /** Where the file came from, for the audit (`dashboard`, `telegram`, `whatsapp`). */
     channel?: string;
+    /**
+     * AGX-04: sent through a delegation already checked by the caller: any practice of the tenant,
+     * not only the uploader's own (they are not a member of it).
+     */
+    delegated?: boolean;
   }): Promise<{
     attachment: PracticeAttachmentDTO;
     practice: PracticeView;
@@ -376,7 +387,7 @@ export class PracticeApplicationService {
     const practice = await this.getPractice({
       tenantId: input.tenantId,
       practiceId: input.practiceId,
-      userId: input.userId,
+      ...(input.delegated ? {} : { userId: input.userId }),
     });
 
     const mimeType = this.validateAttachment(input.content);

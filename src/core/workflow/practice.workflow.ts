@@ -55,7 +55,7 @@ export class PracticeWorkflow {
 
       await audit.logEvent({
         tenantId: input.tenantId,
-        userId: input.userId,
+        userId: input.actorUserId ?? input.userId,
         eventType: 'PRACTICE_CREATED',
         payload: {
           practiceId: created.id,
@@ -67,7 +67,7 @@ export class PracticeWorkflow {
           tenantId: input.tenantId,
           practiceId: created.id,
           holderUserId,
-          actorUserId: input.userId,
+          actorUserId: input.actorUserId ?? input.userId,
         });
       }
 

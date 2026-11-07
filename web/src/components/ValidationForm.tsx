@@ -24,8 +24,14 @@ export function ValidationForm({
   documentType,
   known,
   onDone,
+  basePath,
+  refreshKey,
 }: {
   practiceId: string;
+  /** AGX-04: where the practice is reached; through a delegation it is under `/grants/:id`. */
+  basePath?: string;
+  /** AGX-04: the query to refresh after saving, when not the practice's own attachments. */
+  refreshKey?: readonly unknown[];
   attachmentId: string;
   documentType: DocumentType | null;
   known: Record<string, string | number | null>;
@@ -40,13 +46,13 @@ export function ValidationForm({
   const save = useMutation({
     mutationFn: () =>
       api<{ outcome: 'confirmed' | 'corrected' }>(
-        `/practices/${practiceId}/attachments/${attachmentId}/validation`,
+        `${basePath ?? `/practices/${practiceId}`}/attachments/${attachmentId}/validation`,
         { method: 'POST', body: { documentType: type, fields: toPayload(type, values) } },
       ),
     onSuccess: async (data) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['review'] }),
-        queryClient.invalidateQueries({ queryKey: ['attachments', practiceId] }),
+        queryClient.invalidateQueries({ queryKey: refreshKey ?? ['attachments', practiceId] }),
         queryClient.invalidateQueries({ queryKey: ['summary'] }),
       ]);
       onDone?.(data.outcome);

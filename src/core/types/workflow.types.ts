@@ -17,4 +17,6 @@ export type CreatePracticeInput = {
   metadata?: Record<string, unknown>;
   /** AGX-03: the person the practice is opened for; checked against the organization. */
   holderUserId?: string | null;
+  /** AGX-04: who acts, when not the owner (delegated work); recorded in the audit. */
+  actorUserId?: string;
 };
