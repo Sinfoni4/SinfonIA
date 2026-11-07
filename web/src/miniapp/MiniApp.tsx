@@ -50,7 +50,7 @@ export function MiniApp() {
       scheme: root.style.colorScheme,
       scrollbar: root.style.scrollbarWidth,
     };
-    document.body.style.background = '#141614';
+    document.body.style.background = '#16191d';
     root.style.colorScheme = 'dark';
     root.style.scrollbarWidth = 'none';
     return () => {
@@ -277,7 +277,7 @@ function Sheet({
               onClick={() => onIntent({ kind: 'upload' })}
             >
               <span className="ma-tile">
-                <CameraIcon color="#eaf7ee" />
+                <CameraIcon color="#ffffff" />
               </span>
               <span>
                 <strong>Manda un documento</strong>
@@ -290,7 +290,7 @@ function Sheet({
               onClick={() => onIntent({ kind: 'practice' })}
             >
               <span className="ma-tile small info" style={{ width: 40, height: 40 }}>
-                <FolderPlusIcon size={20} color="#eef1ea" />
+                <FolderPlusIcon size={20} color="#f3f5f7" />
               </span>
               <span>
                 <strong>Nuova pratica</strong>
@@ -304,7 +304,7 @@ function Sheet({
                 onClick={() => onIntent({ kind: 'deadline' })}
               >
                 <span className="ma-tile small ask" style={{ width: 40, height: 40 }}>
-                  <CalendarIcon size={20} color="#eef1ea" />
+                  <CalendarIcon size={20} color="#f3f5f7" />
                 </span>
                 <span>
                   <strong>Nuova scadenza</strong>
@@ -324,9 +324,9 @@ function Sheet({
             >
               <span
                 className="ma-tile small"
-                style={{ width: 40, height: 40, background: '#4b4f7a' }}
+                style={{ width: 40, height: 40, background: '#4f46e5' }}
               >
-                <ChatIcon size={20} color="#eef1ea" />
+                <ChatIcon size={20} color="#f3f5f7" />
               </span>
               <span>
                 <strong>Chiedi all’assistente</strong>
@@ -339,7 +339,7 @@ function Sheet({
               onClick={() => onIntent({ kind: 'operator' })}
             >
               <span className="ma-tile small bad" style={{ width: 40, height: 40 }}>
-                <PersonIcon size={20} color="#eef1ea" />
+                <PersonIcon size={20} color="#f3f5f7" />
               </span>
               <span>
                 <strong>Parla con un operatore</strong>
@@ -361,7 +361,7 @@ function Sheet({
         ) : (
           <>
             <h2 id="ma-sheet-title">Parla con un operatore</h2>
-            <p style={{ fontSize: 16, lineHeight: 1.5, color: '#c8cec3' }}>
+            <p style={{ fontSize: 16, lineHeight: 1.5, color: '#cbd3dc' }}>
               Chiedo a una persona della tua organizzazione di ricontattarti.
             </p>
             <button

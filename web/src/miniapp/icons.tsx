@@ -128,10 +128,10 @@ export function Logo({ size = 34, label = true }: { size?: number; label?: boole
       viewBox="0 0 34 34"
       {...(label ? { role: 'img', 'aria-label': 'SinfonIA' } : { 'aria-hidden': true })}
     >
-      <circle cx="17" cy="17" r="14.5" fill="none" stroke="#5be49b" strokeWidth="2.4" />
+      <circle cx="17" cy="17" r="14.5" fill="none" stroke="#4ade80" strokeWidth="2.4" />
       <path
         d="M11.5 20.5v-7M17 24v-14M22.5 21v-8"
-        stroke="#eef1ea"
+        stroke="#f3f5f7"
         strokeWidth="2.6"
         strokeLinecap="round"
       />
@@ -165,7 +165,7 @@ export function Ring({ percent }: { percent: number | null }) {
           cy="24"
           r="20"
           fill="none"
-          stroke="#5be49b"
+          stroke="#4ade80"
           strokeWidth="4"
           strokeLinecap="round"
           strokeDasharray={`${filled} ${length}`}

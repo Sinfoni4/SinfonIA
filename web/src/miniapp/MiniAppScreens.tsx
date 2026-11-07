@@ -7,6 +7,7 @@ import {
   deadlineWhen,
   describeFeed,
   feedTone,
+  KIND_LABELS,
   greeting,
   monthName,
   plural,
@@ -104,7 +105,7 @@ export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetInt
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <p className="ma-org">
-          <HomeIcon size={18} color="#e9ece6" />
+          <HomeIcon size={18} color="#e6eaef" />
           <strong>{org?.name ?? 'La tua organizzazione'}</strong>
           <span>· {ROLE_LABELS[me.current.role].toLowerCase()}</span>
         </p>
@@ -131,25 +132,25 @@ export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetInt
         {s && (
           <div className="ma-chips">
             {overdue.length > 0 ? (
-              <span className="ma-chip">
-                <ClockIcon size={16} color="#ff7a59" />
+              <span className="ma-chip late">
+                <ClockIcon size={16} color="#f87171" />
                 {plural(overdue.length, 'scaduta', 'scadute')}
               </span>
             ) : (
-              <span className="ma-chip">
-                <CheckIcon size={16} color="#5be49b" />
+              <span className="ma-chip ok">
+                <CheckIcon size={16} color="#4ade80" />
                 Nessuna scaduta
               </span>
             )}
             {next && (
-              <span className="ma-chip">
-                <ClockIcon size={16} color="#ffb35c" />
+              <span className="ma-chip warn">
+                <ClockIcon size={16} color="#fbbf24" />
                 {categoryLabel(next.category)} {deadlineWhen(next.daysLeft)}
               </span>
             )}
             {s.documents.percent !== null && (
-              <span className="ma-chip">
-                <DocIcon size={16} color="#9fc7ff" />
+              <span className="ma-chip info">
+                <DocIcon size={16} color="#93c5fd" />
                 Documenti {s.documents.percent}%
               </span>
             )}
@@ -169,7 +170,11 @@ export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetInt
                 style={{ opacity: i === 2 ? 0.55 : 1 }}
               >
                 <span className={`ma-tile ${feedTone(f.type)}`}>
-                  <DocIcon size={22} color="#eaf7ee" />
+                  {feedTone(f.type) === 'info' ? (
+                    <FolderIcon size={22} color="#ffffff" />
+                  ) : (
+                    <DocIcon size={22} color="#ffffff" />
+                  )}
                 </span>
                 <p>
                   <strong>{line.title}</strong> {line.text}
@@ -227,7 +232,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
       {s && (
         <>
           <div className="ma-bar">
-            <span style={{ fontSize: 15, color: '#c8cec3' }}>Documenti</span>
+            <span style={{ fontSize: 15, color: '#cbd3dc' }}>Documenti</span>
             <span className="ma-bar-track" aria-hidden="true">
               <span style={{ width: `${percent ?? 0}%` }} />
             </span>
@@ -238,17 +243,17 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
             <h2>Questa settimana</h2>
             <p className="ma-big">
               <span>
-                <CalendarIcon size={24} color="#a9b0a4" />
+                <CalendarIcon size={24} color="#aab4bf" />
                 {plural(week.length, 'scadenza', 'scadenze')}
               </span>
               <span>
-                <FolderIcon size={24} color="#a9b0a4" />
+                <FolderIcon size={24} color="#aab4bf" />
                 {plural(s.practices.length, 'pratica', 'pratiche')}
               </span>
             </p>
             {firstRequest && (
               <Link to={`/tg/pratiche/${firstRequest.practiceId}`} className="ma-outline">
-                <ClockIcon size={16} color="#ffb35c" />
+                <ClockIcon size={16} color="#fbbf24" />
                 {firstRequest.label ?? 'Documento richiesto'}
                 {firstRequest.dueDate && (
                   <span className="ma-muted">entro il {shortDate(firstRequest.dueDate)}</span>
@@ -257,7 +262,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
             )}
             {s.practices[0] && (
               <Link to={`/tg/pratiche/${s.practices[0].id}`} className="ma-outline green">
-                <ArrowIcon size={16} color="#5be49b" />
+                <ArrowIcon size={16} color="#4ade80" />
                 {s.practices[0].name}
                 <span className="ma-muted">
                   {STATE_LABELS[s.practices[0].status].toLowerCase()}
@@ -283,7 +288,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
                 }
               >
                 <span className="ma-tile small ask">
-                  <UploadIcon size={17} color="#eaf7ee" />
+                  <UploadIcon size={17} color="#ffffff" />
                 </span>
                 <span className="ma-row-title">Manda: {r.label ?? r.message}</span>
                 <span className="ma-row-when">
@@ -294,7 +299,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
             {s.toConfirm.map((a) => (
               <Link key={a.attachmentId} to={`/tg/pratiche/${a.practiceId}`} className="ma-row">
                 <span className="ma-tile small info">
-                  <DocIcon size={17} color="#eaf7ee" />
+                  <DocIcon size={17} color="#ffffff" />
                 </span>
                 <span className="ma-row-title">Controlla {a.fileName}</span>
                 <span className="ma-row-when">da verificare</span>
@@ -303,7 +308,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
             {s.deadlines.map((d) => (
               <div key={d.id} className="ma-row">
                 <span className="ma-tile small">
-                  <CalendarIcon size={17} color="#eaf7ee" />
+                  <CalendarIcon size={17} color="#ffffff" />
                 </span>
                 <span className="ma-row-title">{d.title}</span>
                 <span className="ma-row-when">{deadlineWhen(d.daysLeft)}</span>
@@ -322,7 +327,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
               {s.practices.map((p) => (
                 <Link key={p.id} to={`/tg/pratiche/${p.id}`} className="ma-row">
                   <span className="ma-tile small">
-                    <FolderIcon size={17} color="#eaf7ee" />
+                    <FolderIcon size={17} color="#ffffff" />
                   </span>
                   <span className="ma-row-title">{p.name}</span>
                   <span className="ma-row-when">
@@ -348,6 +353,8 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
     </>
   );
 }
+
+const STEP_DOT = { ok: '#4ade80', ask: '#fbbf24', bad: '#f87171', info: '#93c5fd' } as const;
 
 const DOC_STATES: Record<DocumentChecklist['items'][number]['state'], string> = {
   valid: 'confermato',
@@ -387,7 +394,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
           <BackIcon />
         </Link>
         <span className="ma-muted" style={{ fontSize: 15 }}>
-          {p?.typeLabel ?? 'Pratica'}
+          {p ? (KIND_LABELS[p.kind] ?? 'Pratica') : 'Pratica'}
         </span>
       </header>
       {practice.isError && <Problem error={practice.error} />}
@@ -405,7 +412,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
           <div className="ma-list-head">
             <h2 id="ma-docs">Documenti</h2>
             <span className="ma-muted">
-              <strong style={{ color: '#eef1ea' }}>{done}</strong> su {items.length}
+              <strong style={{ color: '#f3f5f7' }}>{done}</strong> su {items.length}
             </span>
           </div>
           <div className="ma-segments" aria-hidden="true">
@@ -417,7 +424,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
             {items.map((i) => (
               <li key={i.key}>
                 <span className={`ma-check ${i.state}`} aria-hidden="true">
-                  {i.state === 'valid' && <CheckIcon size={14} color="#0f2a1c" />}
+                  {i.state === 'valid' && <CheckIcon size={14} color="#052e16" />}
                 </span>
                 <span>{i.label}</span>
                 <span className={`ma-state ${i.state}`}>{DOC_STATES[i.state]}</span>
@@ -470,7 +477,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
             return (
               <p
                 key={`${f.at}-${i}`}
-                style={{ display: 'flex', gap: 10, fontSize: 15, color: '#b9c0b4' }}
+                style={{ display: 'flex', gap: 10, fontSize: 15, color: '#b8c2cc' }}
               >
                 <span
                   aria-hidden="true"
@@ -480,11 +487,11 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
                     marginTop: 6,
                     flex: 'none',
                     borderRadius: 4,
-                    background: feedTone(f.type) === 'ask' ? '#ffb35c' : '#5be49b',
+                    background: STEP_DOT[feedTone(f.type)],
                   }}
                 />
                 <span>
-                  <span style={{ color: '#eef1ea' }}>{line.title}</span> {line.text} ·{' '}
+                  <span style={{ color: '#f3f5f7' }}>{line.title}</span> {line.text} ·{' '}
                   {shortDate(f.at.slice(0, 10))}
                 </span>
               </p>
