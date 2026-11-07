@@ -6,7 +6,11 @@ import { AssistancePage } from './pages/AssistancePage';
 import { BoardPage } from './pages/BoardPage';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
-import { DelegatedPracticesPage, DelegationsPage } from './pages/DelegationPages';
+import {
+  DelegatedPracticeDetailPage,
+  DelegatedPracticesPage,
+  DelegationsPage,
+} from './pages/DelegationPages';
 import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
 import { InvitationPage } from './pages/InvitationPage';
@@ -55,6 +59,10 @@ export function App() {
         <Route path="adesioni" element={<MembershipsPage me={me} />} />
         <Route path="deleghe" element={<DelegationsPage me={me} />} />
         <Route path="deleghe/:grantId" element={<DelegatedPracticesPage />} />
+        <Route
+          path="deleghe/:grantId/pratiche/:practiceId"
+          element={<DelegatedPracticeDetailPage />}
+        />
         <Route path="pratiche/nuova" element={<NewPracticePage me={me} />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />

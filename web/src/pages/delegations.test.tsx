@@ -9,6 +9,7 @@ import { BrowserRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { endDateIn, maxMonths } from '../api/delegations';
+import { FALLBACK_MODULE } from '../api/modules';
 import { App } from '../App';
 import { SessionProvider } from '../session/session';
 
@@ -181,5 +182,93 @@ describe('delegations (MF8)', () => {
         nextState: 'VALIDATED',
       }),
     );
+  });
+
+  it('opens a new practice for the grantor through a delegation with CREATE (AGX-04)', async () => {
+    api('OPERATOR', 'NETWORK', {
+      'GET /grants/g-2/practices': () =>
+        ok({
+          items: [],
+          total: 0,
+          page: 1,
+          limit: 20,
+          totalPages: 0,
+          delegation: {
+            grantorName: 'Azienda Agricola Collio',
+            operations: ['READ', 'CREATE'],
+            validUntil: '2027-05-01T10:00:00Z',
+          },
+          module: FALLBACK_MODULE,
+        }),
+      'POST /grants/g-2/practices': () => ({ status: 201, body: { success: true, data: {} } }),
+    });
+    openAt('/deleghe/g-2');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Nuova pratica' }));
+    await user.type(screen.getByLabelText('Nome'), 'Domanda PAC 2026');
+    await user.click(screen.getByRole('button', { name: 'Crea pratica' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === 'POST' && c.path === '/grants/g-2/practices')?.body,
+      ).toEqual({
+        name: 'Domanda PAC 2026',
+        kind: FALLBACK_MODULE.defaultKind,
+      }),
+    );
+  });
+
+  it('shows a delegated practice with its documents, and what UPDATE allows (AGX-04)', async () => {
+    const detail = (operations: string[]) => () =>
+      ok({
+        id: 'p-1',
+        userId: 'u-9',
+        status: 'CREATED',
+        name: 'Fascicolo aziendale',
+        kind: 'generic',
+        typeLabel: 'pratica',
+        summary: '',
+        createdAt: '2026-11-01T10:00:00Z',
+        updatedAt: '2026-11-02T10:00:00Z',
+        assignedTo: null,
+        fields: {},
+        attachments: [
+          {
+            id: 'a-1',
+            practiceId: 'p-1',
+            fileName: 'visura.pdf',
+            mimeType: 'application/pdf',
+            fileSize: 2048,
+            ocrStatus: 'COMPLETED',
+            ocrResult: { documentType: 'receipt' },
+            validatedData: null,
+            validatedAt: null,
+            createdAt: '2026-11-02T10:00:00Z',
+          },
+        ],
+        delegation: {
+          grantorName: 'Azienda Agricola Collio',
+          operations,
+          validUntil: '2027-05-01T10:00:00Z',
+        },
+        module: FALLBACK_MODULE,
+      });
+    api('OPERATOR', 'NETWORK', { 'GET /grants/g-2/practices/p-1': detail(['READ', 'UPDATE']) });
+    const first = openAt('/deleghe/g-2/pratiche/p-1');
+    expect(await screen.findByRole('heading', { name: 'Fascicolo aziendale' })).toBeTruthy();
+    expect(screen.getByRole('note').textContent).toContain('Azienda Agricola Collio');
+    expect(screen.getByText('visura.pdf')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Scarica' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Verifica i dati' })).toBeTruthy();
+    expect(screen.getByLabelText('File (PDF o immagine)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Valida' })).toBeTruthy();
+    first.unmount();
+
+    // Reading only: download, nothing that changes the practice.
+    api('OPERATOR', 'NETWORK', { 'GET /grants/g-2/practices/p-1': detail(['READ']) });
+    openAt('/deleghe/g-2/pratiche/p-1');
+    expect(await screen.findByRole('button', { name: 'Scarica' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Verifica i dati' })).toBeNull();
+    expect(screen.queryByLabelText('File (PDF o immagine)')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Valida' })).toBeNull();
   });
 });

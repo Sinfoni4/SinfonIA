@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { Fragment, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { describeError, type Me } from '../api/client';
@@ -13,13 +13,26 @@ import {
   OPERATION_LABELS,
   STATE_NAMES,
   type DelegatedPage,
+  type DelegatedPracticeDetail,
   type GrantOperation,
   type IssuedGrant,
   type ReceivedGrant,
 } from '../api/delegations';
 import { type Member } from '../api/members';
-import { formatDate, STATE_LABELS, TRANSITION_LABELS, NEXT_STATES } from '../api/practices';
+import { fieldValues, shownFields, type CurrentModule } from '../api/modules';
+import {
+  formatDate,
+  kindLabel,
+  NEXT_STATES,
+  STATE_LABELS,
+  TRANSITION_LABELS,
+  type Practice,
+  type PracticeState,
+} from '../api/practices';
+import { missingRequired, PracticeFieldInputs } from '../components/PracticeFieldInputs';
 import { useSession } from '../session/session';
+
+import { AttachmentItem, UploadForm } from './PracticeDetailPage';
 
 const opsText = (ops: GrantOperation[]) => ops.map((o) => OPERATION_LABELS[o]).join(', ');
 
@@ -467,6 +480,7 @@ export function DelegatedPracticesPage() {
   const data = query.data;
   const canUpdate = data?.delegation.operations.includes('UPDATE') ?? false;
   const canExport = data?.delegation.operations.includes('EXPORT') ?? false;
+  const canCreate = data?.delegation.operations.includes('CREATE') ?? false;
 
   return (
     <>
@@ -499,6 +513,13 @@ export function DelegatedPracticesPage() {
               </button>
             )}
           </div>
+          {canCreate && data.module && (
+            <DelegatedNewPractice
+              grantId={grantId}
+              module={data.module}
+              onDone={() => queryClient.invalidateQueries({ queryKey: ['delegated', grantId] })}
+            />
+          )}
           {error && (
             <p className="error" role="alert">
               {error}
@@ -522,7 +543,9 @@ export function DelegatedPracticesPage() {
               <tbody>
                 {data.items.map((p) => (
                   <tr key={p.id}>
-                    <td data-label="Pratica">{p.name}</td>
+                    <td data-label="Pratica">
+                      <Link to={`/deleghe/${grantId}/pratiche/${p.id}`}>{p.name}</Link>
+                    </td>
                     <td data-label="Stato">{STATE_LABELS[p.status]}</td>
                     <td data-label="Aggiornata">{formatDate(p.updatedAt)}</td>
                     {canUpdate && (
@@ -576,5 +599,272 @@ export function DelegatedPracticesPage() {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * AGX-04: one practice of another organization, worked on through a delegation: its documents
+ * (download with READ; upload, check of the data, state and step with UPDATE). Every request is
+ * checked against the delegation and recorded in that organization's log.
+ */
+export function DelegatedPracticeDetailPage() {
+  const { grantId = '', practiceId = '' } = useParams();
+  const { api } = useSession();
+  const queryClient = useQueryClient();
+  const [confirm, setConfirm] = useState<PracticeState | null>(null);
+  const key = ['delegated-practice', grantId, practiceId] as const;
+  const base = `/grants/${grantId}/practices/${practiceId}`;
+  const query = useQuery({
+    queryKey: key,
+    queryFn: () => api<DelegatedPracticeDetail>(base),
+  });
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: key });
+    await queryClient.invalidateQueries({ queryKey: ['delegated', grantId] });
+  };
+  const transition = useMutation({
+    mutationFn: (nextState: PracticeState) =>
+      api(`${base}/transition`, { method: 'POST', body: { nextState } }),
+    onSuccess: async () => {
+      setConfirm(null);
+      await refresh();
+    },
+  });
+  const subState = useMutation({
+    mutationFn: (value: string | null) =>
+      api(`${base}/sub-state`, { method: 'POST', body: { subState: value } }),
+    onSuccess: refresh,
+  });
+
+  const back = (
+    <p>
+      <Link to={`/deleghe/${grantId}`}>← Pratiche per delega</Link>
+    </p>
+  );
+  if (query.isPending) return <p className="muted">Caricamento…</p>;
+  if (query.isError) {
+    return (
+      <>
+        {back}
+        <p className="error" role="alert">
+          {describeError(query.error)}
+        </p>
+      </>
+    );
+  }
+  const p = query.data;
+  const canUpdate = p.delegation.operations.includes('UPDATE');
+  const type = p.module.practiceTypes.find((t) => t.kind === p.kind);
+  const steps = type?.subStates.filter((s) => s.during.includes(p.status)) ?? [];
+  const currentStep = type?.subStates.find((s) => s.key === p.subState);
+  const fields = type ? shownFields(type, p.fields) : [];
+  const next = canUpdate ? NEXT_STATES[p.status] : [];
+
+  return (
+    <>
+      {back}
+      <p className="notice banner" role="note">
+        Stai lavorando sui dati di <strong>{p.delegation.grantorName}</strong> per delega, fino al{' '}
+        {formatDate(p.delegation.validUntil)}. Ogni operazione resta nel suo registro attività.
+      </p>
+      <div className="page-head">
+        <h1>{p.name}</h1>
+        <span className={`state state-${p.status.toLowerCase()}`}>{STATE_LABELS[p.status]}</span>
+      </div>
+      <section className="card">
+        <dl className="facts">
+          <dt>Tipo</dt>
+          <dd>{kindLabel(p)}</dd>
+          {fields.map((f) => (
+            <Fragment key={f.key}>
+              <dt>{f.label}</dt>
+              <dd>{f.value}</dd>
+            </Fragment>
+          ))}
+          {currentStep && (
+            <>
+              <dt>Fase</dt>
+              <dd>{currentStep.label}</dd>
+            </>
+          )}
+          <dt>Aggiornata</dt>
+          <dd>{formatDate(p.updatedAt)}</dd>
+        </dl>
+        {next.length > 0 && (
+          <div className="actions">
+            {confirm ? (
+              <>
+                <span>Confermi «{TRANSITION_LABELS[confirm]}» per questa pratica?</span>
+                <button
+                  type="button"
+                  disabled={transition.isPending}
+                  onClick={() => transition.mutate(confirm)}
+                >
+                  Conferma
+                </button>
+                <button type="button" className="link" onClick={() => setConfirm(null)}>
+                  Annulla
+                </button>
+              </>
+            ) : (
+              next.map((s) => (
+                <button key={s} type="button" className="secondary" onClick={() => setConfirm(s)}>
+                  {TRANSITION_LABELS[s]}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+        {transition.isError && (
+          <p className="error" role="alert">
+            {describeError(transition.error)}
+          </p>
+        )}
+        {canUpdate && steps.length > 0 && (
+          <div className="actions">
+            <label htmlFor="sub-state">Fase</label>
+            <select
+              id="sub-state"
+              value={currentStep?.key ?? ''}
+              disabled={subState.isPending}
+              onChange={(e) => subState.mutate(e.target.value || null)}
+            >
+              <option value="">Nessuna</option>
+              {steps.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {subState.isError && (
+          <p className="error" role="alert">
+            {describeError(subState.error)}
+          </p>
+        )}
+      </section>
+
+      <section className="card" aria-labelledby="attachments-title">
+        <h2 id="attachments-title">Allegati</h2>
+        {p.attachments.length === 0 && <p className="muted">Nessun allegato.</p>}
+        <ul className="attachments">
+          {p.attachments.map((a) => (
+            <AttachmentItem
+              key={a.id}
+              practiceId={practiceId}
+              attachment={a}
+              basePath={base}
+              refreshKey={key}
+              canValidate={canUpdate}
+            />
+          ))}
+        </ul>
+        {canUpdate && <UploadForm practiceId={practiceId} basePath={base} refreshKey={key} />}
+      </section>
+    </>
+  );
+}
+
+/** AGX-04: opening a practice for the organization that gave the delegation. */
+function DelegatedNewPractice({
+  grantId,
+  module,
+  onDone,
+}: {
+  grantId: string;
+  module: CurrentModule;
+  onDone: () => Promise<void>;
+}) {
+  const { api } = useSession();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [chosenKind, setKind] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const type =
+    module.practiceTypes.find((t) => t.kind === (chosenKind ?? module.defaultKind)) ??
+    module.practiceTypes[0];
+  const create = useMutation({
+    mutationFn: () => {
+      const fields = fieldValues(type, values);
+      return api<Practice>(`/grants/${grantId}/practices`, {
+        method: 'POST',
+        body: {
+          name: name.trim(),
+          kind: type.kind,
+          ...(Object.keys(fields).length > 0 ? { fields } : {}),
+        },
+      });
+    },
+    onSuccess: async () => {
+      setName('');
+      setValues({});
+      setOpen(false);
+      await onDone();
+    },
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    create.mutate();
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}>
+        Nuova pratica
+      </button>
+    );
+  }
+  return (
+    <form className="card form" onSubmit={submit} aria-label="Nuova pratica per delega">
+      <label htmlFor="delegated-name">Nome</label>
+      <input
+        id="delegated-name"
+        required
+        maxLength={200}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <label htmlFor="delegated-kind">Tipo</label>
+      <select
+        id="delegated-kind"
+        value={type.kind}
+        onChange={(e) => {
+          setKind(e.target.value);
+          setValues({});
+        }}
+      >
+        {module.practiceTypes.map((t) => (
+          <option key={t.kind} value={t.kind}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+      <PracticeFieldInputs
+        type={type}
+        values={values}
+        idPrefix="delegated-field"
+        onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
+      />
+      <p className="muted">
+        La pratica sarà dell’organizzazione che ti ha dato la delega, intestata a chi l’ha concessa.
+      </p>
+      <div className="actions">
+        <button
+          type="submit"
+          disabled={!name.trim() || missingRequired(type, values) || create.isPending}
+        >
+          Crea pratica
+        </button>
+        <button type="button" className="link" onClick={() => setOpen(false)}>
+          Annulla
+        </button>
+      </div>
+      {create.isError && (
+        <p className="error" role="alert">
+          {describeError(create.error)}
+        </p>
+      )}
+    </form>
   );
 }

@@ -1,7 +1,8 @@
 /** MF8 (decision D3): delegations given and received. */
 
+import type { CurrentModule } from './modules';
 import type { OrganizationType } from './organization';
-import type { Practice } from './practices';
+import type { Attachment, Practice } from './practices';
 
 export type GrantOperation = 'READ' | 'CREATE' | 'UPDATE' | 'APPROVE' | 'DELETE' | 'EXPORT';
 export type GrantState = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'REVOKED';
@@ -38,16 +39,31 @@ export type DelegatedPage = {
   page: number;
   limit: number;
   totalPages: number;
-  delegation: { grantorName: string; operations: GrantOperation[]; validUntil: string };
+  delegation: DelegationInUse;
+  /** AGX-04: the module of the organization that gave the delegation (missing on older APIs). */
+  module?: CurrentModule;
+};
+
+export type DelegationInUse = {
+  grantorName: string;
+  operations: GrantOperation[];
+  validUntil: string;
+};
+
+/** AGX-04: a practice of the grantor, with its documents, read through a delegation. */
+export type DelegatedPracticeDetail = Practice & {
+  attachments: Attachment[];
+  delegation: DelegationInUse;
+  module: CurrentModule;
 };
 
 /** Operations offered in this version (the backend refuses the others). */
-export const OFFERED_OPERATIONS: GrantOperation[] = ['READ', 'UPDATE', 'EXPORT'];
+export const OFFERED_OPERATIONS: GrantOperation[] = ['READ', 'CREATE', 'UPDATE', 'EXPORT'];
 
 export const OPERATION_LABELS: Record<GrantOperation, string> = {
-  READ: 'vedere le pratiche e i documenti',
-  CREATE: 'creare pratiche',
-  UPDATE: 'cambiare lo stato delle pratiche',
+  READ: 'vedere le pratiche e scaricare i documenti',
+  CREATE: 'aprire nuove pratiche',
+  UPDATE: 'aggiornare le pratiche (stato, fase, documenti e verifica dei dati)',
   APPROVE: 'approvare',
   DELETE: 'cancellare',
   EXPORT: 'esportare le pratiche',

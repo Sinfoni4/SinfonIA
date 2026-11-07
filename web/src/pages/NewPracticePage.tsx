@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { describeError, type Me } from '../api/client';
 import { FALLBACK_MODULE, fieldValues, type CurrentModule } from '../api/modules';
 import { holderLabel, type HolderCandidate, type Practice } from '../api/practices';
+import { missingRequired, PracticeFieldInputs } from '../components/PracticeFieldInputs';
 import { useSession } from '../session/session';
 
 /**
@@ -61,7 +62,7 @@ export function NewPracticePage({ me }: { me: Me }) {
     event.preventDefault();
     create.mutate();
   };
-  const missing = type.fields.some((f) => f.required && !values[f.key]?.trim());
+  const missing = missingRequired(type, values);
 
   return (
     <>
@@ -112,42 +113,11 @@ export function NewPracticePage({ me }: { me: Me }) {
             </option>
           ))}
         </select>
-        {type.fields.map((field) => {
-          const id = `field-${field.key}`;
-          const set = (value: string) => setValues((v) => ({ ...v, [field.key]: value }));
-          return (
-            <div key={field.key} className="form">
-              <label htmlFor={id}>
-                {field.label}
-                {field.required ? '' : ' (facoltativo)'}
-              </label>
-              {field.type === 'choice' ? (
-                <select
-                  id={id}
-                  value={values[field.key] ?? ''}
-                  onChange={(e) => set(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {field.options?.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id={id}
-                  type={field.type === 'text' ? 'text' : field.type}
-                  maxLength={field.type === 'text' ? (field.maxLength ?? 200) : undefined}
-                  min={field.min}
-                  max={field.max}
-                  value={values[field.key] ?? ''}
-                  onChange={(e) => set(e.target.value)}
-                />
-              )}
-            </div>
-          );
-        })}
+        <PracticeFieldInputs
+          type={type}
+          values={values}
+          onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
+        />
         {type.expectedDocuments.length > 0 && (
           <p className="muted">
             Documenti di solito necessari:{' '}
