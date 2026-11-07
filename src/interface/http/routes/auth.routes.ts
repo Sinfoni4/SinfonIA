@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import { SESSION_TTL_MS } from '../../../core/identity/login.service.js';
 import { LoginError } from '../../../core/identity/login.service.js';
+import {
+  signWebAppInitData,
+  TelegramWebAppError,
+  verifyWebAppInitData,
+} from '../../../core/identity/telegram-webapp.js';
 import { requireAuthContext, requirePrincipal } from '../auth/guards.js';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from '../auth/refresh-cookie.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
@@ -25,7 +30,14 @@ export type AuthRoutesDeps = {
   issuePlatformToken: (grant: { userId: string; sessionId: string; authVersion: number }) => string;
   /** Requests per address and minute on each login route. */
   perMinute: number;
+  /** Telegram Mini App: the bot token that signs the data of an opening; absent: no Mini App. */
+  telegramBotToken?: string;
+  /** Development only: signs an opening for a Telegram id, to preview the Mini App in a browser. */
+  devTelegramWebApp?: boolean;
 };
+
+const WebAppSchema = z.object({ initData: z.string().min(10).max(4096) });
+const DevWebAppSchema = z.object({ telegramId: z.string().regex(/^\d{3,15}$/) });
 
 const StartSchema = z.object({ email: z.string().trim().min(3).max(254) });
 const VerifySchema = z.object({
@@ -91,6 +103,28 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
       openSession(await deps.login.verifyLogin(b.challengeId, b.code), reply),
     ),
   );
+  // Telegram Mini App: the signed data of the opening logs in the person whose Telegram account
+  // is linked (AGX-10); the session is the dashboard's, in the same cookie.
+  app.post(
+    '/auth/telegram-webapp',
+    { config: LIMIT },
+    handle(WebAppSchema, async (b, _req, reply) => {
+      if (!deps.telegramBotToken) throw new TelegramWebAppError();
+      const { telegramId } = verifyWebAppInitData(b.initData, deps.telegramBotToken);
+      return openSession(await deps.login.openChatSession('TELEGRAM', telegramId), reply);
+    }),
+  );
+  if (deps.devTelegramWebApp && deps.telegramBotToken) {
+    const botToken = deps.telegramBotToken;
+    app.post(
+      '/auth/telegram-webapp/dev',
+      { config: LIMIT },
+      handle(DevWebAppSchema, (b) =>
+        Promise.resolve({ initData: signWebAppInitData(botToken, b.telegramId) }),
+      ),
+    );
+  }
+
   app.post(
     '/auth/token',
     { config: LIMIT },
