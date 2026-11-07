@@ -7,9 +7,12 @@ import {
   getOrganizationSettings,
   updateOrganizationSettings,
 } from '../../../core/organization/organization-settings.service.js';
+import { organizationUsage } from '../../../core/usage/usage.service.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
+
+import { StatsQuerySchema } from './network.routes.js';
 
 import type { ComplianceService } from '../../../core/compliance/compliance.service.js';
 import type { PrismaClient } from '@prisma/client';
@@ -80,6 +83,26 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
         deadlineUserId: scopedUserId(deadlines),
       });
       return reply.send(ok(summary));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-07: the usage of the organization in a fixed period, with the part done by others
+  // through a delegation. Who reads the activity log reads this too.
+  app.get('/usage', { config: { permission: 'audit.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'audit.read').principal;
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await organizationUsage(deps.prisma, {
+            tenantId: auth.tenantId,
+            kind: query.period,
+            previous: query.previous,
+          }),
+        ),
+      );
     } catch (err: unknown) {
       return sendError(reply, err);
     }

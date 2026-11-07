@@ -2,6 +2,7 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { recordUsage } from '../usage/usage.service.js';
 
 import type { PrismaLike } from '../../data/types/prisma.js';
 import type {
@@ -259,6 +260,17 @@ export async function updateAssistanceRequest(
       eventType: input.action === 'take' ? 'ASSISTANCE_TAKEN' : 'ASSISTANCE_CLOSED',
       payload: { requestId: input.id },
     });
+    // AGX-07: a request closes once (the conditional update above), so it is counted once.
+    if (input.action === 'close') {
+      await recordUsage(tx, [
+        {
+          key: `assistance.closed:${input.id}`,
+          tenantId: input.tenantId,
+          kind: 'ASSISTANCE_CLOSED',
+          userId: input.actorUserId,
+        },
+      ]);
+    }
     await new OutboxRepository(tx).createMessage({
       tenantId: input.tenantId,
       eventType: ASSISTANCE_UPDATED,

@@ -31,6 +31,11 @@ const STATS = {
   organic: { valid: 5, total: 6 },
   documents: { uploaded: 12, readWithoutCheckPercent: 75 },
   channels: { chatRequests: 40, dashboardLogins: 9 },
+  usage: [
+    { kind: 'DOCUMENT_RECEIVED', value: 31 },
+    { kind: 'OCR_PAGES', value: null },
+  ],
+  delegatedWork: [{ kind: 'DOCUMENT_REQUESTED', quantity: 4 }],
 };
 
 let calls: Call[];
@@ -147,8 +152,50 @@ describe('networks (MF9)', () => {
     openAt('/rete/statistiche');
     expect(await screen.findByText('Statistiche della rete')).toBeTruthy();
     expect(await screen.findByText('meno di 3 scadute · 0 entro 30 giorni')).toBeTruthy();
-    expect(screen.getByText('non disponibile')).toBeTruthy();
+    // The agricultural practices, and the OCR pages of the usage (AGX-07).
+    expect(screen.getAllByText('non disponibile')).toHaveLength(2);
     expect(screen.getByText('5 su 6')).toBeTruthy();
+    // AGX-07: usage of the companies under the same threshold, and the network's own work.
+    expect(screen.getByText('Consumi delle aziende nel periodo')).toBeTruthy();
+    expect(screen.getByText('Documenti ricevuti').nextSibling?.textContent).toBe('31');
+    expect(screen.getByText('Pagine lette con OCR').nextSibling?.textContent).toBe(
+      'non disponibile',
+    );
+    expect(screen.getByText('Documenti richiesti').nextSibling?.textContent).toBe('4');
+  });
+
+  it('shows an administrator the usage of the organization and what a network did for it', async () => {
+    api('ADMIN', 'COMPANY', {
+      'GET /usage': () =>
+        ok({
+          period: { kind: 'month', previous: false, from: '2026-11-01', to: '2026-11-30' },
+          totals: [
+            { kind: 'DOCUMENT_RECEIVED', unit: 'document', quantity: 7 },
+            { kind: 'OCR_PAGES', unit: 'page', quantity: 0 },
+            { kind: 'PRACTICE_OPENED', unit: 'practice', quantity: 2 },
+          ],
+          byOthers: [
+            {
+              orgId: ORG,
+              orgName: 'TerreFVG',
+              items: [{ kind: 'DOCUMENT_REQUESTED', quantity: 3 }],
+            },
+          ],
+        }),
+    });
+    openAt('/attivita/consumi');
+    expect(await screen.findByText('Consumi del periodo')).toBeTruthy();
+    expect(screen.getByText('Documenti ricevuti').nextSibling?.textContent).toBe('7');
+    // A kind with nothing in the period is not listed.
+    expect(screen.queryByText('Pagine lette con OCR')).toBeNull();
+    expect(screen.getByText('Svolti da TerreFVG con una delega')).toBeTruthy();
+    expect(screen.getByText('Documenti richiesti').nextSibling?.textContent).toBe('3');
+    await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'Mese scorso');
+    await waitFor(() =>
+      expect(calls.some((c) => c.path === '/usage' && c.query.get('previous') === 'true')).toBe(
+        true,
+      ),
+    );
   });
 
   it('hides the network sections from a company, which confirms an invitation instead', async () => {

@@ -62,6 +62,7 @@ model Tenant {
   grantsReceived      AccessGrant[]          @relation("GrantGranteeOrg")
   assistanceRequests  AssistanceRequest[]
   documentRequests    DocumentRequest[]
+  usageEvents         UsageEvent[]
 
   @@map("tenant")
 }
@@ -822,4 +823,47 @@ model DocumentRequest {
   @@index([tenantId, status, createdAt])
   @@index([practiceId, status])
   @@map("document_request")
+}
+
+/// AGX-07: the kinds of work recorded as usage.
+enum UsageKind {
+  DOCUMENT_RECEIVED
+  OCR_PAGES
+  AI_CALL
+  AI_TOKENS
+  PRACTICE_OPENED
+  PRACTICE_COMPLETED
+  DOCUMENT_REQUESTED
+  ASSISTANCE_CLOSED
+}
+
+/// AGX-07: one unit of work done for an organization. Append-only (a database trigger refuses
+/// updates); a wrong event is reversed by a new one with `correctionOf`. The cost is computed when
+/// reading, from the rates in the configuration, never stored.
+model UsageEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  /// Unique: the same work recorded twice (a retry) is counted once.
+  idempotencyKey String    @unique @map("idempotency_key")
+  /// The organization the work was done for.
+  tenantId       String    @map("tenant_id") @db.Uuid
+  /// The organization that did it, when not the same one (a network through a delegation).
+  actorOrgId     String?   @map("actor_org_id") @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  kind           UsageKind
+  quantity       Int
+  unit           String
+  practiceId     String?   @map("practice_id") @db.Uuid
+  correctionOf   String?   @unique @map("correction_of") @db.Uuid
+  reason         String?
+  occurredAt     DateTime  @default(now()) @map("occurred_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  corrected  UsageEvent? @relation("UsageCorrection", fields: [correctionOf], references: [id], onDelete: Cascade)
+  correction UsageEvent? @relation("UsageCorrection")
+
+  @@index([tenantId, occurredAt])
+  @@index([actorOrgId, occurredAt])
+  @@index([occurredAt])
+  @@map("usage_event")
 }

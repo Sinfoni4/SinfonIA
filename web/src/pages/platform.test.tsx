@@ -307,6 +307,58 @@ describe('platform console (FE7)', () => {
     });
   });
 
+  it('shows the usage with the internal cost, and reverses an event with a reason', async () => {
+    const EVENT = 'e0000000-0000-4000-8000-000000000001';
+    api({
+      'GET /platform/usage': () =>
+        ok({
+          period: { kind: 'month', previous: false, from: '2026-11-01', to: '2026-11-30' },
+          ratesConfigured: true,
+          rates: { OCR_PAGES: 0.01 },
+          organizations: [
+            {
+              orgId: ORG,
+              orgName: 'Azienda Agricola Alfa',
+              items: [{ kind: 'OCR_PAGES', quantity: 12, cost: 0.12 }],
+              cost: 0.12,
+            },
+          ],
+          totals: [{ kind: 'OCR_PAGES', unit: 'page', quantity: 12, cost: 0.12 }],
+          cost: 0.12,
+          recent: [
+            {
+              id: EVENT,
+              orgId: ORG,
+              orgName: 'Azienda Agricola Alfa',
+              actorOrgName: 'TerreFVG',
+              kind: 'OCR_PAGES',
+              quantity: 12,
+              unit: 'page',
+              occurredAt: '2026-11-07T10:00:00Z',
+              correctionOf: null,
+              reversed: false,
+              reason: null,
+            },
+          ],
+        }),
+      [`POST /platform/usage/${EVENT}/reverse`]: () => ({
+        status: 201,
+        body: { success: true, data: { id: 'r', correctionOf: EVENT, quantity: -12 } },
+      }),
+    });
+    openAt('/piattaforma/consumi', 'platform');
+    expect(await screen.findByText(/Costo interno stimato/)).toBeTruthy();
+    expect(screen.getByText('Azienda Agricola Alfa (da TerreFVG)')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Storna' }));
+    await userEvent.type(screen.getByLabelText('Motivo dello storno'), 'Documento di prova');
+    await userEvent.click(screen.getByRole('button', { name: 'Storna' }));
+    await waitFor(() =>
+      expect(posted(`/platform/usage/${EVENT}/reverse`)[0]?.body).toEqual({
+        reason: 'Documento di prova',
+      }),
+    );
+  });
+
   it('is not offered to people who are not platform administrators', async () => {
     api({
       'GET /auth/me': () =>

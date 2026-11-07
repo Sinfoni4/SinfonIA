@@ -24,6 +24,8 @@ export interface TextExtractionResult {
   text: string;
   source: TextExtractionSource;
   pages: number;
+  /** AGX-07: pages actually read with OCR; undefined when no OCR was needed. */
+  ocrPages?: number;
   /** Mean OCR confidence 0-100; undefined when no OCR was needed. */
   confidence?: number;
   /** True when the text comes from the preprocessed second read of a photo. */
@@ -192,7 +194,13 @@ export class DocumentTextExtractor {
   private async extractImage(content: Buffer): Promise<TextExtractionResult> {
     const first = await this.options.ocrEngine.recognize(content);
     if (first.confidence >= SECOND_READ_CONFIDENCE) {
-      return { text: first.text, source: 'ocr_image', pages: 1, confidence: first.confidence };
+      return {
+        text: first.text,
+        source: 'ocr_image',
+        pages: 1,
+        ocrPages: 1,
+        confidence: first.confidence,
+      };
     }
 
     const cleaned = await this.documentWorker.preprocess(content);
@@ -202,6 +210,7 @@ export class DocumentTextExtractor {
       text: best.text,
       source: 'ocr_image',
       pages: 1,
+      ocrPages: 1,
       confidence: best.confidence,
       ...(best === second ? { preprocessed: true } : {}),
     };
@@ -227,7 +236,13 @@ export class DocumentTextExtractor {
     const confidence = confidences.length
       ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
       : 0;
-    return { text: texts.join('\n'), source: 'ocr_pdf', pages: pdf.totalPages, confidence };
+    return {
+      text: texts.join('\n'),
+      source: 'ocr_pdf',
+      pages: pdf.totalPages,
+      ocrPages: pdf.images.length,
+      confidence,
+    };
   }
 
   /** Stops the document worker; the OCR engine is owned and terminated by the caller. */

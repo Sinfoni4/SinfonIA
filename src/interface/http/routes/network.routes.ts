@@ -18,7 +18,8 @@ export type NetworkRoutesDeps = { prisma: PrismaClient };
 
 const IdParamsSchema = z.object({ id: z.string().uuid() });
 const InviteBodySchema = z.object({ orgId: z.string().trim().uuid() }).strict();
-const StatsQuerySchema = z.object({
+/** A fixed period (D4.3), also used by the usage reports (AGX-07). */
+export const StatsQuerySchema = z.object({
   period: z.enum(['month', 'quarter', 'year']).default('month'),
   previous: z
     .enum(['true', 'false'])

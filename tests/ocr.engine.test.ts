@@ -85,6 +85,9 @@ function mockPrismaForAttachments() {
     practiceAttachment: { create: createAttachment, findFirst: vi.fn().mockResolvedValue(null) },
     auditLog: { create: vi.fn().mockResolvedValue({}) },
     membership: { findFirst: vi.fn().mockResolvedValue({ id: 'm-1' }) },
+    // AGX-07: the usage of the file, written with its audit in one transaction.
+    usageEvent: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+    $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
   } as unknown as PrismaClient;
   return { prisma, createAttachment };
 }

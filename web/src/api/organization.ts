@@ -175,6 +175,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ORGANIZATION_MODULES_CHANGED',
       'ORGANIZATION_IDENTIFIERS_CHANGED',
       'COMPANY_IDENTIFIERS_VIEWED',
+      'USAGE_EVENT_REVERSED',
     ],
   },
 };
@@ -382,6 +383,8 @@ export function describeEvent(event: AuditEvent): string {
       return 'Settore o funzioni cambiati dal gestore della piattaforma';
     case 'ORGANIZATION_IDENTIFIERS_CHANGED':
       return 'Dati identificativi cambiati dal gestore della piattaforma';
+    case 'USAGE_EVENT_REVERSED':
+      return 'Un consumo è stato stornato dal gestore della piattaforma';
     case 'COMPANY_IDENTIFIERS_VIEWED':
       return `Codice fiscale e partita IVA mostrati per intero${channel}`;
     case 'PRACTICE_SUB_STATE_CHANGED':

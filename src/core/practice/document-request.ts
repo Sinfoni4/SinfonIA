@@ -2,6 +2,7 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { recordUsage } from '../usage/usage.service.js';
 
 import { expectedDocumentsOf, requireExpectedKey } from './document-checklist.js';
 import { practiceRecipient } from './practice-holder.js';
@@ -215,6 +216,17 @@ export async function createDocumentRequest(
         ...(input.expectedKey ? { expectedKey: input.expectedKey } : {}),
       },
     });
+    // AGX-07: done by the requester's organization (the network, through a delegation).
+    await recordUsage(tx, [
+      {
+        key: `document.requested:${row.id}`,
+        tenantId: input.tenantId,
+        kind: 'DOCUMENT_REQUESTED',
+        actorOrgId: input.requesterOrgId,
+        userId: input.actorUserId,
+        practiceId: input.practiceId,
+      },
+    ]);
     const recipient = practiceRecipient(practice);
     if (recipient !== input.actorUserId) {
       await new OutboxRepository(tx).createMessage({
