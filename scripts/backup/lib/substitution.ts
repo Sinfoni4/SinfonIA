@@ -37,7 +37,6 @@ type TextFormat = 'email' | 'telegram' | 'phone' | 'url' | 'token';
 
 const COLUMN_FORMATS: Record<string, TextFormat> = {
   'user.email': 'email',
-  'user.telegram_id': 'telegram',
   'whatsapp_identity.phone_number': 'phone',
   'tenant.webhook_url': 'url',
 };

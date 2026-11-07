@@ -465,7 +465,10 @@ describeWithDb('WhatsApp channel with PostgreSQL (Step 7)', () => {
     const identity = await prisma.whatsappIdentity.findFirstOrThrow({
       where: { phoneNumber: phone },
     });
-    await prisma.user.update({ where: { id: identity.userId }, data: { role: 'ADMIN' } });
+    await prisma.membership.update({
+      where: { userId_orgId: { userId: identity.userId, orgId: identity.tenantId } },
+      data: { role: 'ADMIN' },
+    });
 
     const sent: Array<[string, string]> = [];
     const whatsapp: ChatNotifier = {
