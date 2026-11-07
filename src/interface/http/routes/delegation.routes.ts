@@ -13,12 +13,17 @@ import {
   setBeneficiary,
 } from '../../../core/delegation/delegation.service.js';
 import { validateAttachment } from '../../../core/practice/attachment-validation.js';
+import {
+  practiceChecklist,
+  setAttachmentExpectedKey,
+} from '../../../core/practice/document-checklist.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
 import { deadlineCategoriesOf } from '../../../modules/registry.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  AttachmentExpectedBodySchema,
   PracticeAttachmentQuerySchema,
   PracticeCreateBodySchema,
   PracticeExportBodySchema,
@@ -290,6 +295,11 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
           ok({
             ...practice,
             attachments,
+            // AGX-05: what is still missing, to check or rejected.
+            checklist: await practiceChecklist(deps.prisma, {
+              tenantId: a.grantorOrgId,
+              practiceId,
+            }),
             delegation: delegationView(a),
             module: await moduleView(deps.prisma, a.grantorOrgId),
           }),
@@ -429,6 +439,29 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
           practiceId,
           attachmentId,
         });
+        return reply.send(ok(result));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    '/grants/:id/practices/:practiceId/attachments/:attachmentId/expected',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id, practiceId, attachmentId } = AttachmentParamsSchema.parse(req.params);
+        const body = AttachmentExpectedBodySchema.parse(req.body);
+        const { access: a, userId } = await access(req, id, 'UPDATE');
+        const result = await setAttachmentExpectedKey(deps.prisma, {
+          tenantId: a.grantorOrgId,
+          practiceId,
+          attachmentId,
+          expectedKey: body.expectedKey,
+          actorUserId: userId,
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'expected', { practiceId, attachmentId });
         return reply.send(ok(result));
       } catch (err: unknown) {
         return sendError(reply, err);

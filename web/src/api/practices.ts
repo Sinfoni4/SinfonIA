@@ -46,8 +46,31 @@ export type Attachment = {
   /** A1: the data confirmed or corrected by a person; the official ones when present. */
   validatedData: ValidatedData | null;
   validatedAt: string | null;
+  /** AGX-05: the expected document this file is, and its rejection (missing on older APIs). */
+  expectedKey?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
   createdAt: string;
 };
+
+/** AGX-05: the state of an expected document, computed by the backend. */
+export type ChecklistState = 'missing' | 'to_verify' | 'valid' | 'rejected';
+
+export type DocumentChecklist = {
+  items: Array<{
+    key: string;
+    label: string;
+    required: boolean;
+    state: ChecklistState;
+    attachment: { id: string; fileName: string } | null;
+    rejectionReason: string | null;
+  }>;
+  complete: boolean;
+  counts: Record<ChecklistState, number>;
+};
+
+/** A document the practice's type expects (from the module). */
+export type ExpectedDocument = { key: string; label: string; required: boolean };
 
 export type ValidatedData = {
   documentType: string;

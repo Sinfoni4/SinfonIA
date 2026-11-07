@@ -3,10 +3,16 @@ import { z } from 'zod';
 import {
   authorize,
   can,
+  PermissionDeniedError,
   practiceReach,
   scopedUserId,
 } from '../../../core/authz/authorization.service.js';
 import { DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
+import {
+  practiceChecklist,
+  rejectAttachment,
+  setAttachmentExpectedKey,
+} from '../../../core/practice/document-checklist.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
 import { listHolderCandidates, setPracticeHolder } from '../../../core/practice/practice-holder.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
@@ -16,6 +22,8 @@ import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  AttachmentExpectedBodySchema,
+  AttachmentRejectionBodySchema,
   PracticeAssignBodySchema,
   PracticeAttachmentParamsSchema,
   PracticeAttachmentQuerySchema,
@@ -39,6 +47,7 @@ const AttachmentDownloadParamsSchema = z.object({
   id: z.string().uuid(),
   attachmentId: z.string().uuid(),
 });
+const AttachmentIdParamsSchema = AttachmentDownloadParamsSchema;
 
 export type PracticeRoutesDeps = {
   practiceService: PracticeApplicationService;
@@ -159,6 +168,86 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         try {
           const grant = requirePermission(req, 'practice.assign');
           return reply.send(ok(await listAssignees(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-05: the document checklist of a practice, for whoever reaches it.
+    app.get(
+      '/practices/:id/checklist',
+      { config: { permission: 'practice.read' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.read');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          await deps.practiceService.getPractice({
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            ...practiceReach(grant),
+          });
+          return reply.send(
+            ok(
+              await practiceChecklist(prisma, {
+                tenantId: grant.principal.tenantId,
+                practiceId: id,
+              }),
+            ),
+          );
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-05: which expected document a file is. Like the check of its data: own practices for
+    // a member, the organization's for administrators and operators.
+    app.post(
+      '/practices/:id/attachments/:attachmentId/expected',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'attachment.validate');
+          const { id, attachmentId } = AttachmentIdParamsSchema.parse(req.params);
+          const body = AttachmentExpectedBodySchema.parse(req.body);
+          const result = await setAttachmentExpectedKey(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            attachmentId,
+            expectedKey: body.expectedKey,
+            actorUserId: grant.principal.userId,
+            ownerUserId: scopedUserId(grant),
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-05: rejecting a file is for who checks the documents of the whole organization; a person
+    // never rejects their own.
+    app.post(
+      '/practices/:id/attachments/:attachmentId/rejection',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'attachment.validate');
+          if (grant.scope !== 'tenant') throw new PermissionDeniedError('attachment.validate');
+          const { id, attachmentId } = AttachmentIdParamsSchema.parse(req.params);
+          const body = AttachmentRejectionBodySchema.parse(req.body);
+          const result = await rejectAttachment(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            attachmentId,
+            reason: body.reason,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
         } catch (err: unknown) {
           const mapped = mapErrorToHttp(err);
           return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

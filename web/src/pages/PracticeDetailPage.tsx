@@ -17,11 +17,14 @@ import {
   TRANSITION_LABELS,
   usefulSummary,
   type Attachment,
+  type DocumentChecklist as Checklist,
+  type ExpectedDocument,
   type HolderCandidate,
   type PracticeDetail,
   type PracticeState,
 } from '../api/practices';
 import { VALIDATION_FIELDS, type DocumentType } from '../api/review';
+import { DocumentChecklist } from '../components/DocumentChecklist';
 import { ValidationForm } from '../components/ValidationForm';
 import { useSession } from '../session/session';
 
@@ -63,6 +66,13 @@ export function PracticeDetailPage({ me }: { me: Me }) {
       await queryClient.invalidateQueries({ queryKey: ['practice', id] });
       await queryClient.invalidateQueries({ queryKey: ['practices'] });
     },
+  });
+  // AGX-05: computed by the backend; an older backend has none, then the plain list is shown.
+  const checklist = useQuery({
+    queryKey: ['checklist', id],
+    queryFn: () => api<Checklist>(`/practices/${id}/checklist`),
+    enabled: practice.isSuccess,
+    retry: false,
   });
   const attachments = useQuery({
     queryKey: ['attachments', id],
@@ -235,7 +245,8 @@ export function PracticeDetailPage({ me }: { me: Me }) {
         )}
       </section>
 
-      {type && type.expectedDocuments.length > 0 && (
+      {checklist.data && <DocumentChecklist checklist={checklist.data} />}
+      {!checklist.data && type && type.expectedDocuments.length > 0 && (
         <section className="card" aria-labelledby="expected-title">
           <h2 id="expected-title">Documenti di solito necessari</h2>
           <ul className="plain">
@@ -261,10 +272,17 @@ export function PracticeDetailPage({ me }: { me: Me }) {
         )}
         <ul className="attachments">
           {attachments.data?.map((a) => (
-            <AttachmentItem key={a.id} practiceId={id} attachment={a} />
+            <AttachmentItem
+              key={a.id}
+              practiceId={id}
+              attachment={a}
+              expected={type?.expectedDocuments ?? []}
+              // The backend refuses it to anyone who does not check the whole organization.
+              canReject={me.current.role !== 'MEMBER'}
+            />
           ))}
         </ul>
-        {canUpload && <UploadForm practiceId={id} />}
+        {canUpload && <UploadForm practiceId={id} expected={type?.expectedDocuments ?? []} />}
       </section>
     </>
   );
@@ -280,14 +298,50 @@ export function AttachmentItem({
   basePath,
   refreshKey,
   canValidate = true,
+  expected = [],
+  canReject = false,
 }: {
   practiceId: string;
   attachment: Attachment;
   basePath?: string;
   refreshKey?: readonly unknown[];
   canValidate?: boolean;
+  /** AGX-05: the documents the practice's type expects, to say which one this file is. */
+  expected?: readonly ExpectedDocument[];
+  /** AGX-05: whether to offer the rejection (the backend still decides). */
+  canReject?: boolean;
 }) {
   const base = basePath ?? `/practices/${practiceId}`;
+  const { api } = useSession();
+  const queryClient = useQueryClient();
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: refreshKey ?? ['attachments', practiceId] });
+    await queryClient.invalidateQueries({ queryKey: ['checklist', practiceId] });
+  };
+  const link = useMutation({
+    mutationFn: (expectedKey: string | null) =>
+      api(`${base}/attachments/${attachment.id}/expected`, {
+        method: 'POST',
+        body: { expectedKey },
+      }),
+    onSuccess: refresh,
+    onError: (err: unknown) => setError(describeError(err)),
+  });
+  const reject = useMutation({
+    mutationFn: () =>
+      api(`${base}/attachments/${attachment.id}/rejection`, {
+        method: 'POST',
+        body: { reason: reason.trim() },
+      }),
+    onSuccess: async () => {
+      setRejecting(false);
+      setReason('');
+      await refresh();
+    },
+    onError: (err: unknown) => setError(describeError(err)),
+  });
   const { download } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
@@ -320,11 +374,36 @@ export function AttachmentItem({
             {formatSize(attachment.fileSize)} · {formatDate(attachment.createdAt)} ·{' '}
             {OCR_LABELS[attachment.ocrStatus]}
           </span>
+          {attachment.rejectedAt && <span className="state state-failed">respinto</span>}
         </span>
         <button type="button" className="secondary" onClick={() => void save()}>
           Scarica
         </button>
       </div>
+      {attachment.rejectedAt && attachment.rejectionReason && (
+        <p className="error">Motivo del rifiuto: {attachment.rejectionReason}</p>
+      )}
+      {canValidate && expected.length > 0 && (
+        <div className="actions">
+          <label htmlFor={`expected-${attachment.id}`}>Documento previsto</label>
+          <select
+            id={`expected-${attachment.id}`}
+            value={attachment.expectedKey ?? ''}
+            disabled={link.isPending}
+            onChange={(e) => {
+              setError(null);
+              link.mutate(e.target.value || null);
+            }}
+          >
+            <option value="">Nessuno</option>
+            {expected.map((d) => (
+              <option key={d.key} value={d.key}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {confirmed && (
         <details open>
           <summary>
@@ -370,6 +449,39 @@ export function AttachmentItem({
             {verifying ? 'Chiudi' : confirmed ? 'Correggi i dati' : 'Verifica i dati'}
           </button>
         )}
+      {canReject && !attachment.rejectedAt && !rejecting && (
+        <button type="button" className="link" onClick={() => setRejecting(true)}>
+          Rifiuta
+        </button>
+      )}
+      {rejecting && (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            reject.mutate();
+          }}
+        >
+          <label htmlFor={`reason-${attachment.id}`}>Motivo del rifiuto</label>
+          <textarea
+            id={`reason-${attachment.id}`}
+            value={reason}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Es. documento scaduto, pagina mancante, illeggibile"
+          />
+          <p className="muted">La persona della pratica lo riceve in chat con il motivo.</p>
+          <div className="actions">
+            <button type="submit" disabled={reason.trim().length < 3 || reject.isPending}>
+              Conferma rifiuto
+            </button>
+            <button type="button" className="link" onClick={() => setRejecting(false)}>
+              Annulla
+            </button>
+          </div>
+        </form>
+      )}
       {verifying && (
         <ValidationForm
           practiceId={practiceId}
@@ -417,15 +529,19 @@ export function UploadForm({
   practiceId,
   basePath,
   refreshKey,
+  expected = [],
 }: {
   practiceId: string;
   basePath?: string;
   refreshKey?: readonly unknown[];
+  /** AGX-05: the documents the practice's type expects, to say which one the file is. */
+  expected?: readonly ExpectedDocument[];
 }) {
   const { api } = useSession();
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
   const [hint, setHint] = useState('');
+  const [expectedKey, setExpectedKey] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
   const upload = useMutation({
@@ -434,6 +550,7 @@ export function UploadForm({
       const form = new FormData();
       // The hint goes before the file: the backend reads the fields in order.
       if (hint.trim()) form.append('hint', hint.trim());
+      if (expectedKey) form.append('expectedKey', expectedKey);
       form.append('file', file);
       const query = allowDuplicate ? '?allowDuplicate=true' : '';
       return api(`${basePath ?? `/practices/${practiceId}`}/attachments${query}`, {
@@ -443,9 +560,11 @@ export function UploadForm({
     },
     onSuccess: async () => {
       setHint('');
+      setExpectedKey('');
       setFile(null);
       if (input.current) input.current.value = '';
       await queryClient.invalidateQueries({ queryKey: refreshKey ?? ['attachments', practiceId] });
+      await queryClient.invalidateQueries({ queryKey: ['checklist', practiceId] });
     },
   });
 
@@ -469,6 +588,23 @@ export function UploadForm({
         accept="application/pdf,image/*"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
+      {expected.length > 0 && (
+        <>
+          <label htmlFor="expected-key">Quale documento previsto è? (facoltativo)</label>
+          <select
+            id="expected-key"
+            value={expectedKey}
+            onChange={(e) => setExpectedKey(e.target.value)}
+          >
+            <option value="">Nessuno di questi</option>
+            {expected.map((d) => (
+              <option key={d.key} value={d.key}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       <label htmlFor="hint">Che documento è? (facoltativo)</label>
       <input
         id="hint"

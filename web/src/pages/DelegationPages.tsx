@@ -29,6 +29,7 @@ import {
   type Practice,
   type PracticeState,
 } from '../api/practices';
+import { DocumentChecklist } from '../components/DocumentChecklist';
 import { missingRequired, PracticeFieldInputs } from '../components/PracticeFieldInputs';
 import { useSession } from '../session/session';
 
@@ -745,6 +746,8 @@ export function DelegatedPracticeDetailPage() {
         )}
       </section>
 
+      {p.checklist && <DocumentChecklist checklist={p.checklist} />}
+
       <section className="card" aria-labelledby="attachments-title">
         <h2 id="attachments-title">Allegati</h2>
         {p.attachments.length === 0 && <p className="muted">Nessun allegato.</p>}
@@ -757,10 +760,18 @@ export function DelegatedPracticeDetailPage() {
               basePath={base}
               refreshKey={key}
               canValidate={canUpdate}
+              expected={type?.expectedDocuments ?? []}
             />
           ))}
         </ul>
-        {canUpdate && <UploadForm practiceId={practiceId} basePath={base} refreshKey={key} />}
+        {canUpdate && (
+          <UploadForm
+            practiceId={practiceId}
+            basePath={base}
+            refreshKey={key}
+            expected={type?.expectedDocuments ?? []}
+          />
+        )}
       </section>
     </>
   );

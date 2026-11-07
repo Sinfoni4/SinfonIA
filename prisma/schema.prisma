@@ -281,23 +281,29 @@ enum OcrStatus {
 }
 
 model PracticeAttachment {
-  id            String    @id @default(uuid()) @db.Uuid
-  tenantId      String    @map("tenant_id") @db.Uuid
-  practiceId    String    @map("practice_id") @db.Uuid
-  fileName      String    @map("file_name")
-  mimeType      String    @map("mime_type")
-  fileSize      Int       @map("file_size")
-  storagePath   String    @map("storage_path")
-  ocrStatus     OcrStatus @default(PENDING) @map("ocr_status")
-  ocrResult     Json?     @map("ocr_result")
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  practiceId      String    @map("practice_id") @db.Uuid
+  fileName        String    @map("file_name")
+  mimeType        String    @map("mime_type")
+  fileSize        Int       @map("file_size")
+  storagePath     String    @map("storage_path")
+  ocrStatus       OcrStatus @default(PENDING) @map("ocr_status")
+  ocrResult       Json?     @map("ocr_result")
   /// A1: the values confirmed or corrected by a person; ocrResult stays as read.
-  validatedData Json?     @map("validated_data")
-  validatedAt   DateTime? @map("validated_at")
-  validatedBy   String?   @map("validated_by") @db.Uuid
+  validatedData   Json?     @map("validated_data")
+  validatedAt     DateTime? @map("validated_at")
+  validatedBy     String?   @map("validated_by") @db.Uuid
   /// AGX-01: SHA-256 of the content, to flag a file already sent; null for older attachments.
-  contentHash   String?   @map("content_hash")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  contentHash     String?   @map("content_hash")
+  /// AGX-05: the expected document of the practice's type this file is (a key of the module).
+  expectedKey     String?   @map("expected_key")
+  /// AGX-05: rejected by a person, with the reason; a later confirmation of its data clears it.
+  rejectedAt      DateTime? @map("rejected_at")
+  rejectedBy      String?   @map("rejected_by") @db.Uuid
+  rejectionReason String?   @map("rejection_reason")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
@@ -307,6 +313,7 @@ model PracticeAttachment {
   @@index([tenantId, ocrStatus])
   @@index([tenantId, validatedAt])
   @@index([tenantId, contentHash])
+  @@index([practiceId, expectedKey])
   @@map("practice_attachment")
 }
 

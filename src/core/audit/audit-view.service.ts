@@ -42,6 +42,8 @@ const SHOWN_FIELDS = [
   // AGX-02: an identifier «set» or «removed», never its value.
   'taxCode',
   'vatNumber',
+  // AGX-05: which expected document of the practice a file is (a key of the module).
+  'expectedKey',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

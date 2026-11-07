@@ -54,6 +54,8 @@ export function ValidationForm({
         queryClient.invalidateQueries({ queryKey: ['review'] }),
         queryClient.invalidateQueries({ queryKey: refreshKey ?? ['attachments', practiceId] }),
         queryClient.invalidateQueries({ queryKey: ['summary'] }),
+        // AGX-05: a confirmed file makes its expected document valid.
+        queryClient.invalidateQueries({ queryKey: ['checklist', practiceId] }),
       ]);
       onDone?.(data.outcome);
     },

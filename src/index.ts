@@ -37,6 +37,7 @@ import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.han
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
 import {
+  AttachmentRejectedHandler,
   PracticeAssignedHandler,
   PracticeHolderSetHandler,
   PracticeStatusHandler,
@@ -364,6 +365,7 @@ async function main() {
         outboxChannels,
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
       ),
+      new AttachmentRejectedHandler(prisma, outboxChannels),
       new PracticeHolderSetHandler(
         prisma,
         outboxChannels,
