@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { listAuditEvents } from '../../../core/audit/audit-view.service.js';
 import { authorize, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { dashboardSummary } from '../../../core/dashboard/dashboard.service.js';
+import { miniAppSummary } from '../../../core/miniapp/miniapp.service.js';
 import {
   getOrganizationSettings,
   updateOrganizationSettings,
@@ -83,6 +84,25 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
         deadlineUserId: scopedUserId(deadlines),
       });
       return reply.send(ok(summary));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Telegram Mini App: the «Oggi» and «Agenda» screens in one call, within the caller's grants.
+  app.get('/miniapp/summary', { config: { permission: 'practice.read' } }, async (req, reply) => {
+    try {
+      const practices = requirePermission(req, 'practice.read');
+      const deadlines = authorize(practices.principal, 'compliance.read');
+      return reply.send(
+        ok(
+          await miniAppSummary(deps.prisma, deps.complianceService, {
+            tenantId: practices.principal.tenantId,
+            practiceUserId: scopedUserId(practices),
+            deadlineUserId: scopedUserId(deadlines),
+          }),
+        ),
+      );
     } catch (err: unknown) {
       return sendError(reply, err);
     }

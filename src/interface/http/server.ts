@@ -73,6 +73,8 @@ export type ServerDeps = {
   prisma?: PrismaClient;
   /** Email login and invitations (MF6); routes absent when not given. */
   login?: LoginService;
+  /** Telegram Mini App: the bot token (tests); otherwise TELEGRAM_BOT_TOKEN. */
+  telegramBotToken?: string;
   /** AGX-10: verified chat links, listed and revoked from the dashboard. */
   channelLinks?: ChannelLinkService;
 };
@@ -222,6 +224,10 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
       issuePlatformToken: (grant) => authService.issuePlatform(grant),
       accessTokenTtlSeconds: SESSION_ACCESS_TOKEN_TTL_SECONDS,
       perMinute: config.RATE_LIMIT_AUTH_PER_MINUTE,
+      telegramBotToken: deps.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN?.trim(),
+      // Shown codes and a signed preview of the Mini App: development only (the config refuses
+      // AUTH_DEV_SHOW_CODE elsewhere).
+      devTelegramWebApp: config.AUTH_DEV_SHOW_CODE,
     });
     // The platform console needs the login service (confirmation codes, first invitations).
     if (deps.prisma) {

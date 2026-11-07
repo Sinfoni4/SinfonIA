@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { Layout } from './components/Layout';
+import { MiniApp } from './miniapp/MiniApp';
 import { ActivityPage, AssistantUsagePage } from './pages/ActivityPage';
 import { AssistancePage } from './pages/AssistancePage';
 import { BoardPage } from './pages/BoardPage';
@@ -32,6 +33,9 @@ import { useSession } from './session/session';
 export function App() {
   const { state } = useSession();
   const { pathname } = useLocation();
+
+  // Telegram Mini App: its own screens and its own login (the data Telegram signs).
+  if (pathname === '/tg' || pathname.startsWith('/tg/')) return <MiniApp />;
 
   if (state.status === 'loading') {
     return (

@@ -24,6 +24,7 @@ import { ChannelLinkError } from '../../../core/identity/channel-link.service.js
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
+import { TelegramWebAppError } from '../../../core/identity/telegram-webapp.js';
 import {
   AttachmentRejectedError,
   ComplianceValidationError,
@@ -67,6 +68,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof MemberAccessError ||
     err instanceof LoginError ||
     err instanceof ChannelLinkError ||
+    err instanceof TelegramWebAppError ||
     err instanceof InvitationError ||
     err instanceof OrganizationSettingsError ||
     err instanceof CompanyIdentifiersError ||

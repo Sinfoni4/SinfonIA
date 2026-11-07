@@ -241,7 +241,32 @@ export class LoginService {
     return { email: challenge.email, userId: challenge.userId };
   }
 
-  private async openSession(userId: string): Promise<LoginSession> {
+  /**
+   * Telegram Mini App: a session for the person whose chat account is linked (AGX-10), once the
+   * caller has checked Telegram's signature of the opening. Nothing for an unlinked account.
+   */
+  async openChatSession(
+    channel: 'TELEGRAM' | 'WHATSAPP',
+    externalId: string,
+  ): Promise<LoginSession> {
+    const identity = await this.prisma.channelIdentity.findFirst({
+      where: {
+        channel,
+        externalId: externalId.trim(),
+        revokedAt: null,
+        user: { status: 'ACTIVE' },
+      },
+      select: { id: true, userId: true },
+    });
+    if (!identity) throw new LoginError();
+    await this.prisma.channelIdentity.update({
+      where: { id: identity.id },
+      data: { lastUsedAt: this.now() },
+    });
+    return this.openSession(identity.userId, channel === 'TELEGRAM' ? 'telegram' : 'whatsapp');
+  }
+
+  private async openSession(userId: string, channel?: string): Promise<LoginSession> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, status: 'ACTIVE' },
       select: { authVersion: true, emailVerifiedAt: true, platformRole: true },
@@ -257,7 +282,7 @@ export class LoginService {
       },
       select: { id: true },
     });
-    if (!user.emailVerifiedAt) {
+    if (!user.emailVerifiedAt && !channel) {
       // The code proves control of the mailbox (not the legal identity).
       await this.prisma.user.update({
         where: { id: userId },
@@ -279,7 +304,7 @@ export class LoginService {
         tenantId: m.orgId,
         userId,
         eventType: 'LOGIN_SUCCEEDED',
-        payload: { sessionId: session.id },
+        payload: { sessionId: session.id, ...(channel ? { channel } : {}) },
       });
     }
     return {
