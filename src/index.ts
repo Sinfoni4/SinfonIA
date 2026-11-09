@@ -245,6 +245,10 @@ async function main() {
     ...(channelLinks ? { channelLinks } : {}),
     // A2: «Modifica» under a document points to the dashboard page of the documents to verify.
     ...(config.WEB_PUBLIC_URL ? { reviewUrl: `${config.WEB_PUBLIC_URL}/app/verifica` } : {}),
+    // Telegram Mini App: offered in chat only when on and reachable over https.
+    ...(config.TELEGRAM_MINIAPP && config.WEB_PUBLIC_URL?.startsWith('https://')
+      ? { miniAppUrl: `${config.WEB_PUBLIC_URL}/app/tg` }
+      : {}),
     scheduledExport: (orgId: string, userId: string, enabled: boolean) =>
       setScheduledExport(prisma, orgId, userId, enabled, { userId }),
     // A1: «conferma» in chat confirms the data of one's own document as read.
@@ -291,7 +295,10 @@ async function main() {
     principals: createPrismaPrincipalResolver(prisma),
     prisma,
     // Email login (MF6): only where enabled, never in production until a provider exists (D11).
-    ...(config.AUTH_EMAIL_LOGIN
+    // Telegram Mini App: sessions without email login (no email routes, no console then).
+    emailLogin: config.AUTH_EMAIL_LOGIN,
+    ...(config.AUTH_EMAIL_LOGIN ||
+    (config.TELEGRAM_MINIAPP && process.env.TELEGRAM_BOT_TOKEN?.trim())
       ? {
           login: new LoginService(prisma, emailSender, config.AUTH_SECRET, {
             log: logger,

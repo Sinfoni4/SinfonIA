@@ -174,6 +174,8 @@ export type ChannelOptions = {
   compressedPhotoTip?: string;
   /** Address of the dashboard page of the documents to verify, for «Modifica» (A2). */
   reviewUrl?: string;
+  /** The Telegram Mini App (https), offered by «/app» and after «/start». */
+  miniAppUrl?: string;
   /** AGX-01: downloads a file again from its `ref`, for a file waiting across a restart. */
   downloadRef?: (ref: string) => () => Promise<Buffer>;
 };
@@ -186,6 +188,8 @@ export type ReplyOptions = {
   buttons?: ReplyButton[];
   /** Shows the main menu at the bottom of the chat. */
   menu?: boolean;
+  /** A button that opens the Telegram Mini App (https only); other channels show the text. */
+  webApp?: { label: string; url: string };
 };
 
 type Reply = (text: string, options?: ReplyOptions) => Promise<unknown>;
@@ -276,6 +280,8 @@ export const VOICE_NOT_SUPPORTED =
 
 const SCHEDULED_EXPORT_COMMAND = /^(attiva|disattiva)\s+export\s+pianificato$/i;
 const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
+/** The Telegram Mini App: «/app», «app», «apri app». */
+const APP_COMMAND = /^(?:\/app|app|apri (?:l'|la )?app|apri sinfonia)[.!]?$/i;
 const CARD_COMMAND =
   /^(?:la mia azienda|scheda(?: dell')?(?: ?azienda)?|dati (?:della mia |dell')?azienda)[.!?]?$/i;
 const REVEAL_COMMAND = /^mostra (?:i )?codici(?: per intero)?$/i;
@@ -1089,11 +1095,29 @@ export class ConversationService {
       return;
     }
 
+    if (APP_COMMAND.test(trimmed)) {
+      await reply(
+        this.channel.miniAppUrl
+          ? '📱 Apri SinfonIA: pratiche, documenti e scadenze in un colpo d’occhio.'
+          : 'L’app di SinfonIA non è ancora disponibile qui: continua pure in chat.',
+        this.channel.miniAppUrl
+          ? { webApp: { label: '📱 Apri SinfonIA', url: this.channel.miniAppUrl } }
+          : undefined,
+      );
+      return;
+    }
+
     if (lower.startsWith('/start') || isGreeting(text)) {
       const firstTime = await this.memory.markOnboarded(tenant.id, dbUser.id);
       await reply(firstTime ? onboardingMessage(dbUser) : '👋 Bentornato! Come posso aiutarti?', {
         menu: true,
       });
+      // The Mini App, when available, right after the greeting of /start.
+      if (this.channel.miniAppUrl && lower.startsWith('/start')) {
+        await reply('📱 Oppure apri l’app di SinfonIA:', {
+          webApp: { label: '📱 Apri SinfonIA', url: this.channel.miniAppUrl },
+        });
+      }
       return;
     }
 

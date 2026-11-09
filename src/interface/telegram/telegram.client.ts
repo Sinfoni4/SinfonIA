@@ -62,7 +62,11 @@ type TelegramUpdate = {
 
 /** Buttons under a message (inline) or the menu at the bottom of the chat (reply keyboard). */
 export type ReplyMarkup =
-  | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+  | {
+      inline_keyboard: Array<
+        Array<{ text: string; callback_data: string } | { text: string; web_app: { url: string } }>
+      >;
+    }
   | {
       keyboard: Array<Array<{ text: string }>>;
       resize_keyboard?: boolean;
