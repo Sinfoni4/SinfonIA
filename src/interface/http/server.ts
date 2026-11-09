@@ -73,6 +73,11 @@ export type ServerDeps = {
   prisma?: PrismaClient;
   /** Email login and invitations (MF6); routes absent when not given. */
   login?: LoginService;
+  /**
+   * Email login is on (AUTH_EMAIL_LOGIN). `login` may exist without it, only for the Telegram
+   * Mini App: then no email routes, invitations or platform console. Default on.
+   */
+  emailLogin?: boolean;
   /** Telegram Mini App: the bot token (tests); otherwise TELEGRAM_BOT_TOKEN. */
   telegramBotToken?: string;
   /** AGX-10: verified chat links, listed and revoked from the dashboard. */
@@ -196,7 +201,8 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   if (deps.prisma) {
     void app.register(membersRoutes, {
       prisma: deps.prisma,
-      login: deps.login,
+      // Invitations are sent by email: only with email login.
+      login: deps.emailLogin === false ? undefined : deps.login,
       channelLinks: deps.channelLinks,
     });
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
@@ -228,9 +234,10 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
       // Shown codes and a signed preview of the Mini App: development only (the config refuses
       // AUTH_DEV_SHOW_CODE elsewhere).
       devTelegramWebApp: config.AUTH_DEV_SHOW_CODE,
+      emailLogin: deps.emailLogin !== false,
     });
     // The platform console needs the login service (confirmation codes, first invitations).
-    if (deps.prisma) {
+    if (deps.prisma && deps.emailLogin !== false) {
       void app.register(platformRoutes, {
         prisma: deps.prisma,
         login: deps.login,

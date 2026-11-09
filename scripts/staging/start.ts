@@ -14,12 +14,20 @@
  * `--dashboard-login`: the dashboard login with the code shown on screen, while emails are
  * simulated (no provider yet, D11). The server then answers on this PC only (127.0.0.1): anyone
  * who reached the page could log in as anyone invited.
+ *
+ * `--public --public-url=https://…`: staging reachable from the Internet through a tunnel (the
+ * Telegram Mini App needs HTTPS). Only the Mini App login (data signed by Telegram, linked
+ * accounts): no email login, no code on screen, no signed preview. The server still answers on
+ * 127.0.0.1 only: the tunnel reaches it from this PC. Not together with `--dashboard-login`.
  * Usage: npm run staging:start [-- --check] [-- --dashboard-login] [-- --no-build]
+ *        npm run staging:start -- --public --public-url=https://<address>
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import path from 'node:path';
+
+import { checkPublicUrl } from './public-url.js';
 
 const PG_BIN = process.env.MF0_PG_BIN ?? 'C:/Program Files/PostgreSQL/17/bin';
 const DATA_DIR = '.runtime/pgdata_test';
@@ -31,6 +39,11 @@ const PORT = Number(process.env.STAGING_PORT ?? 3110);
 const checkOnly = process.argv.includes('--check');
 const dashboardLogin = process.argv.includes('--dashboard-login');
 const skipBuild = process.argv.includes('--no-build');
+const publicMode = process.argv.includes('--public');
+const publicUrl = process.argv
+  .find((a) => a.startsWith('--public-url='))
+  ?.slice('--public-url='.length)
+  .replace(/\/+$/, '');
 
 function envValue(file: string, key: string): string {
   if (!existsSync(file)) throw new Error(`${file} not found (run from the repository folder)`);
@@ -121,7 +134,16 @@ async function main() {
   }
 
   // 4. The application.
+  if (publicMode && dashboardLogin) {
+    throw new Error(
+      '--public e --dashboard-login non vanno insieme: il codice a schermo resta locale',
+    );
+  }
+  const origin = publicMode ? checkPublicUrl(publicUrl) : null;
   console.log(`Applicazione: avvio sulla porta ${PORT} con ${APP_ROLE} (Ctrl+C per fermarla)`);
+  if (origin) {
+    console.log(`Mini App: ${origin}/app/tg (solo account Telegram collegati; nessun login email)`);
+  }
   if (dashboardLogin) {
     console.log(
       `Dashboard: http://localhost:${PORT}/app/ con il codice sullo schermo, solo da questo PC`,
@@ -138,6 +160,15 @@ async function main() {
       PORT: String(PORT),
       SCHEDULER_INTERVAL_MS: process.env.SCHEDULER_INTERVAL_MS ?? '15000',
       OUTBOX_DISPATCH_INTERVAL_MS: process.env.OUTBOX_DISPATCH_INTERVAL_MS ?? '3000',
+      ...(origin
+        ? {
+            TELEGRAM_MINIAPP: 'true',
+            AUTH_EMAIL_LOGIN: 'false',
+            AUTH_DEV_SHOW_CODE: 'false',
+            WEB_PUBLIC_URL: origin,
+            HOST: '127.0.0.1',
+          }
+        : {}),
       ...(dashboardLogin
         ? {
             AUTH_EMAIL_LOGIN: 'true',

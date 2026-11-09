@@ -59,6 +59,13 @@ const ConfigSchema = z
       .refine((v) => /^https?:\/\//.test(v), 'WEB_PUBLIC_URL must be an http(s) address')
       .optional(),
     // Email login (MF6): off until an email provider is chosen (D11); emails are simulated.
+    // Telegram Mini App (/app/tg): login with the data Telegram signs, for linked accounts. It
+    // needs no email provider, so it is allowed in production; it needs TELEGRAM_BOT_TOKEN.
+    TELEGRAM_MINIAPP: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
     AUTH_EMAIL_LOGIN: z
       .string()
       .optional()

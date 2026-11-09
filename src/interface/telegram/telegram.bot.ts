@@ -28,6 +28,8 @@ export type BotDeps = ConversationDeps & {
   identity?: ChannelIdentityProvider;
   /** Dashboard page of the documents to verify, offered by «Modifica» (A2). */
   reviewUrl?: string;
+  /** The Telegram Mini App (https), offered by «/app» and after «/start». */
+  miniAppUrl?: string;
 };
 
 /**
@@ -61,6 +63,12 @@ export class ButtonAnswers {
 
 /** Telegram markup for the reply options: buttons under the message, or the main menu. */
 export function replyMarkup(options: ReplyOptions | undefined): ReplyMarkup | undefined {
+  // Telegram accepts a Mini App button only with an https address.
+  if (options?.webApp && options.webApp.url.startsWith('https://')) {
+    return {
+      inline_keyboard: [[{ text: options.webApp.label, web_app: { url: options.webApp.url } }]],
+    };
+  }
   if (options?.buttons?.length) {
     // Short labels two per row, long ones alone.
     const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -139,6 +147,7 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
     maxDownloadBytes: TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     compressedPhotoTip: TELEGRAM_COMPRESSED_PHOTO_TIP,
     reviewUrl: deps.reviewUrl,
+    miniAppUrl: deps.miniAppUrl,
     downloadRef: download,
   });
   const buttons = new ButtonAnswers();
