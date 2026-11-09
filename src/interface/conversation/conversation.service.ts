@@ -36,7 +36,7 @@ import {
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 
-import { ChatLinkFlow, NOT_LINKED_TEXT, type ChannelLinkPort } from './chat-link.flow.js';
+import { ChatLinkFlow, type ChannelLinkPort, type DemoPort } from './chat-link.flow.js';
 import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
@@ -157,6 +157,8 @@ export type ConversationDeps = {
    * off: then nobody can link, since an organization's invite code no longer does.
    */
   channelLinks?: ChannelLinkPort;
+  /** Staging only (DEMO_ACCESS): «/start demo» gives an account in the demo organization. */
+  demoAccess?: DemoPort;
   /** Defaults to process memory; production passes the database one. */
   memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
@@ -494,6 +496,11 @@ export class ConversationService {
           getModule(tenant?.module).welcome
         );
       },
+      Date.now,
+      {
+        ...(deps.demoAccess ? { demo: deps.demoAccess } : {}),
+        ...(channel.miniAppUrl ? { miniAppUrl: channel.miniAppUrl } : {}),
+      },
     );
   }
 
@@ -585,7 +592,7 @@ export class ConversationService {
       }
     } catch (err: unknown) {
       if (err instanceof TenantNotLinkedError) {
-        await reply(NOT_LINKED_TEXT);
+        await reply(this.linkFlow.notLinkedText());
         return;
       }
       if (!(err instanceof OrganizationChoiceRequiredError)) throw err;

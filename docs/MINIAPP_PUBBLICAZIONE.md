@@ -75,6 +75,31 @@ In modalità pubblica il bot offre l'app anche da solo:
 
 Se l'account non è collegato, l'app spiega di scrivere `/accedi`.
 
+## Demo per persone esterne
+
+Per far provare SinfonIA a chi non fa parte di un'organizzazione, avvia lo staging pubblico con `--demo`:
+
+```bash
+npm run staging:start -- --public --public-url=https://<indirizzo-del-tunnel> --demo
+```
+
+Poi manda a chi vuoi il link generico:
+
+```
+https://t.me/sinfonia_coop_bot?start=demo
+```
+
+Chi lo apre e preme **Avvia** ottiene un account suo nell'organizzazione «SinfonIA Demo», con dati inventati: due pratiche agricole, documenti, una richiesta di documento e due scadenze.
+
+- Ognuno vede solo i propri dati, mai quelli degli altri visitatori né le organizzazioni vere.
+- Un account Telegram già collegato a SinfonIA non viene toccato.
+- Nella demo l'assistente IA, l'assistenza, gli export e le deleghe sono spenti; comandi, documenti (OCR locale), scadenze e Mini App funzionano.
+- Dopo 7 giorni l'account demo e i suoi dati vengono cancellati da soli.
+- Al massimo 30 nuovi account demo all'ora.
+- In produzione la demo non si può accendere.
+
+Funziona anche scrivendo `/demo` al bot.
+
 ## 5. Finita la prova
 
 1. Chiudi il tunnel (Ctrl+C nel suo terminale).
