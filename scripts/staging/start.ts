@@ -19,8 +19,10 @@
  * Telegram Mini App needs HTTPS). Only the Mini App login (data signed by Telegram, linked
  * accounts): no email login, no code on screen, no signed preview. The server still answers on
  * 127.0.0.1 only: the tunnel reaches it from this PC. Not together with `--dashboard-login`.
+ * `--demo`: the generic demo link `t.me/<bot>?start=demo` (DEMO_ACCESS): an account of one's own
+ * in «SinfonIA Demo» with invented data, deleted after a week; never a real organization.
  * Usage: npm run staging:start [-- --check] [-- --dashboard-login] [-- --no-build]
- *        npm run staging:start -- --public --public-url=https://<address>
+ *        npm run staging:start -- --public --public-url=https://<address> [--demo]
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -40,6 +42,7 @@ const checkOnly = process.argv.includes('--check');
 const dashboardLogin = process.argv.includes('--dashboard-login');
 const skipBuild = process.argv.includes('--no-build');
 const publicMode = process.argv.includes('--public');
+const demoMode = process.argv.includes('--demo');
 const publicUrl = process.argv
   .find((a) => a.startsWith('--public-url='))
   ?.slice('--public-url='.length)
@@ -160,6 +163,7 @@ async function main() {
       PORT: String(PORT),
       SCHEDULER_INTERVAL_MS: process.env.SCHEDULER_INTERVAL_MS ?? '15000',
       OUTBOX_DISPATCH_INTERVAL_MS: process.env.OUTBOX_DISPATCH_INTERVAL_MS ?? '3000',
+      ...(demoMode ? { DEMO_ACCESS: 'true' } : {}),
       ...(origin
         ? {
             TELEGRAM_MINIAPP: 'true',

@@ -23,6 +23,7 @@ import {
 } from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
 import { GrantExpiringHandler } from './core/delegation/grant-reminders.js';
+import { expireDemoAccounts, startDemo } from './core/demo/demo-access.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
 import { ChannelLinkService } from './core/identity/channel-link.service.js';
 import { LoginService } from './core/identity/login.service.js';
@@ -240,8 +241,14 @@ async function main() {
         log: logger,
       })
     : undefined;
+  // Demo (staging only): an account of one's own in «SinfonIA Demo» from «/start demo».
+  const demoAccess = config.DEMO_ACCESS
+    ? (telegramId: string) =>
+        startDemo({ prisma, practices: practiceService, compliance: complianceService }, telegramId)
+    : undefined;
   const conversationDeps = {
     prisma,
+    ...(demoAccess ? { demoAccess } : {}),
     ...(channelLinks ? { channelLinks } : {}),
     // A2: «Modifica» under a document points to the dashboard page of the documents to verify.
     ...(config.WEB_PUBLIC_URL ? { reviewUrl: `${config.WEB_PUBLIC_URL}/app/verifica` } : {}),
@@ -423,6 +430,15 @@ async function main() {
         intervalMs: config.SCHEDULER_INTERVAL_MS,
         run: () => schedulerService.tick(),
       },
+      ...(config.DEMO_ACCESS
+        ? [
+            {
+              name: 'demo-expiry',
+              intervalMs: 60 * 60_000,
+              run: async () => ({ deleted: await expireDemoAccounts(prisma, storageService) }),
+            },
+          ]
+        : []),
       {
         name: 'ai-trace-retention',
         intervalMs: 60 * 60_000,

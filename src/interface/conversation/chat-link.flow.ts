@@ -1,5 +1,6 @@
 import { ChannelLinkError } from '../../core/identity/channel-link.service.js';
 
+import type { DemoResult } from '../../core/demo/demo-access.js';
 import type { ChannelLinkService, LinkResult } from '../../core/identity/channel-link.service.js';
 import type { ChannelType } from '@prisma/client';
 
@@ -17,8 +18,14 @@ export type ChannelLinkPort = Pick<
 
 type Reply = (
   text: string,
-  options?: { buttons?: Array<{ label: string; answer: string }> },
+  options?: {
+    buttons?: Array<{ label: string; answer: string }>;
+    webApp?: { label: string; url: string };
+  },
 ) => Promise<unknown>;
+
+/** Staging only (DEMO_ACCESS): an account of one's own in the demo organization. */
+export type DemoPort = (telegramId: string) => Promise<DemoResult>;
 
 type Pending =
   | { step: 'email'; expiresAt: number }
@@ -29,6 +36,8 @@ const ACCEDI = /^\/?(accedi|collega)$/i;
 const COLLEGAMENTI = /^\/?collegamenti$/i;
 const SCOLLEGA = /^\/?scollega$/i;
 const LEGACY_LINK = /^\/?start\s+\S+/i;
+/** The generic demo link (`t.me/<bot>?start=demo` sends «/start demo»), or «/demo». */
+const DEMO = /^\/?(?:start\s+demo|demo)$/i;
 const CANCEL = /^(annulla|no|stop)$/i;
 const YES = /^(s[iì]|ok|conferma)$/i;
 const CODE = /^\d{6}$/;
@@ -56,7 +65,15 @@ export class ChatLinkFlow {
     private readonly channel: ChannelType,
     private readonly welcome: (result: LinkResult) => Promise<string>,
     private readonly now: () => number = Date.now,
+    private readonly options: { demo?: DemoPort; miniAppUrl?: string } = {},
   ) {}
+
+  /** The answer to someone not linked: /accedi, and the demo where it exists. */
+  notLinkedText(): string {
+    return this.options.demo
+      ? `${NOT_LINKED_TEXT}\nVuoi solo provare SinfonIA? Scrivi /demo.`
+      : NOT_LINKED_TEXT;
+  }
 
   /** Handles the message when it belongs to linking; false lets the conversation go on. */
   async handle(senderId: string, text: string, reply: Reply): Promise<boolean> {
@@ -135,11 +152,42 @@ export class ChatLinkFlow {
       return this.continue(senderId, trimmed, active, reply);
     }
 
+    if (DEMO.test(trimmed) && this.options.demo && this.channel === 'TELEGRAM') {
+      await this.startDemo(senderId, reply, this.options.demo);
+      return true;
+    }
+
     if (LEGACY_LINK.test(trimmed)) {
       await reply(LEGACY_LINK_TEXT);
       return true;
     }
     return false;
+  }
+
+  private async startDemo(senderId: string, reply: Reply, demo: DemoPort): Promise<void> {
+    const result = await demo(senderId);
+    if (result.status === 'linked') {
+      await reply(
+        'Questo account è già collegato a SinfonIA: la demo è per chi non ne fa parte. ' +
+          'Scrivi /app per aprire l’app, oppure «lista pratiche».',
+      );
+      return;
+    }
+    if (result.status === 'busy') {
+      await reply('In questo momento ci sono molte prove in corso: riprova tra un’ora.');
+      return;
+    }
+    const app = this.options.miniAppUrl;
+    await reply(
+      `👋 Benvenuto nella demo di SinfonIA!\n` +
+        `Ti ho creato un’azienda agricola di prova in «${result.orgName}», con pratiche, ` +
+        `documenti e scadenze inventati: i tuoi dati non li vede nessun altro.\n\n` +
+        'Prova a scrivere «lista pratiche» o «scadenze», oppure mandami una foto di un documento ' +
+        `(c’è un certificato biologico richiesto). La demo dura ${result.days} giorni, poi i dati ` +
+        'vengono cancellati.' +
+        (app ? '\n\nOppure apri l’app:' : ''),
+      app ? { webApp: { label: '📱 Apri SinfonIA', url: app } } : undefined,
+    );
   }
 
   private async continue(

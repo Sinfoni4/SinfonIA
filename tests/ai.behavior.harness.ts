@@ -317,6 +317,7 @@ async function main(): Promise<void> {
         OUTBOX_DISPATCH_INTERVAL_MS: 5_000,
         OUTBOX_MAX_ATTEMPTS: 8,
         TELEGRAM_MINIAPP: false,
+        DEMO_ACCESS: false,
         OCR_MAX_ATTEMPTS: 3,
         WHATSAPP_API_VERSION: 'v21.0',
         RATE_LIMIT_PER_MINUTE: 120,

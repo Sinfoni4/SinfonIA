@@ -61,6 +61,13 @@ const ConfigSchema = z
     // Email login (MF6): off until an email provider is chosen (D11); emails are simulated.
     // Telegram Mini App (/app/tg): login with the data Telegram signs, for linked accounts. It
     // needs no email provider, so it is allowed in production; it needs TELEGRAM_BOT_TOKEN.
+    // Demo (staging only): «/start demo» gives an unlinked Telegram account its own account in
+    // the «SinfonIA Demo» organization, with invented data deleted after a week.
+    DEMO_ACCESS: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
     TELEGRAM_MINIAPP: z
       .string()
       .optional()
@@ -137,6 +144,11 @@ const ConfigSchema = z
     // A login code returned to the caller would make the email useless as a proof.
     message: 'AUTH_DEV_SHOW_CODE is allowed only with NODE_ENV=development',
     path: ['AUTH_DEV_SHOW_CODE'],
+  })
+  .refine((c) => !(c.DEMO_ACCESS && c.NODE_ENV === 'production'), {
+    // Anyone with the link gets an account: never next to real organizations.
+    message: 'DEMO_ACCESS is allowed only outside production',
+    path: ['DEMO_ACCESS'],
   })
   .refine((c) => !(c.AUTH_EMAIL_LOGIN && c.NODE_ENV === 'production'), {
     // The login codes would go nowhere: no email provider is configured yet (D11).
