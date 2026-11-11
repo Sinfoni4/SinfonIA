@@ -1,10 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { CHANNEL_NAMES, type ChannelLink, type OwnChannelLinks } from '../api/channels';
+import {
+  CHANNEL_NAMES,
+  type ChannelLink,
+  type IssuedLink,
+  type OwnChannelLinks,
+} from '../api/channels';
 import { describeError } from '../api/client';
 import { formatDate } from '../api/practices';
 import { useSession } from '../session/session';
+
+import { IssuedLinkBox } from './ChatInvites';
 
 type Props = { mode: 'own' } | { mode: 'member'; userId: string; orgId: string };
 
@@ -42,6 +49,9 @@ export function ChatLinks(props: Props) {
     },
   });
   const links = query.data?.links ?? [];
+  const ownLink = useMutation({
+    mutationFn: () => api<IssuedLink>('/me/channels/link', { method: 'POST', body: {} }),
+  });
 
   return (
     <section className="card" aria-labelledby="chat-links">
@@ -102,6 +112,21 @@ export function ChatLinks(props: Props) {
       {revoke.isError && (
         <p className="error" role="alert">
           {describeError(revoke.error)}
+        </p>
+      )}
+      {props.mode === 'own' && (
+        <div className="actions">
+          <button type="button" disabled={ownLink.isPending} onClick={() => ownLink.mutate()}>
+            Collega Telegram con un link
+          </button>
+        </div>
+      )}
+      {props.mode === 'own' && ownLink.data && (
+        <IssuedLinkBox issued={ownLink.data} validity="Aprilo dal tuo telefono entro 30 minuti." />
+      )}
+      {props.mode === 'own' && ownLink.isError && (
+        <p className="error" role="alert">
+          {describeError(ownLink.error)}
         </p>
       )}
       {props.mode === 'own' && query.data && (

@@ -26,6 +26,7 @@ import { GrantExpiringHandler } from './core/delegation/grant-reminders.js';
 import { expireDemoAccounts, startDemo } from './core/demo/demo-access.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
 import { ChannelLinkService } from './core/identity/channel-link.service.js';
+import { ChatInviteService } from './core/identity/chat-invite.service.js';
 import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
 import {
@@ -241,6 +242,17 @@ async function main() {
         log: logger,
       })
     : undefined;
+  // Personal Telegram links (invitation by link, own link): no email needed. The bot's username
+  // makes the t.me link; asked to Telegram once when not configured.
+  const tgUsername =
+    process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, '') ||
+    (process.env.TELEGRAM_BOT_TOKEN?.trim()
+      ? await new TelegramClient(process.env.TELEGRAM_BOT_TOKEN.trim())
+          .getMe()
+          .then((me) => me.username)
+          .catch(() => undefined)
+      : undefined);
+  const chatInvites = new ChatInviteService(prisma, tgUsername);
   // Demo (staging only): an account of one's own in «SinfonIA Demo» from «/start demo».
   const demoAccess = config.DEMO_ACCESS
     ? (telegramId: string) =>
@@ -248,6 +260,7 @@ async function main() {
     : undefined;
   const conversationDeps = {
     prisma,
+    chatInvites,
     ...(demoAccess ? { demoAccess } : {}),
     ...(channelLinks ? { channelLinks } : {}),
     // A2: «Modifica» under a document points to the dashboard page of the documents to verify.
@@ -315,6 +328,7 @@ async function main() {
         }
       : {}),
     ...(channelLinks ? { channelLinks } : {}),
+    chatInvites,
     practiceService,
     complianceService,
     tracer,

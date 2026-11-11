@@ -39,6 +39,11 @@ export const MAX_CHALLENGES_PER_HOUR = 5;
 /** Proposal: a session lasts 30 days, the access token 10 minutes. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60_000;
+/**
+ * The marker of an invitation by Telegram link (ChatInviteService): never accepted on the web and
+ * not listed among the email invitations.
+ */
+export const CHAT_INVITE_EMAIL = 'invito-telegram@local.invalid';
 
 export class LoginError extends Error {
   readonly statusCode = 401;
@@ -547,6 +552,7 @@ export class LoginService {
     });
     if (
       !invitation ||
+      invitation.email === CHAT_INVITE_EMAIL ||
       invitation.acceptedAt ||
       invitation.revokedAt ||
       invitation.expiresAt <= this.now()
@@ -574,7 +580,7 @@ export class LoginService {
   /** Invitations of an organization, newest first, with their state (no token). */
   async listInvitations(orgId: string): Promise<InvitationView[]> {
     const rows = await this.prisma.invitation.findMany({
-      where: { orgId },
+      where: { orgId, email: { not: CHAT_INVITE_EMAIL } },
       orderBy: { createdAt: 'desc' },
       take: 200,
       select: {

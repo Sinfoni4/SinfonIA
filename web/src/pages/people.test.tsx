@@ -219,6 +219,31 @@ describe('people (FE4)', () => {
     );
   });
 
+  it('creates a personal Telegram invitation link with a role', async () => {
+    const link = 'https://t.me/sinfonia_coop_bot?start=iABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
+    api('ADMIN', {
+      'GET /members/chat-invites': () => ok([]),
+      'POST /members/chat-invites': () => ({
+        status: 201,
+        body: {
+          success: true,
+          data: {
+            token: 'iABCDEFGHIJKLMNOPQRSTUVWXYZ012345',
+            link,
+            expiresAt: '2026-11-18T10:00:00.000Z',
+          },
+        },
+      }),
+    });
+    openAt('/persone');
+    expect(await screen.findByRole('heading', { name: 'Invito con link Telegram' })).toBeTruthy();
+    const section = screen.getByRole('region', { name: 'Invito con link Telegram' });
+    await userEvent.selectOptions(within(section).getByLabelText('Ruolo'), 'OPERATOR');
+    await userEvent.click(within(section).getByRole('button', { name: 'Crea il link' }));
+    expect(await screen.findByText(link)).toBeTruthy();
+    expect(posted('/members/chat-invites')[0]?.body).toEqual({ role: 'OPERATOR' });
+  });
+
   it('opens the card of a member with practices, deadlines and documents', async () => {
     const GIULIA = 'u0000000-0000-4000-8000-000000000002';
     api('ADMIN', {

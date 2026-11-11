@@ -15,6 +15,18 @@ export type ChannelLink = {
 
 export type OwnChannelLinks = { links: ChannelLink[]; linkingAvailable: boolean };
 
+/** A personal Telegram link: `link` is the t.me address, or null (then `/start <token>`). */
+export type IssuedLink = { token: string; link: string | null; expiresAt: string };
+
+/** An invitation by Telegram link, for a new person with a role. */
+export type ChatInvite = {
+  id: string;
+  role: 'ADMIN' | 'OPERATOR' | 'MEMBER';
+  status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+  expiresAt: string;
+  createdAt: string;
+};
+
 export const CHANNEL_NAMES: Record<ChatChannel, string> = {
   TELEGRAM: 'Telegram',
   WHATSAPP: 'WhatsApp',

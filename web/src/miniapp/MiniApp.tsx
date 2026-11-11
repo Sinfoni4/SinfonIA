@@ -24,7 +24,8 @@ export type SheetIntent =
   | { kind: 'upload'; practiceId?: string; requestId?: string }
   | { kind: 'practice' }
   | { kind: 'deadline' }
-  | { kind: 'operator' };
+  | { kind: 'operator' }
+  | { kind: 'invite' };
 
 type TelegramWebApp = { ready?: () => void; expand?: () => void; close?: () => void };
 
@@ -346,6 +347,21 @@ function Sheet({
                 <small>Una persona della tua organizzazione ti ricontatta</small>
               </span>
             </button>
+            {me.current.role === 'ADMIN' && (
+              <button
+                type="button"
+                className="ma-action"
+                onClick={() => onIntent({ kind: 'invite' })}
+              >
+                <span className="ma-tile small info" style={{ width: 40, height: 40 }}>
+                  <PersonIcon size={20} color="#f3f5f7" />
+                </span>
+                <span>
+                  <strong>Invita una persona</strong>
+                  <small>Un link personale da mandarle: entra aprendolo in Telegram</small>
+                </span>
+              </button>
+            )}
           </>
         ) : intent.kind === 'upload' ? (
           <UploadForm
@@ -358,6 +374,8 @@ function Sheet({
           <PracticeForm pending={practice.isPending} onSend={(name) => practice.mutate(name)} />
         ) : intent.kind === 'deadline' ? (
           <DeadlineForm pending={deadline.isPending} onSend={(body) => deadline.mutate(body)} />
+        ) : intent.kind === 'invite' ? (
+          <InviteForm />
         ) : (
           <>
             <h2 id="ma-sheet-title">Parla con un operatore</h2>
@@ -454,6 +472,69 @@ function UploadForm({
         {pending ? 'Invio…' : 'Manda'}
       </button>
     </form>
+  );
+}
+
+/** A personal Telegram invitation, from the app (administrators): link to copy or share. */
+function InviteForm() {
+  const { api } = useSession();
+  const [role, setRole] = useState<'MEMBER' | 'OPERATOR' | 'ADMIN'>('MEMBER');
+  const [copied, setCopied] = useState(false);
+  const create = useMutation({
+    mutationFn: () =>
+      api<{ token: string; link: string | null }>('/members/chat-invites', {
+        method: 'POST',
+        body: { role },
+      }),
+  });
+  const text = create.data ? (create.data.link ?? `/start ${create.data.token}`) : '';
+  return (
+    <div className="ma-form">
+      <h2 id="ma-sheet-title">Invita una persona</h2>
+      {create.data ? (
+        <>
+          <p className="ma-message">
+            Manda questo link alla persona (per esempio su WhatsApp): lo apre in Telegram, preme
+            «Avvia» ed entra. Vale 7 giorni e una sola volta.
+          </p>
+          <p style={{ wordBreak: 'break-all', fontSize: 15 }}>{text}</p>
+          <button
+            type="button"
+            className="ma-primary green"
+            onClick={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true))}
+          >
+            {copied ? 'Copiato' : 'Copia il link'}
+          </button>
+        </>
+      ) : (
+        <>
+          <label>
+            Ruolo
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as 'MEMBER' | 'OPERATOR' | 'ADMIN')}
+            >
+              <option value="MEMBER">Socio / collaboratore</option>
+              <option value="OPERATOR">Operatore</option>
+              <option value="ADMIN">Amministratore</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="ma-primary green"
+            disabled={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Crea il link
+          </button>
+        </>
+      )}
+      {create.isError && (
+        <p className="ma-message error" role="alert">
+          {describeError(create.error)}
+        </p>
+      )}
+    </div>
   );
 }
 
