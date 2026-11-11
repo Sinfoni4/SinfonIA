@@ -27,6 +27,9 @@ type Reply = (
 /** Staging only (DEMO_ACCESS): an account of one's own in the demo organization. */
 export type DemoPort = (telegramId: string) => Promise<DemoResult>;
 
+/** Personal Telegram links (invitation by link, own link): see ChatInviteService. */
+export type InvitePort = { redeem(telegramId: string, param: string): Promise<LinkResult> };
+
 type Pending =
   | { step: 'email'; expiresAt: number }
   | { step: 'code'; challengeId: string; misses: number; expiresAt: number }
@@ -36,6 +39,8 @@ const ACCEDI = /^\/?(accedi|collega)$/i;
 const COLLEGAMENTI = /^\/?collegamenti$/i;
 const SCOLLEGA = /^\/?scollega$/i;
 const LEGACY_LINK = /^\/?start\s+\S+/i;
+/** A personal link: `t.me/<bot>?start=i…` (invitation) or `…?start=l…` (own link). */
+const PERSONAL_LINK = /^\/?start\s+([il][A-Za-z0-9_-]{32})$/;
 /** The generic demo link (`t.me/<bot>?start=demo` sends «/start demo»), or «/demo». */
 const DEMO = /^\/?(?:start\s+demo|demo)$/i;
 const CANCEL = /^(annulla|no|stop)$/i;
@@ -65,7 +70,7 @@ export class ChatLinkFlow {
     private readonly channel: ChannelType,
     private readonly welcome: (result: LinkResult) => Promise<string>,
     private readonly now: () => number = Date.now,
-    private readonly options: { demo?: DemoPort; miniAppUrl?: string } = {},
+    private readonly options: { demo?: DemoPort; invites?: InvitePort; miniAppUrl?: string } = {},
   ) {}
 
   /** The answer to someone not linked: /accedi, and the demo where it exists. */
@@ -150,6 +155,23 @@ export class ChatLinkFlow {
 
     if (active && this.port) {
       return this.continue(senderId, trimmed, active, reply);
+    }
+
+    const personal = PERSONAL_LINK.exec(trimmed)?.[1];
+    if (personal && this.options.invites && this.channel === 'TELEGRAM') {
+      this.pending.delete(senderId);
+      try {
+        const result = await this.options.invites.redeem(senderId, personal);
+        const app = this.options.miniAppUrl;
+        await reply(
+          await this.welcome(result),
+          app ? { webApp: { label: '📱 Apri SinfonIA', url: app } } : undefined,
+        );
+      } catch (err: unknown) {
+        if (!(err instanceof Error) || err.name !== 'ChatInviteError') throw err;
+        await reply(`⚠️ ${err.message}. Chiedi un nuovo link a chi te l’ha mandato.`);
+      }
+      return true;
     }
 
     if (DEMO.test(trimmed) && this.options.demo && this.channel === 'TELEGRAM') {

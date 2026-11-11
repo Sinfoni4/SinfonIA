@@ -226,6 +226,14 @@ export class TelegramClient {
     return payload.result;
   }
 
+  /** The bot itself: its username makes the t.me links of the personal invitations. */
+  async getMe(): Promise<{ id: number; username?: string }> {
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/getMe`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    return this.parseResult<{ id: number; username?: string }>('getMe', response);
+  }
+
   async getFile(
     fileId: string,
   ): Promise<{ file_id: string; file_path?: string; file_size?: number }> {

@@ -40,6 +40,7 @@ import type { PrincipalResolver } from '../../core/authz/authorization.service.j
 import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
 import type { ChannelLinkService } from '../../core/identity/channel-link.service.js';
+import type { ChatInviteService } from '../../core/identity/chat-invite.service.js';
 import type { LoginService } from '../../core/identity/login.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
@@ -82,6 +83,8 @@ export type ServerDeps = {
   telegramBotToken?: string;
   /** AGX-10: verified chat links, listed and revoked from the dashboard. */
   channelLinks?: ChannelLinkService;
+  /** Personal Telegram links: invitations by link and one's own link. */
+  chatInvites?: ChatInviteService;
 };
 
 /** Access tokens issued by a login session last 10 minutes (§5, D7). */
@@ -204,6 +207,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
       // Invitations are sent by email: only with email login.
       login: deps.emailLogin === false ? undefined : deps.login,
       channelLinks: deps.channelLinks,
+      chatInvites: deps.chatInvites,
     });
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
     void app.register(assistanceRoutes, { prisma: deps.prisma });

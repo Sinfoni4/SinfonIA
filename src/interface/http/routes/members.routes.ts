@@ -25,6 +25,7 @@ import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
 import type { ChannelLinkService } from '../../../core/identity/channel-link.service.js';
+import type { ChatInviteService } from '../../../core/identity/chat-invite.service.js';
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback } from 'fastify';
@@ -34,7 +35,12 @@ export type MembersRoutesDeps = {
   login?: LoginService;
   /** AGX-10: verified chat links; absent where email login is off (nobody can link there). */
   channelLinks?: ChannelLinkService;
+  /** Personal Telegram links: invitations by link and one's own link (no email needed). */
+  chatInvites?: ChatInviteService;
 };
+
+const ChatInviteBodySchema = z.object({ role: z.enum(['ADMIN', 'OPERATOR', 'MEMBER']) }).strict();
+const ChatInviteParamsSchema = z.object({ id: z.string().uuid() });
 
 const ChannelParamsSchema = z.object({ id: z.string().uuid() });
 const MemberChannelParamsSchema = z.object({
@@ -249,6 +255,73 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
   });
 
   // --- AGX-10 / MF7: chat links ----------------------------------------------------------------
+
+  // Personal Telegram links: a new person invited by a t.me link, single use, 7 days.
+  app.get(
+    '/members/chat-invites',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        if (!deps.chatInvites) throw new NotFoundError('Not available');
+        return reply.send(ok(await deps.chatInvites.listInvites(auth.tenantId)));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  app.post(
+    '/members/chat-invites',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        if (!deps.chatInvites) throw new NotFoundError('Not available');
+        const body = ChatInviteBodySchema.parse(req.body);
+        return reply.status(201).send(
+          ok(
+            await deps.chatInvites.createInvite(auth.tenantId, body.role, {
+              userId: auth.userId,
+            }),
+          ),
+        );
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  app.post(
+    '/members/chat-invites/:id/revoke',
+    { config: { permission: 'members.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'members.manage').principal;
+        const { id } = ChatInviteParamsSchema.parse(req.params);
+        if (!deps.chatInvites) throw new NotFoundError('Not available');
+        await deps.chatInvites.revokeInvite(auth.tenantId, id, { userId: auth.userId });
+        return reply.send(ok({ revoked: true }));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  // One's own Telegram by a personal link (30 minutes), from the profile.
+  app.post('/me/channels/link', { config: { permission: 'authenticated' } }, async (req, reply) => {
+    try {
+      const auth = requirePrincipal(req);
+      if (!deps.chatInvites) throw new NotFoundError('Not available');
+      return reply.status(201).send(ok(await deps.chatInvites.createOwnLink(auth.userId)));
+    } catch (err: unknown) {
+      const mapped = mapErrorToHttp(err);
+      return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    }
+  });
 
   // One's own links (Telegram, WhatsApp), to see and revoke them from the profile.
   app.get('/me/channels', { config: { permission: 'authenticated' } }, async (req, reply) => {

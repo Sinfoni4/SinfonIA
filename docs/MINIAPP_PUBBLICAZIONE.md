@@ -75,6 +75,18 @@ In modalità pubblica il bot offre l'app anche da solo:
 
 Se l'account non è collegato, l'app spiega di scrivere `/accedi`.
 
+## Invitare una persona con un link
+
+Per far entrare in un'organizzazione vera una persona che usa solo Telegram, senza email:
+
+1. Un amministratore apre la Mini App, preme **+ → Invita una persona**, sceglie il ruolo e copia il link. Lo stesso si fa dalla dashboard, nella pagina **Persone → Invito con link Telegram**.
+2. Manda il link alla persona (per esempio su WhatsApp): `https://t.me/sinfonia_coop_bot?start=i…`.
+3. La persona lo apre in Telegram e preme **Avvia**: entra nell'organizzazione con quel ruolo, il suo account Telegram viene collegato e il bot le dà il benvenuto.
+
+Il link vale 7 giorni e **una sola volta**, si può revocare finché non è usato e ogni uso resta nel registro attività. Chi l'ha già usato non può rientrare con lo stesso link.
+
+Chi ha già un account nella dashboard collega il proprio Telegram dal **Profilo → Collega Telegram con un link** (vale 30 minuti).
+
 ## Demo per persone esterne
 
 Per far provare SinfonIA a chi non fa parte di un'organizzazione, avvia lo staging pubblico con `--demo`:

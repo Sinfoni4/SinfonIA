@@ -21,6 +21,7 @@ import {
   type RoleCatalog,
 } from '../api/members';
 import { formatDate } from '../api/practices';
+import { ChatInvites } from '../components/ChatInvites';
 import { useSession } from '../session/session';
 
 type Pending =
@@ -40,6 +41,7 @@ export function PeoplePage({ me }: { me: Me }) {
     <>
       <h1>Persone</h1>
       <Members me={me} />
+      <ChatInvites me={me} />
       <Invitations me={me} />
       <CustomRoles me={me} />
     </>

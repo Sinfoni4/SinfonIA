@@ -36,7 +36,12 @@ import {
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 
-import { ChatLinkFlow, type ChannelLinkPort, type DemoPort } from './chat-link.flow.js';
+import {
+  ChatLinkFlow,
+  type ChannelLinkPort,
+  type DemoPort,
+  type InvitePort,
+} from './chat-link.flow.js';
 import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
@@ -159,6 +164,8 @@ export type ConversationDeps = {
   channelLinks?: ChannelLinkPort;
   /** Staging only (DEMO_ACCESS): «/start demo» gives an account in the demo organization. */
   demoAccess?: DemoPort;
+  /** Personal Telegram links: «/start i…» accepts an invitation, «/start l…» links one's own. */
+  chatInvites?: InvitePort;
   /** Defaults to process memory; production passes the database one. */
   memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
@@ -499,6 +506,7 @@ export class ConversationService {
       Date.now,
       {
         ...(deps.demoAccess ? { demo: deps.demoAccess } : {}),
+        ...(deps.chatInvites ? { invites: deps.chatInvites } : {}),
         ...(channel.miniAppUrl ? { miniAppUrl: channel.miniAppUrl } : {}),
       },
     );
