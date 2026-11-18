@@ -2,7 +2,9 @@ import { useMutation } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 
 import { describeError, type Me } from '../api/client';
-import { exportFileName, type ExportFilter, type ExportResult } from '../api/compliance';
+import { type ExportFilter, type ExportResult } from '../api/compliance';
+import { FORMAT_LABELS, saveExport, type ExportFormat } from '../api/exports';
+import { FormatSelect } from '../components/ExportFormat';
 import { useSession } from '../session/session';
 
 type Period = 'all' | 'today' | 'month' | 'year';
@@ -16,6 +18,7 @@ export function ExportPage({ me }: { me: Me }) {
   const { api } = useSession();
   const [period, setPeriod] = useState<Period>('month');
   const [year, setYear] = useState(new Date().getFullYear());
+  const [format, setFormat] = useState<ExportFormat>('csv');
 
   const run = useMutation({
     mutationFn: () => {
@@ -23,14 +26,9 @@ export function ExportPage({ me }: { me: Me }) {
         period === 'year' ? { type: 'year', value: year } : { type: period };
       return api<ExportResult>('/practices/export', { method: 'POST', body: { filter } });
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.count === 0) return;
-      const url = URL.createObjectURL(new Blob([result.csv], { type: 'text/csv;charset=utf-8' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = exportFileName(result.title);
-      link.click();
-      URL.revokeObjectURL(url);
+      await saveExport(api, { title: result.title, csv: result.csv, format });
     },
   });
 
@@ -84,8 +82,9 @@ export function ExportPage({ me }: { me: Me }) {
             />
           </>
         )}
+        <FormatSelect id="export-format" value={format} onChange={setFormat} />
         <button type="submit" disabled={run.isPending}>
-          Scarica CSV
+          Scarica {FORMAT_LABELS[format]}
         </button>
         {run.isError && (
           <p className="error" role="alert">

@@ -3,7 +3,6 @@ import { Fragment, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { describeError, type Me } from '../api/client';
-import { exportFileName } from '../api/compliance';
 import {
   BENEFICIARY_NAMES,
   DURATIONS,
@@ -18,6 +17,7 @@ import {
   type IssuedGrant,
   type ReceivedGrant,
 } from '../api/delegations';
+import { FORMAT_LABELS, saveExport, type ExportFormat } from '../api/exports';
 import { type Member } from '../api/members';
 import { fieldValues, shownFields, type CurrentModule } from '../api/modules';
 import {
@@ -31,6 +31,7 @@ import {
 } from '../api/practices';
 import { DocumentChecklist } from '../components/DocumentChecklist';
 import { DocumentRequests } from '../components/DocumentRequests';
+import { FormatSelect } from '../components/ExportFormat';
 import { missingRequired, PracticeFieldInputs } from '../components/PracticeFieldInputs';
 import { useSession } from '../session/session';
 
@@ -462,20 +463,16 @@ export function DelegatedPracticesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['delegated', grantId] }),
     onError: (err: unknown) => setError(describeError(err)),
   });
+  const [format, setFormat] = useState<ExportFormat>('csv');
   const exportCsv = useMutation({
     mutationFn: () =>
       api<{ csv: string; title: string; count: number }>(`/grants/${grantId}/export`, {
         method: 'POST',
         body: {},
       }),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.count === 0) return;
-      const url = URL.createObjectURL(new Blob([result.csv], { type: 'text/csv;charset=utf-8' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = exportFileName(result.title);
-      link.click();
-      URL.revokeObjectURL(url);
+      await saveExport(api, { title: result.title, csv: result.csv, format });
     },
     onError: (err: unknown) => setError(describeError(err)),
   });
@@ -505,14 +502,17 @@ export function DelegatedPracticesPage() {
           <div className="page-head">
             <h1>Pratiche di {data.delegation.grantorName}</h1>
             {canExport && (
-              <button
-                type="button"
-                className="secondary"
-                disabled={exportCsv.isPending}
-                onClick={() => exportCsv.mutate()}
-              >
-                Esporta CSV
-              </button>
+              <div className="actions">
+                <FormatSelect id="delegated-export-format" value={format} onChange={setFormat} />
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={exportCsv.isPending}
+                  onClick={() => exportCsv.mutate()}
+                >
+                  Esporta {FORMAT_LABELS[format]}
+                </button>
+              </div>
             )}
           </div>
           {canCreate && data.module && (

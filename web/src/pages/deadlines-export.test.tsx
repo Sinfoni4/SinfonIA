@@ -209,6 +209,34 @@ describe('export (FE3)', () => {
     expect(created).toHaveBeenCalledTimes(1);
   });
 
+  it('exports the same table as an Excel file, converted by the server', async () => {
+    const created = vi.fn(() => 'blob:xlsx');
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: created, revokeObjectURL: vi.fn() }),
+    );
+    api('ADMIN', {
+      'POST /practices/export': () =>
+        ok({ title: 'Export pratiche', csv: 'Nome,Data Creazione\nMario,2025-01-02\n', count: 1 }),
+      'POST /exports/file': () =>
+        ok({
+          fileName: 'export-pratiche.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          contentBase64: btoa('PK'),
+        }),
+    });
+    openAt('/export');
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText('Formato'), 'Excel');
+    await user.click(screen.getByRole('button', { name: 'Scarica Excel' }));
+    await waitFor(() => expect(created).toHaveBeenCalledTimes(1));
+    expect(calls.find((c) => c.path === '/exports/file')?.body).toEqual({
+      title: 'Export pratiche',
+      csv: 'Nome,Data Creazione\nMario,2025-01-02\n',
+      format: 'xlsx',
+    });
+  });
+
   it('says when there is nothing to export, without a file', async () => {
     const created = vi.fn(() => 'blob:csv');
     vi.stubGlobal(

@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useState } from 'react';
 
 import { describeError, type Me } from '../api/client';
+import { FORMAT_LABELS, saveExport, type ExportFormat } from '../api/exports';
 import { PERIODS, showProtected, type NetworkStats, type StatsPeriodKind } from '../api/network';
 import { formatDateTime } from '../api/organization';
 import { formatDate } from '../api/practices';
@@ -14,6 +15,7 @@ import {
   type PlatformUsage,
   type UsageExport,
 } from '../api/usage';
+import { FormatSelect } from '../components/ExportFormat';
 import { useSession } from '../session/session';
 
 import { ActivityTabs } from './ActivityPage';
@@ -30,22 +32,29 @@ function UsageDownload({
   period: { kind: StatsPeriodKind; previous: boolean };
 }) {
   const { api } = useSession();
+  const [format, setFormat] = useState<ExportFormat>('csv');
   const run = useMutation({
     mutationFn: () => api<UsageExport>(usageQuery(`${path}/export`, period.kind, period.previous)),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.rows === 0) return;
-      const url = URL.createObjectURL(new Blob([result.csv], { type: 'text/csv;charset=utf-8' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = result.fileName;
-      link.click();
-      URL.revokeObjectURL(url);
+      await saveExport(api, {
+        title: result.title,
+        csv: result.csv,
+        format,
+        fileName: result.fileName,
+        platform: path === '/platform/usage',
+      });
     },
   });
   return (
     <div className="actions">
+      <FormatSelect
+        id={path === '/usage' ? 'usage-format' : 'platform-usage-format'}
+        value={format}
+        onChange={setFormat}
+      />
       <button type="button" disabled={run.isPending} onClick={() => run.mutate()}>
-        Scarica il dettaglio (CSV)
+        Scarica il dettaglio ({FORMAT_LABELS[format]})
       </button>
       {run.data?.rows === 0 && <span className="muted">Nessun consumo nel periodo.</span>}
       {run.data?.truncated && (
