@@ -68,15 +68,15 @@ async function seed(url: string): Promise<void> {
     });
     const admin = people.find((p) => p.email === E2E_ADMIN);
     const membership = admin
-      ? await prisma.userTenant.findFirst({
-          where: { userId: admin.id },
-          select: { tenantId: true },
+      ? await prisma.membership.findFirst({
+          where: { userId: admin.id, status: 'ACTIVE' },
+          select: { orgId: true },
         })
       : null;
     if (membership) {
       for (const person of people) {
         await requestAssistance(prisma, {
-          tenantId: membership.tenantId,
+          tenantId: membership.orgId,
           userId: person.id,
           topic: 'PRACTICE',
           channel: 'TELEGRAM',
