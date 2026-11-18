@@ -15,9 +15,14 @@ import { attachmentUsage, recordUsage } from '../usage/usage.service.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
 import { ATTACHMENT_OCR, type AttachmentOcrPayload } from './attachment-ocr.js';
-import { requireExpectedKey } from './document-checklist.js';
+import {
+  practiceChecklist,
+  requireExpectedKey,
+  type ChecklistState,
+} from './document-checklist.js';
 import {
   fulfilWithAttachment,
+  listDocumentRequests,
   requireOpenRequest,
   type FulfilledRequest,
 } from './document-request.js';
@@ -44,6 +49,7 @@ export type PracticeActor = Principal;
 const COMMAND_PERMISSIONS: Record<PracticeCommand['type'], Permission> = {
   CREATE_PRACTICE: 'practice.create',
   LIST_PRACTICES: 'practice.read',
+  LIST_PRACTICE_DOCUMENTS: 'attachment.read',
   GET_PRACTICE_STATUS: 'practice.read',
   DELETE_PRACTICE: 'practice.delete',
   EXPORT_PRACTICES: 'practice.export',
@@ -112,6 +118,8 @@ const EXPORT_BATCH_SIZE = 1000;
 export type PracticeCommandResult =
   | { type: 'created'; practice: PracticeView }
   | { type: 'list'; practices: PracticeView[] }
+  /** AGX-12b: what each practice expects, the files sent and the documents asked for. */
+  | { type: 'documents'; practices: PracticeDocuments[]; more: number }
   | { type: 'status'; practice: PracticeView }
   | { type: 'deleted'; practice: PracticeView }
   | { type: 'export'; result: PracticeExportResult; send: boolean }
@@ -136,6 +144,38 @@ export type PracticeCommandResult =
   /** AGX-03: the practice was opened for the person by someone else, who alone deletes it. */
   | { type: 'delete_denied'; practice: PracticeView }
   | { type: 'transitioned'; practice: PracticeView };
+
+/** The state of a file for the person: confirmed, being read, to check, unreadable, refused. */
+export type ChatFileState =
+  'confirmed' | 'read' | 'to_check' | 'reading' | 'unreadable' | 'rejected';
+
+export type PracticeDocuments = {
+  name: string;
+  status: PracticeState;
+  expected: Array<{ label: string; required: boolean; state: ChecklistState }>;
+  /** Files that are not an expected document (most recent first, at most 5). */
+  files: Array<{ fileName: string; state: ChatFileState }>;
+  otherFiles: number;
+  requests: Array<{ label: string | null; message: string; dueDate: string | null }>;
+};
+
+/** Practices shown at once by «documenti». */
+const CHAT_DOCUMENT_PRACTICES = 5;
+
+function chatFileState(a: {
+  ocrStatus: string;
+  ocrResult: unknown;
+  validatedAt: Date | null;
+  rejectedAt: Date | null;
+}): ChatFileState {
+  if (a.rejectedAt) return 'rejected';
+  if (a.validatedAt) return 'confirmed';
+  if (a.ocrStatus === 'FAILED') return 'unreadable';
+  if (a.ocrStatus === 'PENDING' || a.ocrStatus === 'PROCESSING') return 'reading';
+  return (a.ocrResult as { reviewRequired?: unknown } | null)?.reviewRequired === true
+    ? 'to_check'
+    : 'read';
+}
 
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -784,6 +824,31 @@ export class PracticeApplicationService {
           }),
         };
 
+      case 'LIST_PRACTICE_DOCUMENTS': {
+        const named = command.payload.name;
+        if (named) {
+          const practice = await this.findPracticeByName(actor, named);
+          if (!practice) return { type: 'not_found', name: named };
+          return {
+            type: 'documents',
+            practices: [await this.practiceDocuments(actor.tenantId, practice)],
+            more: 0,
+          };
+        }
+        const open = (
+          await this.listPractices({ tenantId: actor.tenantId, userId: actor.userId })
+        ).filter((p) => p.status !== 'COMPLETED' && p.status !== 'FAILED');
+        return {
+          type: 'documents',
+          practices: await Promise.all(
+            open
+              .slice(0, CHAT_DOCUMENT_PRACTICES)
+              .map((p) => this.practiceDocuments(actor.tenantId, p)),
+          ),
+          more: Math.max(0, open.length - CHAT_DOCUMENT_PRACTICES),
+        };
+      }
+
       case 'GET_PRACTICE_STATUS': {
         const practice = await this.findPracticeByName(actor, command.payload.name);
         return practice
@@ -924,6 +989,45 @@ export class PracticeApplicationService {
       limit: ORG_NAME_LOOKUP_LIMIT,
     });
     return practices.filter((practice) => practice.name.toLowerCase() === needle);
+  }
+
+  /** AGX-12b: the documents of one practice the caller reaches, for the chat. */
+  private async practiceDocuments(
+    tenantId: string,
+    practice: PracticeView,
+  ): Promise<PracticeDocuments> {
+    const [checklist, attachments, requests] = await Promise.all([
+      practiceChecklist(this.prisma, { tenantId, practiceId: practice.id }),
+      this.prisma.practiceAttachment.findMany({
+        where: { tenantId, practiceId: practice.id, expectedKey: null },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          fileName: true,
+          ocrStatus: true,
+          ocrResult: true,
+          validatedAt: true,
+          rejectedAt: true,
+        },
+      }),
+      listDocumentRequests(this.prisma, { tenantId, practiceId: practice.id }),
+    ]);
+    return {
+      name: practice.name,
+      status: practice.status,
+      expected: checklist.items.map((i) => ({
+        label: i.label,
+        required: i.required,
+        state: i.state,
+      })),
+      files: attachments.slice(0, 5).map((a) => ({
+        fileName: a.fileName,
+        state: chatFileState(a),
+      })),
+      otherFiles: Math.max(0, attachments.length - 5),
+      requests: requests
+        .filter((r) => r.status === 'OPEN')
+        .map((r) => ({ label: r.expectedLabel, message: r.message, dueDate: r.dueDate })),
+    };
   }
 
   private async findPracticeByName(
