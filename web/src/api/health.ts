@@ -32,6 +32,8 @@ export type SystemHealth = {
     last: { at: string; tables: number | null; attachments: number | null } | null;
     /** The last restore check (npm run db:verify-backup); missing on an older backend. */
     restoreCheck?: { at: string; ok: boolean; backupAt: string } | null;
+    /** B4: the nightly backup made by the server; null when off, missing on an older backend. */
+    nightly?: { at: string; keep: number; lastRun: { at: string; ok: boolean } | null } | null;
   };
   services: { telegram: boolean; whatsapp: boolean; webhook: boolean; ai: string | null };
 };
@@ -107,6 +109,11 @@ export function healthWarnings(h: SystemHealth, now = new Date()): string[] {
     warnings.push(`${h.storage.disk.missingFiles} allegati non hanno più il file sul disco.`);
   }
   const backup = h.backup;
+  if (backup?.nightly?.lastRun && !backup.nightly.lastRun.ok) {
+    warnings.push(
+      "L'ultimo backup notturno non è riuscito: il server riprova tra un'ora (vedi i log).",
+    );
+  }
   if (backup?.configured) {
     if (!backup.reachable) {
       warnings.push('La cartella dei backup non è raggiungibile: il disco è collegato?');

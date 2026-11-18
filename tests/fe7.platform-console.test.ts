@@ -406,6 +406,7 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
         reachable: false,
         last: null,
         restoreCheck: null,
+        nightly: null,
       });
       expect(res.body).not.toMatch(/runtime|storage-|SinfonIA-backup/);
     });

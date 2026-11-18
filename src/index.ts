@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { ContextService } from './ai/context/context.service.js';
 import { DecisionEngine } from './ai/decision/decision.engine.js';
 import { ExecutorService } from './ai/execution/executor.service.js';
@@ -52,11 +54,14 @@ import {
   PracticeHolderSetHandler,
   PracticeStatusHandler,
 } from './core/outbox/practice-status.handler.js';
+import { NightlyBackup, registerNightlyBackup } from './core/platform/nightly-backup.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
 import { practicesWithOpenRequests } from './core/practice/document-request.js';
 import { moduleOfTenant } from './core/practice/practice-module.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
+import { parseBackupKey } from './data/backup/encrypted-backup.js';
+import { databaseName } from './data/backup/pg-tools.js';
 import { createPrismaClient } from './data/db/prisma.js';
 import { AiTraceRepository } from './data/repositories/ai-trace.repository.js';
 import { createStorageService } from './data/storage/storage.factory.js';
@@ -82,7 +87,7 @@ import { runtimeState } from './runtime/runtime.state.js';
 import { startBackgroundWorkers } from './runtime/runtime.workers.js';
 import { errorLabel } from './shared/errors.js';
 import { log } from './shared/log.js';
-import { createLogger } from './shared/logger.js';
+import { createLogger, type AppLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
 
 import type { LLMClient } from './ai/interpreter/interpreter.service.js';
@@ -377,6 +382,7 @@ async function main() {
     logger.warn('OUTBOX_WEBHOOK_SECRET not set: tenant webhooks will be dead-lettered');
   }
   const schedulerService = new SchedulerService(prisma, practiceService, { complianceService });
+  const nightlyBackup = createNightlyBackup(config, logger);
   const outboxChannels = {
     ...(tgToken?.trim()
       ? { telegram: createTelegramNotifier(new TelegramClient(tgToken.trim())) }
@@ -467,9 +473,40 @@ async function main() {
         intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
         run: () => dispatcher.dispatchOnce(),
       },
+      ...(nightlyBackup
+        ? [{ name: 'nightly-backup', intervalMs: 5 * 60_000, run: () => nightlyBackup.tick() }]
+        : []),
     ],
     logger,
   );
+}
+
+/** B4: the nightly encrypted backup, when BACKUP_NIGHTLY_AT is set (checked at start). */
+function createNightlyBackup(config: AppConfig, logger: AppLogger): NightlyBackup | null {
+  if (!config.BACKUP_NIGHTLY_AT || !config.BACKUP_DIR || !config.BACKUP_KEY) return null;
+  const sourceUrl = config.BACKUP_SOURCE_URL ?? config.DATABASE_URL;
+  const nightly = registerNightlyBackup(
+    new NightlyBackup({
+      at: config.BACKUP_NIGHTLY_AT,
+      keep: config.BACKUP_KEEP,
+      database: databaseName(sourceUrl),
+      backup: {
+        sourceUrl,
+        key: parseBackupKey(config.BACKUP_KEY),
+        backupDir: path.resolve(config.BACKUP_DIR),
+        storageDir:
+          config.STORAGE_DRIVER === 'local'
+            ? path.resolve(config.STORAGE_LOCAL_DIR ?? path.join('.runtime', 'storage'))
+            : null,
+      },
+      log: logger,
+    }),
+  );
+  logger.info(
+    { at: config.BACKUP_NIGHTLY_AT, keep: config.BACKUP_KEEP },
+    'Nightly backup scheduled',
+  );
+  return nightly;
 }
 
 main().catch((err: unknown) => {

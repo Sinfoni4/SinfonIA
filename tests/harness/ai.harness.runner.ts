@@ -366,6 +366,7 @@ export async function runHarness(args: {
       OUTBOX_MAX_ATTEMPTS: 8,
       TELEGRAM_MINIAPP: false,
       DEMO_ACCESS: false,
+      BACKUP_KEEP: 14,
       OCR_MAX_ATTEMPTS: 3,
       WHATSAPP_API_VERSION: 'v21.0',
       RATE_LIMIT_PER_MINUTE: 120,
