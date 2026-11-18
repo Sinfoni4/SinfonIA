@@ -814,6 +814,9 @@ model DocumentRequest {
   fulfilledAt           DateTime?             @map("fulfilled_at")
   cancelledBy           String?               @map("cancelled_by") @db.Uuid
   cancelledAt           DateTime?             @map("cancelled_at")
+  /// Reminders of the date: two days before, and on the day (one each per request).
+  remindedBeforeAt      DateTime?             @map("reminded_before_at") @db.Timestamptz
+  remindedDueAt         DateTime?             @map("reminded_due_at") @db.Timestamptz
   createdAt             DateTime              @default(now()) @map("created_at")
   updatedAt             DateTime              @default(now()) @updatedAt @map("updated_at")
 
@@ -821,6 +824,7 @@ model DocumentRequest {
   practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status, createdAt])
+  @@index([tenantId, status, dueDate])
   @@index([practiceId, status])
   @@map("document_request")
 }

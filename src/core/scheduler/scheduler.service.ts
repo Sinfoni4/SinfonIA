@@ -4,6 +4,7 @@ import { log } from '../../shared/log.js';
 import { ComplianceService } from '../compliance/compliance.service.js';
 import { GrantExpiryTask } from '../delegation/grant-reminders.js';
 import { featureEnabled, type Feature } from '../features/features.js';
+import { DocumentRequestDueTask } from '../practice/request-reminders.js';
 import { defaultSchedulerTasks, getAllTenants } from '../tenant/tenant.store.js';
 
 import { ComplianceDeadlinesTask, ExportPracticesTask } from './scheduler.tasks.js';
@@ -113,6 +114,8 @@ const SYSTEM_TASKS: Array<{ task: SchedulerTask; frequency: SchedulerFrequency }
   { task: { type: 'CHECK_COMPLIANCE_DEADLINES' }, frequency: 'daily' },
   // MF8 (D3.4): reminders of delegations that end within 30 or 7 days.
   { task: { type: 'CHECK_GRANT_EXPIRY' }, frequency: 'daily' },
+  // Reminders of the documents asked for with a date (two days before, and on the day).
+  { task: { type: 'CHECK_DOCUMENT_REQUESTS_DUE' }, frequency: 'daily' },
 ];
 const SYSTEM_TASK_TYPES = new Set<SchedulerTaskType>(SYSTEM_TASKS.map((s) => s.task.type));
 
@@ -121,6 +124,7 @@ const TASK_FEATURES: Record<SchedulerTaskType, Feature> = {
   EXPORT_PRACTICES: 'exports',
   CHECK_COMPLIANCE_DEADLINES: 'deadlines',
   CHECK_GRANT_EXPIRY: 'delegations',
+  CHECK_DOCUMENT_REQUESTS_DUE: 'documents',
 };
 
 export class SchedulerService {
@@ -141,6 +145,7 @@ export class SchedulerService {
       new ExportPracticesTask(prisma, practiceService),
       new ComplianceDeadlinesTask(options.complianceService ?? new ComplianceService(prisma)),
       new GrantExpiryTask(prisma),
+      new DocumentRequestDueTask(prisma),
     ];
     this.handlers = new Map(handlers.map((h) => [h.type, h]));
   }

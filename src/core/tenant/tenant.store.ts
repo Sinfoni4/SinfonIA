@@ -15,6 +15,7 @@ export const SCHEDULER_TASK_TYPES = [
   'EXPORT_PRACTICES',
   'CHECK_COMPLIANCE_DEADLINES',
   'CHECK_GRANT_EXPIRY',
+  'CHECK_DOCUMENT_REQUESTS_DUE',
 ] as const;
 export type SchedulerTaskType = (typeof SCHEDULER_TASK_TYPES)[number];
 
