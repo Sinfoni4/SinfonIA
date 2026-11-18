@@ -37,8 +37,23 @@ test('declares the app and installs a worker that keeps no data', async ({ page 
     } catch (err) {
       registerError = String(err);
     }
+    // The worker's install step stores /app/ in the cache: a failure there drops the worker.
+    let cacheError: string | null = null;
+    try {
+      await (await caches.open('e2e-check')).add('/app/');
+      await caches.delete('e2e-check');
+    } catch (err) {
+      cacheError = String(err);
+    }
+    const shell = await fetch('/app/');
     return {
       scope: null,
+      cacheError,
+      shell: {
+        status: shell.status,
+        vary: shell.headers.get('vary'),
+        cacheControl: shell.headers.get('cache-control'),
+      },
       registrations: registrations.map((r) => ({
         scope: r.scope,
         installing: r.installing?.state ?? null,
