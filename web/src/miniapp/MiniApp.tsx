@@ -6,6 +6,7 @@ import { describeError, request, type Me } from '../api/client';
 import { CATEGORY_LABELS, type DeadlineCategory } from '../api/compliance';
 import { useSession, type SessionState } from '../session/session';
 
+import { AssistantScreen } from './AssistantScreen';
 import {
   CalendarIcon,
   CameraIcon,
@@ -168,6 +169,7 @@ function MiniAppHome({ me }: { me: Me }) {
       <Routes>
         <Route path="tg" element={<TodayScreen me={me} openSheet={setSheet} />} />
         <Route path="tg/agenda" element={<AgendaScreen me={me} openSheet={setSheet} />} />
+        <Route path="tg/assistente" element={<AssistantScreen />} />
         <Route path="tg/pratiche/:id" element={<PracticeScreen me={me} openSheet={setSheet} />} />
         <Route path="*" element={<Navigate to="/tg" replace />} />
       </Routes>
@@ -317,10 +319,8 @@ function Sheet({
               type="button"
               className="ma-action"
               onClick={() => {
-                const app = telegram();
-                if (app?.close) app.close();
-                else
-                  setDone('Scrivi la tua domanda al bot nella chat di Telegram: ti rispondo lì.');
+                onClose();
+                void navigate('/tg/assistente');
               }}
             >
               <span
@@ -331,7 +331,7 @@ function Sheet({
               </span>
               <span>
                 <strong>Chiedi all’assistente</strong>
-                <small>Torna alla chat e scrivi come sempre</small>
+                <small>Scrivi qui come nella chat del bot</small>
               </span>
             </button>
             <button

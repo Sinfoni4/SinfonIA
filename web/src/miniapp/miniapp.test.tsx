@@ -197,6 +197,45 @@ describe('Telegram Mini App', () => {
     expect(calls.some((c) => c.method === 'POST' && c.path === '/assistance/requests')).toBe(true);
   });
 
+  it('talks with the assistant from the + sheet, with the buttons of its answers', async () => {
+    api({
+      'POST /miniapp/chat': (c) => {
+        const text = (c.body as { text: string }).text;
+        return text === 'documenti'
+          ? ok({
+              replies: [{ text: '📁 Bando PSR\n⬜ Certificato biologico — manca', buttons: [] }],
+            })
+          : ok({
+              replies: [
+                {
+                  text: 'Vuoi davvero eliminare la pratica Bando PSR?',
+                  buttons: [
+                    { label: 'Sì', answer: 'sì' },
+                    { label: 'No', answer: 'no' },
+                  ],
+                },
+              ],
+            });
+      },
+    });
+    openFromTelegram();
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuova azione' }));
+    await userEvent.click(screen.getByRole('button', { name: /Chiedi all’assistente/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'I miei documenti' }));
+    expect(await screen.findByText(/Certificato biologico — manca/)).toBeTruthy();
+    expect(calls.find((c) => c.path === '/miniapp/chat')?.body).toEqual({ text: 'documenti' });
+
+    await userEvent.type(
+      screen.getByLabelText('Messaggio per l’assistente'),
+      'elimina pratica Bando PSR',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Invia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Sì' }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.path === '/miniapp/chat').at(-1)?.body).toEqual({ text: 'sì' }),
+    );
+  });
+
   it('explains how to link when the Telegram account is not linked', async () => {
     api({
       'POST /auth/telegram-webapp': () => ({

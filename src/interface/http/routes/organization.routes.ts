@@ -16,13 +16,18 @@ import { fail, ok } from '../errors/http.errors.js';
 import { StatsQuerySchema } from './network.routes.js';
 
 import type { ComplianceService } from '../../../core/compliance/compliance.service.js';
+import type { AppChat } from '../../conversation/app-chat.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
 
 export type OrganizationRoutesDeps = {
   prisma: PrismaClient;
   complianceService?: Pick<ComplianceService, 'listDeadlines'>;
+  /** The assistant of the Telegram Mini App (the same conversation as the bot). */
+  appChat?: AppChat;
 };
+
+const AppChatBodySchema = z.object({ text: z.string().trim().min(1).max(2000) }).strict();
 
 const AuditQuerySchema = z
   .object({
@@ -88,6 +93,21 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
       return sendError(reply, err);
     }
   });
+
+  // Telegram Mini App: the assistant, the same conversation as the bot with the session's person.
+  // Every command checks its own permission, as in the chat.
+  if (deps.appChat) {
+    const appChat = deps.appChat;
+    app.post('/miniapp/chat', { config: { permission: 'practice.read' } }, async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'practice.read').principal;
+        const body = AppChatBodySchema.parse(req.body);
+        return reply.send(ok({ replies: await appChat.ask(auth, body.text) }));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    });
+  }
 
   // Telegram Mini App: the «Oggi» and «Agenda» screens in one call, within the caller's grants.
   app.get('/miniapp/summary', { config: { permission: 'practice.read' } }, async (req, reply) => {

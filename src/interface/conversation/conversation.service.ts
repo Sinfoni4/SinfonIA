@@ -172,8 +172,11 @@ export type ConversationDeps = {
 };
 
 export type ChannelOptions = {
-  /** Channel name, used in logs and to keep users of different channels apart. */
-  name: 'telegram' | 'whatsapp';
+  /**
+   * Channel name, used in logs and to keep users of different channels apart. `app`: the
+   * assistant of the Telegram Mini App, where the person is already identified by the session.
+   */
+  name: 'telegram' | 'whatsapp' | 'app';
   identity: ChannelIdentityProvider;
   /** How the channel stores a sender id (WhatsApp: digits only); defaults to as it is. */
   normalizeSender?: (senderId: string) => string;
@@ -586,8 +589,9 @@ export class ConversationService {
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
 
-    // AGX-10: /accedi, /collegamenti, /scollega and their answers, before the person is known.
-    if (!message.file) {
+    // AGX-10: /accedi, /collegamenti, /scollega and their answers, before the person is known
+    // (not in the app: its session already says who the person is).
+    if (!message.file && this.channel.name !== 'app') {
       const sender = this.channel.normalizeSender?.(message.senderId) ?? message.senderId;
       if (await this.linkFlow.handle(sender, trimmed, reply)) return;
     }
