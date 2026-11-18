@@ -1,8 +1,10 @@
+import { Prisma } from '@prisma/client';
+
 import { DatabaseError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
 import type { PrismaLike } from '../types/prisma.js';
-import type { OutboxMessage, Prisma } from '@prisma/client';
+import type { OutboxMessage } from '@prisma/client';
 
 export type CreateOutboxMessageInput = {
   tenantId: string;
@@ -98,8 +100,18 @@ export class OutboxRepository {
     now: Date;
     leaseMs: number;
     limit: number;
+    /** Only messages of these event types (a dispatcher of its own, e.g. the OCR one). */
+    only?: readonly string[];
+    /** Never messages of these event types (left to another dispatcher). */
+    except?: readonly string[];
   }): Promise<ClaimedOutboxMessage[]> {
     const leaseUntil = new Date(options.now.getTime() + options.leaseMs);
+    const only = options.only?.length
+      ? Prisma.sql`AND "event_type" IN (${Prisma.join([...options.only])})`
+      : Prisma.empty;
+    const except = options.except?.length
+      ? Prisma.sql`AND "event_type" NOT IN (${Prisma.join([...options.except])})`
+      : Prisma.empty;
     try {
       return await this.prisma.$queryRaw<ClaimedOutboxMessage[]>`
         UPDATE "outbox_message" AS m
@@ -110,8 +122,9 @@ export class OutboxRepository {
             "updated_at" = ${options.now}
         WHERE m."id" IN (
           SELECT "id" FROM "outbox_message"
-          WHERE ("status" IN ('PENDING', 'FAILED') AND "next_attempt_at" <= ${options.now})
-             OR ("status" = 'PROCESSING' AND "locked_until" < ${options.now})
+          WHERE (("status" IN ('PENDING', 'FAILED') AND "next_attempt_at" <= ${options.now})
+             OR ("status" = 'PROCESSING' AND "locked_until" < ${options.now}))
+            ${only} ${except}
           ORDER BY "next_attempt_at"
           LIMIT ${options.limit}
           FOR UPDATE SKIP LOCKED
