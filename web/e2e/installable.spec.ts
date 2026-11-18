@@ -50,7 +50,9 @@ test('declares the app and installs a worker that keeps no data', async ({ page 
       secure: window.isSecureContext,
     };
   });
-  expect(worker).toMatchObject({ scope: expect.stringMatching(/\/app\/$/) });
+  expect(worker, JSON.stringify(worker)).toMatchObject({
+    scope: expect.stringMatching(/\/app\/$/),
+  });
 
   // An API call goes through, and nothing outside /app/ ends up in the cache.
   await page.evaluate(() => fetch('/readyz').then((r) => r.status));
