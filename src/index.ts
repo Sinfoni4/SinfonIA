@@ -59,6 +59,7 @@ import { confirmReadDocument } from './core/practice/attachment-validation.js';
 import { practicesWithOpenRequests } from './core/practice/document-request.js';
 import { moduleOfTenant } from './core/practice/practice-module.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
+import { DocumentRequestDueHandler } from './core/practice/request-reminders.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { parseBackupKey } from './data/backup/encrypted-backup.js';
 import { databaseName } from './data/backup/pg-tools.js';
@@ -431,6 +432,7 @@ async function main() {
       }),
       new AttachmentReadHandler(prisma, outboxChannels),
       new DocumentRequestedHandler(prisma, outboxChannels),
+      new DocumentRequestDueHandler(prisma, outboxChannels),
       new DocumentRequestFulfilledHandler(
         prisma,
         outboxChannels,
