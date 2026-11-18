@@ -21,8 +21,36 @@ test('declares the app and installs a worker that keeps no data', async ({ page 
     expect.arrayContaining(['192x192', '512x512']),
   );
 
-  const scope = await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
-  expect(new URL(scope).pathname).toBe('/app/');
+  // The worker the dashboard registers at load; when it does not become active, the state of the
+  // registration and the answer for sw.js say why, instead of a bare timeout.
+  const worker = await page.evaluate(async () => {
+    const ready = await Promise.race([
+      navigator.serviceWorker.ready.then((r) => r.scope),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 20_000)),
+    ]);
+    if (ready) return { scope: ready };
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    const file = await fetch('/app/sw.js');
+    let registerError: string | null = null;
+    try {
+      await navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' });
+    } catch (err) {
+      registerError = String(err);
+    }
+    return {
+      scope: null,
+      registrations: registrations.map((r) => ({
+        scope: r.scope,
+        installing: r.installing?.state ?? null,
+        waiting: r.waiting?.state ?? null,
+        active: r.active?.state ?? null,
+      })),
+      file: { status: file.status, type: file.headers.get('content-type') },
+      registerError,
+      secure: window.isSecureContext,
+    };
+  });
+  expect(worker).toMatchObject({ scope: expect.stringMatching(/\/app\/$/) });
 
   // An API call goes through, and nothing outside /app/ ends up in the cache.
   await page.evaluate(() => fetch('/readyz').then((r) => r.status));
