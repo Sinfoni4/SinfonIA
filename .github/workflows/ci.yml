@@ -93,6 +93,26 @@ jobs:
       - name: Build web
         run: npm run web:build
 
+      # FE5: the main paths of the dashboard and of the console in a real browser, on a computer and
+      # on a phone, against the dashboard just built and the test database (least-privilege role).
+      - name: Install the browser for end-to-end tests
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run web:e2e
+        env:
+          DATABASE_URL: postgresql://sinfonia_app:ci-only-app-password@localhost:5432/sinfonia?schema=public
+          E2E_SKIP_BUILD: 'true'
+
+      - name: Keep the end-to-end traces of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces
+          path: web/test-results
+          retention-days: 7
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 

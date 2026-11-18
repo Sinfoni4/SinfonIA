@@ -21,6 +21,7 @@ const PORT = Number(process.env.E2E_PORT ?? 3300);
 export const E2E_ADMIN = 'e2e.admin@sinfonia.test';
 export const E2E_CONSULTANT = 'e2e.consulente@sinfonia.test';
 const E2E_OPERATOR = 'e2e.operatore@sinfonia.test';
+const E2E_PLATFORM = 'e2e.piattaforma@sinfonia.test';
 const STORAGE = path.resolve('.runtime/storage-e2e');
 
 function databaseUrl(): string {
@@ -45,17 +46,50 @@ async function seed(url: string): Promise<void> {
     // Login codes are limited to 5 per email per hour (a security rule, kept as it is): a new
     // run starts without the codes of the previous runs, for the test accounts only.
     await prisma.authChallenge.deleteMany({
-      where: { email: { in: [E2E_ADMIN, E2E_CONSULTANT, E2E_OPERATOR] } },
+      where: { email: { in: [E2E_ADMIN, E2E_CONSULTANT, E2E_OPERATOR, E2E_PLATFORM] } },
     });
-    if (await prisma.user.findFirst({ where: { email: E2E_ADMIN }, select: { id: true } })) return;
     const tenants = new TenantRepository(prisma);
     const users = new UserRepository(prisma);
-    const company = await tenants.createTenant({ name: 'Azienda E2E' });
-    await users.createUser(company.id, { email: E2E_ADMIN, role: 'ADMIN' });
-    await users.createUser(company.id, { email: E2E_OPERATOR, role: 'OPERATOR' });
-    const studio = await tenants.createTenant({ name: 'Studio E2E' });
-    await users.createUser(studio.id, { email: E2E_CONSULTANT, role: 'ADMIN' });
-    console.log('Dati dei test end-to-end creati (Azienda E2E, Studio E2E).');
+    if (!(await prisma.user.findFirst({ where: { email: E2E_ADMIN }, select: { id: true } }))) {
+      const company = await tenants.createTenant({ name: 'Azienda E2E' });
+      await users.createUser(company.id, { email: E2E_ADMIN, role: 'ADMIN' });
+      await users.createUser(company.id, { email: E2E_OPERATOR, role: 'OPERATOR' });
+      const studio = await tenants.createTenant({ name: 'Studio E2E' });
+      await users.createUser(studio.id, { email: E2E_CONSULTANT, role: 'ADMIN' });
+      console.log('Dati dei test end-to-end creati (Azienda E2E, Studio E2E).');
+    }
+    // Assistance: an open request from each of two people of the company, so that every device of a
+    // run has one to take and close (a person has at most one open request: no duplicates).
+    const { requestAssistance } = await import('../../src/core/assistance/assistance.service.js');
+    const owner = await prisma.user.findFirst({
+      where: { email: E2E_ADMIN },
+      select: { tenantId: true },
+    });
+    if (owner) {
+      const people = await prisma.user.findMany({
+        where: { tenantId: owner.tenantId, email: { in: [E2E_ADMIN, E2E_OPERATOR] } },
+        select: { id: true },
+      });
+      for (const person of people) {
+        await requestAssistance(prisma, {
+          tenantId: owner.tenantId,
+          userId: person.id,
+          topic: 'PRACTICE',
+          channel: 'TELEGRAM',
+        });
+      }
+    }
+    // The platform console (FE7): an administrator of the test platform, in an organization of
+    // its own; added also to the databases seeded before it existed.
+    if (!(await prisma.user.findFirst({ where: { email: E2E_PLATFORM }, select: { id: true } }))) {
+      const office = await tenants.createTenant({ name: 'Gestione E2E' });
+      const admin = await users.createUser(office.id, { email: E2E_PLATFORM, role: 'ADMIN' });
+      await prisma.user.update({
+        where: { id: admin.id },
+        data: { platformRole: 'PLATFORM_ADMIN' },
+      });
+      console.log('Amministratore della console dei test end-to-end creato.');
+    }
   } finally {
     await prisma.$disconnect();
   }

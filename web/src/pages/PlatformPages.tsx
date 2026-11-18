@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   Link,
   NavLink,
@@ -67,6 +67,18 @@ export function PlatformApp({ admin }: { admin: PlatformAdmin }) {
 function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
   const { leavePlatform, logout } = useSession();
   const [error, setError] = useState<string | null>(null);
+  // FE5: as in the dashboard, after a change of page keyboard and screen readers start from the
+  // new content.
+  const { pathname } = useLocation();
+  const main = useRef<HTMLElement>(null);
+  const firstPage = useRef(true);
+  useEffect(() => {
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    main.current?.focus();
+  }, [pathname]);
 
   const back = async () => {
     setError(null);
@@ -79,6 +91,9 @@ function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
 
   return (
     <div className="shell">
+      <a href="#contenuto" className="skip-link">
+        Vai al contenuto
+      </a>
       <header className="topbar console">
         <NavLink to="/piattaforma" className="brand">
           SinfonIA
@@ -112,7 +127,7 @@ function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
           {error}
         </p>
       )}
-      <main className="content">
+      <main className="content" id="contenuto" tabIndex={-1} ref={main}>
         <Outlet />
       </main>
     </div>
