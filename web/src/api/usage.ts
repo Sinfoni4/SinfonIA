@@ -23,6 +23,15 @@ export const USAGE_LABELS: Record<UsageKind, string> = {
   ASSISTANCE_CLOSED: 'Richieste di assistenza chiuse',
 };
 
+/** The usage events of a period as a CSV file (one row each). */
+export type UsageExport = {
+  title: string;
+  fileName: string;
+  csv: string;
+  rows: number;
+  truncated: boolean;
+};
+
 export type UsagePeriod = { kind: StatsPeriodKind; previous: boolean; from: string; to: string };
 
 export type OrganizationUsage = {
@@ -63,7 +72,7 @@ export type PlatformUsage = {
 };
 
 export function usageQuery(
-  base: '/usage' | '/platform/usage',
+  base: '/usage' | '/platform/usage' | '/usage/export' | '/platform/usage/export',
   kind: StatsPeriodKind,
   previous: boolean,
 ): string {

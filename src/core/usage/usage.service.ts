@@ -324,6 +324,144 @@ export async function platformUsage(
   };
 }
 
+// --- CSV export ---------------------------------------------------------------------------------
+
+/** The names of the kinds in the exported files (Italian, as in the dashboard). */
+export const USAGE_LABELS: Record<UsageKind, string> = {
+  DOCUMENT_RECEIVED: 'Documenti ricevuti',
+  OCR_PAGES: 'Pagine lette con OCR',
+  AI_CALL: "Richieste all'assistente",
+  AI_TOKENS: "Token dell'assistente",
+  PRACTICE_OPENED: 'Pratiche aperte',
+  PRACTICE_COMPLETED: 'Pratiche completate',
+  DOCUMENT_REQUESTED: 'Documenti richiesti',
+  ASSISTANCE_CLOSED: 'Richieste di assistenza chiuse',
+};
+
+/** At most this many events in one file: a longer period is exported in parts. */
+export const USAGE_EXPORT_MAX_ROWS = 50_000;
+
+export type UsageExport = {
+  title: string;
+  fileName: string;
+  csv: string;
+  rows: number;
+  /** More events than the file holds. */
+  truncated: boolean;
+};
+
+const cell = (value: string | number | null): string =>
+  value === null
+    ? ''
+    : typeof value === 'number'
+      ? String(value)
+      : `"${value.replace(/"/g, '""')}"`;
+
+/** Date and time in Italy, as `2026-11-18 14:05`. */
+function italianDateTime(d: Date): string {
+  return d.toLocaleString('sv-SE', { timeZone: 'Europe/Rome', hour12: false }).slice(0, 16);
+}
+
+/**
+ * The usage events of a fixed period as CSV, one row each (reversals included, as negative
+ * quantities): of one organization (`tenantId`) or of every organization (the platform, with the
+ * internal cost when `rates` are given). Counts and kinds only: never the content of a document.
+ */
+export async function usageExport(
+  prisma: PrismaClient,
+  input: {
+    tenantId: string | null;
+    kind: StatsPeriodKind;
+    previous: boolean;
+    rates?: UsageRates;
+    now?: Date;
+  },
+): Promise<UsageExport> {
+  const { from, to } = periodBounds(input.kind, input.previous, input.now);
+  const period = periodView(input.kind, input.previous, from, to);
+  const events = await prisma.usageEvent.findMany({
+    where: {
+      occurredAt: { gte: from, lt: to },
+      ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+    },
+    orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    take: USAGE_EXPORT_MAX_ROWS + 1,
+    select: {
+      id: true,
+      tenantId: true,
+      actorOrgId: true,
+      kind: true,
+      quantity: true,
+      unit: true,
+      occurredAt: true,
+      correctionOf: true,
+      reason: true,
+    },
+  });
+  const truncated = events.length > USAGE_EXPORT_MAX_ROWS;
+  const rows = events.slice(0, USAGE_EXPORT_MAX_ROWS);
+  const orgIds = new Set<string>();
+  for (const e of rows) {
+    orgIds.add(e.tenantId);
+    if (e.actorOrgId) orgIds.add(e.actorOrgId);
+  }
+  const names = new Map(
+    (
+      await prisma.tenant.findMany({
+        where: { id: { in: [...orgIds] } },
+        select: { id: true, name: true },
+      })
+    ).map((t) => [t.id, t.name]),
+  );
+  const platform = input.tenantId === null;
+  const header = [
+    'Data',
+    ...(platform ? ['Organizzazione'] : []),
+    'Fatto da',
+    'Tipo',
+    'Quantità',
+    'Unità',
+    ...(platform ? ['Costo interno (€)'] : []),
+    'Rettifica',
+    'Motivo',
+    'Codice evento',
+  ];
+  const lines = [header.map(cell).join(',')];
+  for (const e of rows) {
+    const by = e.actorOrgId
+      ? (names.get(e.actorOrgId) ?? '—')
+      : platform
+        ? (names.get(e.tenantId) ?? '—')
+        : 'la tua organizzazione';
+    lines.push(
+      [
+        cell(italianDateTime(e.occurredAt)),
+        ...(platform ? [cell(names.get(e.tenantId) ?? '—')] : []),
+        cell(by),
+        cell(USAGE_LABELS[e.kind]),
+        cell(e.quantity),
+        cell(e.unit),
+        ...(platform ? [cell(costOf(input.rates ?? {}, e.kind, e.quantity))] : []),
+        cell(e.correctionOf ? `rettifica di ${e.correctionOf}` : null),
+        cell(e.reason),
+        cell(e.id),
+      ].join(','),
+    );
+  }
+  const span = `${period.from}_${period.to}`;
+  return {
+    title: `Consumi dal ${period.from.split('-').reverse().join('/')} al ${period.to
+      .split('-')
+      .reverse()
+      .join('/')}`,
+    fileName: `${platform ? 'consumi-piattaforma' : 'consumi'}_${span}.csv`,
+    // BOM: Excel opens accented letters correctly.
+    csv: `\uFEFF${lines.join('\r\n')}\r\n`,
+    rows: rows.length,
+    truncated,
+  };
+}
+
 // --- Reversal -----------------------------------------------------------------------------------
 
 export class UsageReversalError extends Error {

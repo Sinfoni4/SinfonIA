@@ -17,6 +17,7 @@ import {
 import {
   platformUsage,
   reverseUsageEvent,
+  usageExport,
   type UsageRates,
 } from '../../../core/usage/usage.service.js';
 import { AuditService } from '../../../data/services/audit.service.js';
@@ -315,6 +316,26 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       return reply.send(
         ok(
           await platformUsage(deps.prisma, {
+            kind: query.period,
+            previous: query.previous,
+            rates: deps.usageRates ?? {},
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Every usage event of the period as a CSV file, with the internal cost.
+  app.get('/platform/usage/export', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await usageExport(deps.prisma, {
+            tenantId: null,
             kind: query.period,
             previous: query.previous,
             rates: deps.usageRates ?? {},
