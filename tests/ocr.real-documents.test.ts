@@ -103,13 +103,13 @@ describe('parsing of real-world receipts', () => {
     expect(result.documentType).toBe('receipt');
     expect(result.totalAmount).toBe(0);
     expect(result.reviewRequired).toBe(true);
-    expect(result.warnings.join(' ')).toMatch(/total is zero/i);
+    expect(result.warnings.join(' ')).toMatch(/totale del documento è zero/i);
   });
 
   it('finds a VAT number whose label OCR garbled, and flags it', () => {
     const result = receipt('Brico io S.p.A.\nPartira Iva 08589490153\nSCONTRINO\nTOTALE 12,50');
     expect(result.merchantVat).toBe('08589490153');
-    expect(result.warnings.join(' ')).toMatch(/without its label/);
+    expect(result.warnings.join(' ')).toMatch(/senza la dicitura/);
   });
 
   it('does not guess between two unlabeled VAT numbers', () => {
