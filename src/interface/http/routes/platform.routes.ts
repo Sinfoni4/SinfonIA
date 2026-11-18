@@ -26,6 +26,7 @@ import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
 import { StatsQuerySchema } from './network.routes.js';
+import { sendTableFile, TABLE_FILE_BODY_LIMIT } from './organization.routes.js';
 
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
@@ -326,6 +327,20 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       return sendError(reply, err);
     }
   });
+
+  // The exports of the console as Excel or PDF (the CSV it already received, converted).
+  app.post(
+    '/platform/exports/file',
+    { config, bodyLimit: TABLE_FILE_BODY_LIMIT },
+    async (req, reply) => {
+      try {
+        requirePlatform(req);
+        return reply.send(ok(await sendTableFile(req.body)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   // Every usage event of the period as a CSV file, with the internal cost.
   app.get('/platform/usage/export', { config }, async (req, reply) => {

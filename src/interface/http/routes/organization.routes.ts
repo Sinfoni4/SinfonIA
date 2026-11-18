@@ -9,7 +9,8 @@ import {
   updateOrganizationSettings,
 } from '../../../core/organization/organization-settings.service.js';
 import { organizationUsage, usageExport } from '../../../core/usage/usage.service.js';
-import { requirePermission } from '../auth/guards.js';
+import { TABLE_FILE_MAX_CSV, tableFile } from '../../../shared/table-file.js';
+import { requirePermission, requirePrincipal } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
@@ -28,6 +29,29 @@ export type OrganizationRoutesDeps = {
 };
 
 const AppChatBodySchema = z.object({ text: z.string().trim().min(1).max(2000) }).strict();
+
+/** An export the person already received, to have it as Excel or PDF (no data is read here). */
+export const TableFileBodySchema = z
+  .object({
+    title: z.string().trim().max(200),
+    csv: z.string().max(TABLE_FILE_MAX_CSV),
+    format: z.enum(['xlsx', 'pdf']),
+  })
+  .strict();
+
+/** The file in JSON: name, type and content in base64, for the dashboard to save. */
+export async function sendTableFile(body: unknown) {
+  const input = TableFileBodySchema.parse(body);
+  const file = await tableFile(input);
+  return {
+    fileName: file.fileName,
+    mimeType: file.mimeType,
+    contentBase64: file.content.toString('base64'),
+  };
+}
+
+/** Room for a 5 MB CSV in JSON, with its escapes. */
+export const TABLE_FILE_BODY_LIMIT = 12 * 1024 * 1024;
 
 const AuditQuerySchema = z
   .object({
@@ -93,6 +117,20 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
       return sendError(reply, err);
     }
   });
+
+  // The exports of the dashboard as Excel or PDF: the CSV the person already has, converted.
+  app.post(
+    '/exports/file',
+    { config: { permission: 'authenticated' }, bodyLimit: TABLE_FILE_BODY_LIMIT },
+    async (req, reply) => {
+      try {
+        requirePrincipal(req);
+        return reply.send(ok(await sendTableFile(req.body)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   // Telegram Mini App: the assistant, the same conversation as the bot with the session's person.
   // Every command checks its own permission, as in the chat.
