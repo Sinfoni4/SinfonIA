@@ -18,6 +18,7 @@ const COMMANDS: CommandSpec[] = [
   { phrase: 'stato pratica azienda', readOnly: true },
   { phrase: 'stato pratica', readOnly: true },
   { phrase: 'export pratiche', readOnly: true },
+  { phrase: 'documenti', readOnly: true },
   { phrase: 'scadenze', readOnly: true },
   { phrase: 'lista scadenze', readOnly: true },
   { phrase: 'crea pratica', readOnly: false },

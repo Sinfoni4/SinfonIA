@@ -207,8 +207,9 @@ type Reply = (text: string, options?: ReplyOptions) => Promise<unknown>;
 export const MENU_BUTTONS: ReplyButton[] = [
   { label: '📁 Le mie pratiche', answer: 'lista pratiche' },
   { label: '⏰ Le mie scadenze', answer: 'scadenze' },
-  { label: '🙋 Operatore', answer: 'operatore' },
+  { label: '📎 I miei documenti', answer: 'documenti' },
   { label: '🏢 La mia azienda', answer: 'la mia azienda' },
+  { label: '🙋 Operatore', answer: 'operatore' },
   { label: '❓ Aiuto', answer: 'aiuto' },
 ];
 
@@ -371,6 +372,7 @@ Puoi:
 • controllarne lo stato
 • gestire le scadenze (DURC, sicurezza, bio, visite mediche, patentini)
 • chiedere aiuto a un operatore (scrivi "operatore")
+• vedere i documenti delle pratiche (scrivi "documenti")
 • vedere i dati della tua azienda (scrivi "la mia azienda")
 
 Prova a scrivere:
@@ -386,6 +388,7 @@ Puoi:
 • chiedere aggiornamenti
 • vedere le tue scadenze (scrivi "scadenze")
 • parlare con un operatore (scrivi "operatore")
+• vedere i documenti delle pratiche (scrivi "documenti")
 • vedere i dati della tua azienda (scrivi "la mia azienda")
 
 Prova a scrivere:

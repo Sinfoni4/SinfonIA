@@ -107,8 +107,8 @@ describe('«parla con un operatore» in the chat (H10)', () => {
     expect(replyMarkup({ menu: true })).toEqual({
       keyboard: [
         [{ text: '📁 Le mie pratiche' }, { text: '⏰ Le mie scadenze' }],
-        [{ text: '🙋 Operatore' }, { text: '🏢 La mia azienda' }],
-        [{ text: '❓ Aiuto' }],
+        [{ text: '📎 I miei documenti' }, { text: '🏢 La mia azienda' }],
+        [{ text: '🙋 Operatore' }, { text: '❓ Aiuto' }],
       ],
       resize_keyboard: true,
       is_persistent: true,
