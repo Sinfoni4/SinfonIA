@@ -1,3 +1,4 @@
+import { italianOcrWarning } from '../../ai/ocr/ocr-warnings.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
@@ -369,7 +370,7 @@ export async function listReviewQueue(
         ocrStatus: r.ocrStatus,
         reviewRequired: result.reviewRequired === true,
         missingFields: strings(result.missingFields),
-        warnings: strings(result.warnings),
+        warnings: strings(result.warnings).map(italianOcrWarning),
         read: readValues(r.ocrResult),
         validated:
           r.validatedAt && r.validatedData

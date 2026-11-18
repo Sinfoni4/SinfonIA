@@ -242,6 +242,35 @@ export const FIELD_LABELS: Record<string, string> = {
 const AMOUNTS = new Set(['taxableAmount', 'vatAmount', 'totalAmount']);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Warnings of reads stored before they were written in Italian (the server writes them so now). */
+const LEGACY_WARNINGS: Array<[RegExp, (m: RegExpExecArray) => string]> = [
+  [
+    /^Totals do not add up\b/,
+    () => 'I totali non tornano: imponibile più IVA è diverso dal totale del documento',
+  ],
+  [
+    /^Document total is zero\b/,
+    () => 'Il totale del documento è zero: controlla se è un documento non fiscale',
+  ],
+  [
+    /^VAT number (\S+) fails the check digit$/,
+    (m) => `La partita IVA ${m[1]} non supera il controllo della cifra finale`,
+  ],
+  [
+    /^VAT number (\S+) found without its label$/,
+    (m) => `Partita IVA ${m[1]} trovata senza la dicitura «P.IVA»`,
+  ],
+  [/^Low OCR confidence \((\d+)%\)$/, (m) => `Lettura poco sicura (${m[1]}%): controlla i dati`],
+];
+
+export function italianWarning(warning: string): string {
+  for (const [pattern, text] of LEGACY_WARNINGS) {
+    const m = pattern.exec(warning);
+    if (m) return text(m);
+  }
+  return warning;
+}
+
 /** The data read from a document, as label and value, in a stable order; text only. */
 export function readFields(result: Record<string, unknown> | null): {
   documentType: string | null;
@@ -269,7 +298,7 @@ export function readFields(result: Record<string, unknown> | null): {
     fields,
     reviewRequired: result.reviewRequired === true,
     warnings: Array.isArray(result.warnings)
-      ? result.warnings.filter((w): w is string => typeof w === 'string')
+      ? result.warnings.filter((w): w is string => typeof w === 'string').map(italianWarning)
       : [],
   };
 }

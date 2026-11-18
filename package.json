@@ -51,6 +51,7 @@
     "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f docker-compose.test.yml down",
     "test:db:migrate": "dotenv -e .env.test -- prisma migrate deploy",
+    "test:db:clean": "tsx scripts/test-db-clean.ts",
     "test:db:reset": "docker compose -f docker-compose.test.yml down -v && npm run test:db:up && npm run test:db:migrate",
     "test:integration": "npm run test:db:up && npm run test:db:migrate && npm test",
     "env:check": "tsx scripts/env.check.ts",

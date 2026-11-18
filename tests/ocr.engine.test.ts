@@ -12,6 +12,7 @@ import {
   UnsupportedDocumentError,
   isValidItalianVat,
 } from '../src/ai/ocr/document-ocr.service.js';
+import { italianOcrWarning, OCR_WARNINGS } from '../src/ai/ocr/ocr-warnings.js';
 import { detectFileKind, type OcrEngine } from '../src/ai/ocr/text-extraction.js';
 import { loadConfig } from '../src/config/config.js';
 import { AttachmentRejectedError } from '../src/core/errors/attachment.errors.js';
@@ -278,7 +279,7 @@ describe('Document AI: parsing never invents values', () => {
       'Fattura n. 1\nP.IVA 01234567890\nData: 01/10/2026\nTotale documento: 12,20',
       'f.txt',
     );
-    expect(result.warnings.join(' ')).toMatch(/check digit/);
+    expect(result.warnings.join(' ')).toMatch(/non supera il controllo della cifra finale/);
     expect(result.reviewRequired).toBe(true);
   });
 
@@ -287,7 +288,7 @@ describe('Document AI: parsing never invents values', () => {
       'Fattura n. 7\nImponibile: 100,00\nIVA 22%: 22,00\nTotale documento: 130,00',
       'f.txt',
     );
-    expect(result.warnings.join(' ')).toMatch(/do not add up/);
+    expect(result.warnings.join(' ')).toMatch(/I totali non tornano/);
   });
 
   it('validates Italian VAT check digits', () => {
@@ -306,7 +307,7 @@ describe('Document AI: parsing never invents values', () => {
     const result = await lowConfidence.processDocument(fixture('receipt-photo.jpg'), '', 'r.jpg');
     expect(result.missingFields).toEqual([]);
     expect(result.reviewRequired).toBe(true);
-    expect(result.warnings.join(' ')).toMatch(/Low OCR confidence/);
+    expect(result.warnings.join(' ')).toMatch(/Lettura poco sicura/);
     expect(result.extraction?.confidence).toBe(41);
   });
 });
@@ -526,5 +527,20 @@ describe('Telegram: attachment reply', () => {
     expect(message).toContain('Totale: 1525,61 €');
     expect(message).toContain('Da verificare');
     expect(message).toContain('partita IVA');
+  });
+});
+
+describe('OCR warnings in Italian', () => {
+  it('translates the warnings of reads stored in English, leaving other text as it is', () => {
+    expect(italianOcrWarning('VAT number 01234567890 fails the check digit')).toBe(
+      'La partita IVA 01234567890 non supera il controllo della cifra finale',
+    );
+    expect(italianOcrWarning('Low OCR confidence (42%)')).toBe(
+      'Lettura poco sicura (42%): controlla i dati',
+    );
+    expect(
+      italianOcrWarning('Document total is zero: check whether it is a non-fiscal document'),
+    ).toBe(OCR_WARNINGS.zeroTotal);
+    expect(italianOcrWarning('Data non leggibile')).toBe('Data non leggibile');
   });
 });

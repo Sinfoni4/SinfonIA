@@ -364,10 +364,13 @@ function isGreeting(text: string): boolean {
 
 export function onboardingMessage(
   who: UserRole | { role: UserRole; customPermissions: CustomPermissions | null },
+  /** The organization the person works for, named in the greeting. */
+  orgName?: string,
 ): string {
   const person = typeof who === 'string' ? { role: who, customPermissions: null } : who;
+  const of = orgName ? ` di ${orgName}` : '';
   if (permits(person, 'practice.transition')) {
-    return `👋 Ciao! Ti aiuto a gestire le pratiche.
+    return `👋 Ciao! Ti aiuto a gestire le pratiche${of}.
 
 Puoi:
 • validarle
@@ -383,7 +386,7 @@ Prova a scrivere:
 "scadenze" oppure "nuova scadenza durc 31/12/2026 DURC annuale"`;
   }
 
-  return `👋 Ciao! Ti aiuto a gestire le tue pratiche.
+  return `👋 Ciao! Ti aiuto a gestire le tue pratiche${of}.
 
 Puoi:
 • creare una pratica
@@ -1113,7 +1116,7 @@ export class ConversationService {
 
     // «Aiuto» (also from the menu) always explains what the bot does.
     if (/^(aiuto|\/help)$/i.test(trimmed)) {
-      await reply(onboardingMessage(dbUser), { menu: true });
+      await reply(onboardingMessage(dbUser, tenant.name), { menu: true });
       return;
     }
 
@@ -1131,9 +1134,14 @@ export class ConversationService {
 
     if (lower.startsWith('/start') || isGreeting(text)) {
       const firstTime = await this.memory.markOnboarded(tenant.id, dbUser.id);
-      await reply(firstTime ? onboardingMessage(dbUser) : '👋 Bentornato! Come posso aiutarti?', {
-        menu: true,
-      });
+      await reply(
+        firstTime
+          ? onboardingMessage(dbUser, tenant.name)
+          : `👋 Bentornato! Lavori per ${tenant.name}. Come posso aiutarti?`,
+        {
+          menu: true,
+        },
+      );
       // The Mini App, when available, right after the greeting of /start.
       if (this.channel.miniAppUrl && lower.startsWith('/start')) {
         await reply('📱 Oppure apri l’app di SinfonIA:', {
@@ -1145,14 +1153,14 @@ export class ConversationService {
 
     // Defensive layer: never let a slash command reach the AI pipeline.
     if (trimmed.startsWith('/')) {
-      await reply(onboardingMessage(dbUser));
+      await reply(onboardingMessage(dbUser, tenant.name));
       return;
     }
 
     // A03: with the AI off, free text gets the list of commands instead of an interpretation.
     if (!featureOn('ai_chat')) {
       await reply(
-        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser)}`,
+        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser, tenant.name)}`,
         { menu: true },
       );
       return;
