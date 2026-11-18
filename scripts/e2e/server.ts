@@ -61,18 +61,22 @@ async function seed(url: string): Promise<void> {
     // Assistance: an open request from each of two people of the company, so that every device of a
     // run has one to take and close (a person has at most one open request: no duplicates).
     const { requestAssistance } = await import('../../src/core/assistance/assistance.service.js');
-    const owner = await prisma.user.findFirst({
-      where: { email: E2E_ADMIN },
-      select: { tenantId: true },
+    // The company through the memberships (MF12: never the old column of the user).
+    const people = await prisma.user.findMany({
+      where: { email: { in: [E2E_ADMIN, E2E_OPERATOR] } },
+      select: { id: true, email: true },
     });
-    if (owner) {
-      const people = await prisma.user.findMany({
-        where: { tenantId: owner.tenantId, email: { in: [E2E_ADMIN, E2E_OPERATOR] } },
-        select: { id: true },
-      });
+    const admin = people.find((p) => p.email === E2E_ADMIN);
+    const membership = admin
+      ? await prisma.userTenant.findFirst({
+          where: { userId: admin.id },
+          select: { tenantId: true },
+        })
+      : null;
+    if (membership) {
       for (const person of people) {
         await requestAssistance(prisma, {
-          tenantId: owner.tenantId,
+          tenantId: membership.tenantId,
           userId: person.id,
           topic: 'PRACTICE',
           channel: 'TELEGRAM',
