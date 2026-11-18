@@ -21,6 +21,7 @@ import {
   cancelDocumentRequest,
   createDocumentRequest,
   fulfilRequestManually,
+  listDelegatedOpenRequests,
   listDocumentRequests,
 } from '../../../core/practice/document-request.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
@@ -219,6 +220,27 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
       return sendError(reply, err);
     }
   });
+
+  // The open requests for documents of every company that gave a delegation (network queue).
+  app.get(
+    '/grants/document-requests',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const grant = requirePermission(req, 'grant.use');
+        return reply.send(
+          ok(
+            await listDelegatedOpenRequests(deps.prisma, {
+              userId: grant.principal.userId,
+              orgId: grant.principal.tenantId,
+            }),
+          ),
+        );
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   app.post(
     '/grants/:id/beneficiaries',
