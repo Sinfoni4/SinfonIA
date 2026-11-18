@@ -2,6 +2,11 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import {
+  auditDelegatedUse,
+  resolveDelegatedAccess,
+  type DelegatedAccess,
+} from '../delegation/delegation.service.js';
 import { recordUsage } from '../usage/usage.service.js';
 
 import { expectedDocumentsOf, requireExpectedKey } from './document-checklist.js';
@@ -133,6 +138,79 @@ export async function listOpenDocumentRequests(
       practiceName: typeof payload?.name === 'string' ? payload.name : null,
     };
   });
+}
+
+/** One open request in the queue of the network, with the organization it belongs to. */
+export type QueuedDocumentRequest = DocumentRequestView & {
+  practiceName: string | null;
+  grantId: string;
+  orgName: string;
+  /** Asked by the caller's organization (rather than by the company itself). */
+  askedByUs: boolean;
+};
+
+/**
+ * The open requests of the organizations whose practices the caller can read through a delegation
+ * (the network's queue): with a date first, the nearest first, then the oldest. Access is
+ * resolved here, delegation by delegation, and every use is audited for the grantor.
+ */
+export async function listDelegatedOpenRequests(
+  prisma: PrismaLike,
+  input: { userId: string; orgId: string; limit?: number },
+): Promise<{ requests: QueuedDocumentRequest[]; organizations: number }> {
+  const now = new Date();
+  const grants = await prisma.accessGrant.findMany({
+    where: {
+      status: 'ACTIVE',
+      validFrom: { lte: now },
+      validUntil: { gt: now },
+      operations: { has: 'READ' },
+      OR: [{ granteeUserId: input.userId }, { granteeOrgId: input.orgId }],
+    },
+    select: { id: true },
+  });
+  const queue: QueuedDocumentRequest[] = [];
+  const seen = new Set<string>();
+  for (const g of grants) {
+    let access: DelegatedAccess;
+    try {
+      access = await resolveDelegatedAccess(prisma, {
+        grantId: g.id,
+        userId: input.userId,
+        currentOrgId: input.orgId,
+        operation: 'READ',
+      });
+    } catch {
+      continue; // Not usable by this person (not a beneficiary, functions off, …).
+    }
+    // Two delegations from the same company: its requests once.
+    if (seen.has(access.grantorOrgId)) continue;
+    seen.add(access.grantorOrgId);
+    const rows = await prisma.documentRequest.findMany({
+      where: { tenantId: access.grantorOrgId, status: 'OPEN' },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+      select: { ...REQUEST_SELECT, requesterOrgId: true },
+    });
+    if (rows.length === 0) continue;
+    await auditDelegatedUse(prisma, access, input.userId, 'requests');
+    for (const r of rows) {
+      const payload = r.practice.payload as { name?: unknown } | null;
+      queue.push({
+        ...toView(r),
+        practiceName: typeof payload?.name === 'string' ? payload.name : null,
+        grantId: access.grantId,
+        orgName: access.grantorName,
+        askedByUs: r.requesterOrgId === input.orgId,
+      });
+    }
+  }
+  queue.sort(
+    (a, b) =>
+      (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') ||
+      a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+  return { requests: queue.slice(0, input.limit ?? 500), organizations: seen.size };
 }
 
 /** Practices of the person (holder or creator) that have open requests, for the chat. */

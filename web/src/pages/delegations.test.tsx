@@ -272,3 +272,74 @@ describe('delegations (MF8)', () => {
     expect(screen.queryByRole('button', { name: 'Valida' })).toBeNull();
   });
 });
+
+describe('the queue of requested documents', () => {
+  const request = (id: string, extra: object) => ({
+    id,
+    practiceId: `p-${id}`,
+    expectedKey: null,
+    expectedLabel: null,
+    message: 'Documento',
+    dueDate: null,
+    status: 'OPEN',
+    createdAt: '2026-11-10T10:00:00Z',
+    fulfilledAt: null,
+    fulfilledAttachmentId: null,
+    cancelledAt: null,
+    practiceName: `Pratica ${id}`,
+    ...extra,
+  });
+
+  it('shows the requests of the companies and of the own organization, with links', async () => {
+    api('OPERATOR', 'NETWORK', {
+      'GET /grants/document-requests': () =>
+        ok({
+          requests: [
+            request('r1', {
+              expectedLabel: 'Certificato biologico',
+              dueDate: '2020-01-05',
+              grantId: 'g-2',
+              orgName: 'Azienda Agricola Collio',
+              askedByUs: true,
+            }),
+            request('r2', {
+              message: 'La mappa dei campi',
+              grantId: 'g-2',
+              orgName: 'Azienda Agricola Collio',
+              askedByUs: false,
+            }),
+          ],
+          organizations: 1,
+        }),
+      'GET /document-requests': () => ok([request('r3', { message: 'Il contratto' })]),
+    });
+    openAt('/richieste');
+    expect(
+      await screen.findByText('2 richieste aperte in 1 aziende, la scadenza più vicina per prima.'),
+    ).toBeTruthy();
+    expect(screen.getByText('scaduta il 05/01/2020')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Pratica r1' }).getAttribute('href')).toBe(
+      '/app/deleghe/g-2/pratiche/p-r1',
+    );
+    expect(screen.getByText('Certificato biologico')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Pratica r3' }).getAttribute('href')).toBe(
+      '/app/pratiche/p-r3',
+    );
+    await userEvent.click(screen.getByLabelText('Solo quelle chieste da noi'));
+    expect(screen.queryByText('La mappa dei campi')).toBeNull();
+    expect(screen.getByText('Certificato biologico')).toBeTruthy();
+  });
+
+  it('hides the companies when the delegations are not for this person', async () => {
+    api('ADMIN', 'COMPANY', {
+      'GET /grants/document-requests': () => ({
+        status: 403,
+        body: { success: false, error: { code: 'FORBIDDEN', message: 'x' } },
+      }),
+      'GET /document-requests': () => ok([]),
+    });
+    openAt('/richieste');
+    expect(await screen.findByText('Nessuna richiesta aperta.')).toBeTruthy();
+    expect(screen.queryByText('Aziende che ti hanno dato una delega')).toBeNull();
+  });
+});
