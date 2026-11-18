@@ -104,6 +104,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://sinfonia_app:ci-only-app-password@localhost:5432/sinfonia?schema=public
           E2E_SKIP_BUILD: 'true'
+          # The full Chromium (new headless), as the Chrome used on Windows, not the reduced shell.
+          E2E_BROWSER_CHANNEL: chromium
 
       - name: Keep the end-to-end traces of a failure
         if: failure()

@@ -9,6 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   accessibilityProblems,
   CONSULTANT,
+  focusPageStart,
   keyboardFocusProblems,
   login,
   openSection,
@@ -82,6 +83,7 @@ test('reaches the content from the keyboard with «Vai al contenuto»', async ({
   test.skip(isMobile, 'keyboard path');
   await page.goto('./');
   await expect(page.getByRole('list', { name: 'Indicatori' })).toBeVisible();
+  await focusPageStart(page);
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Vai al contenuto' })).toBeFocused();
   await page.keyboard.press('Enter');
