@@ -90,6 +90,20 @@ const ConfigSchema = z
     STORAGE_LOCAL_DIR: z.string().min(1).optional(),
     // Folder of the encrypted backups (npm run db:backup): the console shows the last one.
     BACKUP_DIR: z.string().min(1).optional(),
+    // B4: the nightly backup made by the application, at this time (HH:MM, local); unset: off.
+    BACKUP_NIGHTLY_AT: unsetIfEmpty(
+      z
+        .string()
+        .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'BACKUP_NIGHTLY_AT must be HH:MM')
+        .optional(),
+    ),
+    // The 32-byte key of the backups (base64 or hex), kept by the owner also outside this PC.
+    BACKUP_KEY: unsetIfEmpty(z.string().optional()),
+    // The database read by the nightly backup (default DATABASE_URL); it needs read access to
+    // every table, migrations included.
+    BACKUP_SOURCE_URL: unsetIfEmpty(z.string().optional()),
+    // How many nightly backups are kept (the newest one checked with a restore is kept as well).
+    BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
     // AGX-07: euro per unit of usage, JSON (e.g. {"OCR_PAGES":0.002}); only for the internal cost
     // shown in the platform console. Checked at start: a wrong value stops it.
     USAGE_RATES: unsetIfEmpty(z.string().optional()),
@@ -158,6 +172,10 @@ const ConfigSchema = z
   .refine((c) => c.LLM_PROVIDER !== 'mistral' || Boolean(c.MISTRAL_API_KEY), {
     message: 'LLM_PROVIDER=mistral needs MISTRAL_API_KEY',
     path: ['LLM_PROVIDER'],
+  })
+  .refine((c) => !c.BACKUP_NIGHTLY_AT || Boolean(c.BACKUP_DIR && c.BACKUP_KEY), {
+    message: 'BACKUP_NIGHTLY_AT needs BACKUP_DIR and BACKUP_KEY',
+    path: ['BACKUP_NIGHTLY_AT'],
   })
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',

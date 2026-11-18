@@ -113,6 +113,20 @@ describe('state of the system (A5)', () => {
     ).toEqual([]);
   });
 
+  it('names a nightly backup that failed (B4)', () => {
+    const now = new Date('2026-11-20T10:00:00Z');
+    const nightly = (ok: boolean) => ({
+      configured: false,
+      reachable: false,
+      last: null,
+      nightly: { at: '02:30', keep: 14, lastRun: { at: '2026-11-20T01:30:00Z', ok } },
+    });
+    expect(healthWarnings({ ...HEALTHY, backup: nightly(false) }, now)).toEqual([
+      "L'ultimo backup notturno non è riuscito: il server riprova tra un'ora (vedi i log).",
+    ]);
+    expect(healthWarnings({ ...HEALTHY, backup: nightly(true) }, now)).toEqual([]);
+  });
+
   it('writes sizes in bytes, KB, MB or GB', () => {
     expect(formatBytes(512)).toBe('512 byte');
     expect(formatBytes(1536)).toBe('1,5 KB');

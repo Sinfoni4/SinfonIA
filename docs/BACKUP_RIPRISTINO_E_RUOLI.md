@@ -57,6 +57,24 @@ pg_dumpall --globals-only --no-role-passwords > ruoli_<data>.sql
 - Allegati: copia della cartella dello storage, oppure del bucket S3.
 - I file di backup contengono dati personali: vanno cifrati e conservati fuori dal server del database. La politica di conservazione è in §8 del piano.
 
+### 2.1 Backup notturno automatico (B4)
+
+L'applicazione stessa fa ogni notte un backup cifrato (lo stesso di `npm run db:backup`: database e allegati, verificato rileggendolo), senza configurare nulla nel sistema operativo. Si attiva con queste variabili in `.env`:
+
+| Variabile | Significato |
+|---|---|
+| `BACKUP_NIGHTLY_AT` | ora del backup, `HH:MM` (ora locale del server); se manca, il backup notturno è spento |
+| `BACKUP_DIR` | cartella dei backup, fuori dal repository (meglio un altro disco) |
+| `BACKUP_KEY` | chiave di 32 byte (base64 o hex), conservata dal titolare anche fuori dal PC: senza, i backup non si ripristinano |
+| `BACKUP_SOURCE_URL` | database da salvare, con il ruolo `sinfonia_backup`; se manca si usa `DATABASE_URL` (che deve poter leggere tutte le tabelle) |
+| `BACKUP_KEEP` | quanti backup tenere (predefinito 14) |
+
+- Dopo l'ora scelta il server controlla ogni 5 minuti: se il backup di oggi c'è già (anche fatto a mano) non fa nulla.
+- Se non riesce (per esempio il disco USB non è collegato) riprova dopo un'ora, al massimo tre volte al giorno, e lo scrive nei log.
+- Dopo un backup riuscito tiene gli ultimi `BACKUP_KEEP` e, in più, il più recente con la prova di ripristino riuscita (`npm run db:verify-backup`); le cartelle non finite (senza `manifest.json`) e quelle di altri database non vengono mai toccate.
+- La pagina «Salute del sistema» della console mostra l'orario, l'ultimo tentativo e un avviso se è fallito.
+- La prova di ripristino resta manuale: `npm run db:verify-backup` almeno una volta al mese.
+
 ## 3. Ripristino
 
 1. Ruoli: `psql -f ruoli_<data>.sql` sul nuovo server, poi password con `npm run db:roles`.

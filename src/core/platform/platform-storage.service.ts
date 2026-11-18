@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import type { NightlyBackupStatus } from './nightly-backup.js';
 import type { PrismaClient } from '@prisma/client';
 
 /**
@@ -41,6 +42,8 @@ export type BackupHealth = {
   last: { at: Date; tables: number | null; attachments: number | null } | null;
   /** The last restore check (npm run db:verify-backup) of any backup of this database. */
   restoreCheck: { at: Date; ok: boolean; backupAt: Date } | null;
+  /** B4: the nightly backup made by the application (null: not active in this process). */
+  nightly?: NightlyBackupStatus | null;
 };
 
 const DISK_CHECK_MS = 10 * 60_000;
