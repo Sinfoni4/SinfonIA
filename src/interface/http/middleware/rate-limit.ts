@@ -16,7 +16,8 @@ export type RateLimitOptions = {
 
 // Liveness/readiness probes and Meta's webhook (authenticated by signature) are not limited.
 const UNLIMITED_PATHS = new Set(['/healthz', '/readyz', '/webhooks/whatsapp']);
-const AI_PATH = '/ai/execute';
+/** Routes that may call the AI: their own, lower limit (the Mini App assistant too). */
+const AI_PATHS: ReadonlySet<string> = new Set(['/ai/execute', '/miniapp/chat']);
 const WINDOW_MS = 60_000;
 
 const pathOf = (req: FastifyRequest) => req.url.split('?')[0] ?? req.url;
@@ -65,9 +66,10 @@ export function buildRateLimitOptions(options: RateLimitOptions): RateLimitPlugi
     global: true,
     hook: 'preHandler',
     timeWindow: WINDOW_MS,
-    max: (req) => (pathOf(req) === AI_PATH ? options.aiPerMinute : options.perUserPerMinute),
+    max: (req) => (AI_PATHS.has(pathOf(req)) ? options.aiPerMinute : options.perUserPerMinute),
     // The AI endpoint has its own bucket, so heavy AI use does not consume the general quota.
-    keyGenerator: (req) => (pathOf(req) === AI_PATH ? `ai:${identityKey(req)}` : identityKey(req)),
+    keyGenerator: (req) =>
+      AI_PATHS.has(pathOf(req)) ? `ai:${identityKey(req)}` : identityKey(req),
     allowList: (req) => UNLIMITED_PATHS.has(pathOf(req)),
     errorResponseBuilder: (_req, context) => ({
       statusCode: context.statusCode,

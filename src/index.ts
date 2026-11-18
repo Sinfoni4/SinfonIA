@@ -66,6 +66,7 @@ import { databaseName } from './data/backup/pg-tools.js';
 import { createPrismaClient } from './data/db/prisma.js';
 import { AiTraceRepository } from './data/repositories/ai-trace.repository.js';
 import { createStorageService } from './data/storage/storage.factory.js';
+import { createAppChat } from './interface/conversation/app-chat.js';
 import { PrismaConversationMemory } from './interface/conversation/conversation.memory.js';
 import { buildServer } from './interface/http/server.js';
 import { TelegramAdapter } from './interface/telegram/telegram.adapter.js';
@@ -335,6 +336,8 @@ async function main() {
       : {}),
     ...(channelLinks ? { channelLinks } : {}),
     chatInvites,
+    // The assistant of the Telegram Mini App: the same conversation as the bot.
+    ...(config.TELEGRAM_MINIAPP ? { appChat: createAppChat(prisma, conversationDeps) } : {}),
     practiceService,
     complianceService,
     tracer,

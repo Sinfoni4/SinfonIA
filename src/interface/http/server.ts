@@ -44,6 +44,7 @@ import type { ChatInviteService } from '../../core/identity/chat-invite.service.
 import type { LoginService } from '../../core/identity/login.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
+import type { AppChat } from '../conversation/app-chat.js';
 import type { PrismaClient } from '@prisma/client';
 
 declare module 'fastify' {
@@ -85,6 +86,8 @@ export type ServerDeps = {
   channelLinks?: ChannelLinkService;
   /** Personal Telegram links: invitations by link and one's own link. */
   chatInvites?: ChatInviteService;
+  /** The assistant of the Telegram Mini App. */
+  appChat?: AppChat;
 };
 
 /** Access tokens issued by a login session last 10 minutes (§5, D7). */
@@ -219,6 +222,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(organizationRoutes, {
       prisma: deps.prisma,
       complianceService: deps.complianceService,
+      ...(deps.appChat ? { appChat: deps.appChat } : {}),
     });
   }
   if (deps.login) {
