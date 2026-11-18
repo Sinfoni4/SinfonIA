@@ -55,6 +55,7 @@ import {
   PracticeStatusHandler,
 } from './core/outbox/practice-status.handler.js';
 import { NightlyBackup, registerNightlyBackup } from './core/platform/nightly-backup.js';
+import { ATTACHMENT_OCR } from './core/practice/attachment-ocr.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
 import { practicesWithOpenRequests } from './core/practice/document-request.js';
 import { moduleOfTenant } from './core/practice/practice-module.js';
@@ -402,9 +403,25 @@ async function main() {
       : {}),
     ...(whatsappClient ? { whatsapp: createWhatsAppNotifier(whatsappClient) } : {}),
   };
+  // AGX-08 follow-up: reading a document again is slow (OCR): its own dispatcher, so the notices
+  // in chat never wait behind it.
+  const ocrDispatcher = new OutboxDispatcher(prisma, {
+    maxAttempts: Math.min(config.OCR_MAX_ATTEMPTS, config.OUTBOX_MAX_ATTEMPTS),
+    log: logger,
+    only: true,
+    batchSize: 2,
+    handlers: [
+      new AttachmentOcrHandler(prisma, {
+        ocrService: defaultDocumentOcrService,
+        storageService,
+        maxAttempts: Math.min(config.OCR_MAX_ATTEMPTS, config.OUTBOX_MAX_ATTEMPTS),
+      }),
+    ],
+  });
   const dispatcher = new OutboxDispatcher(prisma, {
     maxAttempts: config.OUTBOX_MAX_ATTEMPTS,
     log: logger,
+    except: [ATTACHMENT_OCR],
     handlers: [
       new PracticeExportHandler(prisma, outboxChannels),
       new ComplianceReminderHandler(prisma, outboxChannels),
@@ -427,12 +444,7 @@ async function main() {
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
       ),
       new AttachmentRejectedHandler(prisma, outboxChannels),
-      // AGX-08: a document whose first read failed is read again, then the sender is told.
-      new AttachmentOcrHandler(prisma, {
-        ocrService: defaultDocumentOcrService,
-        storageService,
-        maxAttempts: Math.min(config.OCR_MAX_ATTEMPTS, config.OUTBOX_MAX_ATTEMPTS),
-      }),
+      // AGX-08: once a document is read again (by the OCR dispatcher), the sender is told.
       new AttachmentReadHandler(prisma, outboxChannels),
       new DocumentRequestedHandler(prisma, outboxChannels),
       new DocumentRequestDueHandler(prisma, outboxChannels),
@@ -477,6 +489,11 @@ async function main() {
         name: 'outbox',
         intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
         run: () => dispatcher.dispatchOnce(),
+      },
+      {
+        name: 'outbox-ocr',
+        intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
+        run: () => ocrDispatcher.dispatchOnce(),
       },
       ...(nightlyBackup
         ? [{ name: 'nightly-backup', intervalMs: 5 * 60_000, run: () => nightlyBackup.tick() }]

@@ -9,6 +9,13 @@ import type { PrismaClient } from '@prisma/client';
 
 export type OutboxDispatcherOptions = {
   handlers: OutboxEventHandler[];
+  /**
+   * The event types this dispatcher leaves to another one (e.g. the slow document reads): it
+   * never claims them, so it never dead-letters them for want of a handler. A dispatcher with
+   * `only` claims just the types of its handlers.
+   */
+  except?: readonly string[];
+  only?: boolean;
   maxAttempts?: number;
   batchSize?: number;
   leaseMs?: number;
@@ -66,10 +73,14 @@ export class OutboxDispatcher {
   private readonly now: () => Date;
   private readonly random: () => number;
   private readonly log: OutboxDispatcherOptions['log'];
+  private readonly only: readonly string[] | undefined;
+  private readonly except: readonly string[] | undefined;
 
   constructor(prisma: PrismaClient, options: OutboxDispatcherOptions) {
     this.repo = new OutboxRepository(prisma);
     this.handlers = new Map(options.handlers.map((h) => [h.eventType, h]));
+    this.only = options.only ? [...this.handlers.keys()] : undefined;
+    this.except = options.except;
     this.maxAttempts = options.maxAttempts ?? 8;
     this.batchSize = options.batchSize ?? 20;
     this.leaseMs = options.leaseMs ?? 5 * 60_000;
@@ -85,6 +96,8 @@ export class OutboxDispatcher {
       now: this.now(),
       leaseMs: this.leaseMs,
       limit: this.batchSize,
+      ...(this.only ? { only: this.only } : {}),
+      ...(this.except ? { except: this.except } : {}),
     });
     const stats: DispatchStats = {
       claimed: claimed.length,
