@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useState } from 'react';
 
 import { describeError, type Me } from '../api/client';
-import { PERIODS, showProtected, type NetworkStats } from '../api/network';
+import { PERIODS, showProtected, type NetworkStats, type StatsPeriodKind } from '../api/network';
 import { formatDateTime } from '../api/organization';
 import { formatDate } from '../api/practices';
 import {
@@ -12,10 +12,55 @@ import {
   usageQuery,
   type OrganizationUsage,
   type PlatformUsage,
+  type UsageExport,
 } from '../api/usage';
 import { useSession } from '../session/session';
 
 import { ActivityTabs } from './ActivityPage';
+
+/**
+ * Downloads the events of the period as a CSV file (opens in Excel), for invoicing and checks.
+ * `path` is `/usage` or `/platform/usage`.
+ */
+function UsageDownload({
+  path,
+  period,
+}: {
+  path: '/usage' | '/platform/usage';
+  period: { kind: StatsPeriodKind; previous: boolean };
+}) {
+  const { api } = useSession();
+  const run = useMutation({
+    mutationFn: () => api<UsageExport>(usageQuery(`${path}/export`, period.kind, period.previous)),
+    onSuccess: (result) => {
+      if (result.rows === 0) return;
+      const url = URL.createObjectURL(new Blob([result.csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+  });
+  return (
+    <div className="actions">
+      <button type="button" disabled={run.isPending} onClick={() => run.mutate()}>
+        Scarica il dettaglio (CSV)
+      </button>
+      {run.data?.rows === 0 && <span className="muted">Nessun consumo nel periodo.</span>}
+      {run.data?.truncated && (
+        <span className="muted">
+          Il file contiene solo i primi {run.data.rows} eventi: scegli un periodo più breve.
+        </span>
+      )}
+      {run.isError && (
+        <span className="error" role="alert">
+          {describeError(run.error)}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function PeriodSelect({
   id,
@@ -80,6 +125,7 @@ export function OrganizationUsagePage({ me }: { me: Me }) {
           <p className="muted">
             Dal {formatDate(u.period.from)} al {formatDate(u.period.to)}.
           </p>
+          <UsageDownload path="/usage" period={period} />
           <section className="card">
             <h2>Consumi del periodo</h2>
             {used.length === 0 ? (
@@ -198,6 +244,7 @@ export function PlatformUsagePage() {
               ? 'Il costo interno è stimato con le tariffe della configurazione (USAGE_RATES).'
               : 'Nessuna tariffa configurata (USAGE_RATES): il costo interno non è calcolato.'}
           </p>
+          <UsageDownload path="/platform/usage" period={period} />
           <section className="card">
             <h2>Totale</h2>
             {used.length === 0 ? (

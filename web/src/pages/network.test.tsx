@@ -198,6 +198,41 @@ describe('networks (MF9)', () => {
     );
   });
 
+  it('downloads the events of the period as a CSV file', async () => {
+    const created = vi.fn(() => 'blob:csv');
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: created, revokeObjectURL: vi.fn() }),
+    );
+    api('ADMIN', 'COMPANY', {
+      'GET /usage': () =>
+        ok({
+          period: { kind: 'month', previous: false, from: '2026-11-01', to: '2026-11-30' },
+          totals: [],
+          byOthers: [],
+        }),
+      'GET /usage/export': () =>
+        ok({
+          title: 'Consumi dal 01/11/2026 al 30/11/2026',
+          fileName: 'consumi_2026-11-01_2026-11-30.csv',
+          csv: '﻿"Data"\r\n',
+          rows: 1,
+          truncated: true,
+        }),
+    });
+    openAt('/attivita/consumi');
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Scarica il dettaglio (CSV)' }),
+    );
+    expect(
+      await screen.findByText(
+        'Il file contiene solo i primi 1 eventi: scegli un periodo più breve.',
+      ),
+    ).toBeTruthy();
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(calls.find((c) => c.path === '/usage/export')?.query.get('period')).toBe('month');
+  });
+
   it('hides the network sections from a company, which confirms an invitation instead', async () => {
     api('ADMIN', 'COMPANY', { 'POST /memberships/r-9/confirm': () => ok({ status: 'ACTIVE' }) });
     openAt('/adesioni');

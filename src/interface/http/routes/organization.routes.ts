@@ -8,7 +8,7 @@ import {
   getOrganizationSettings,
   updateOrganizationSettings,
 } from '../../../core/organization/organization-settings.service.js';
-import { organizationUsage } from '../../../core/usage/usage.service.js';
+import { organizationUsage, usageExport } from '../../../core/usage/usage.service.js';
 import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -117,6 +117,25 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
       return reply.send(
         ok(
           await organizationUsage(deps.prisma, {
+            tenantId: auth.tenantId,
+            kind: query.period,
+            previous: query.previous,
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // The usage events of the period as a CSV file (one row each), for invoicing and checks.
+  app.get('/usage/export', { config: { permission: 'audit.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'audit.read').principal;
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await usageExport(deps.prisma, {
             tenantId: auth.tenantId,
             kind: query.period,
             previous: query.previous,
