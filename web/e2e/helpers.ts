@@ -23,11 +23,14 @@ export async function enterCode(page: Page, email: string): Promise<void> {
   await page.getByRole('button', { name: 'Accedi' }).click();
 }
 
-/** Opens a section of the header; on a phone through «Menu». */
-export async function openSection(page: Page, name: string): Promise<void> {
-  const toggle = page.getByRole('button', { name: 'Menu' });
+/** Opens a section of the sidebar; on a phone through «Menu». */
+export async function openSection(page: Page, name: string, nav = 'Sezioni'): Promise<void> {
+  const toggle = page.getByRole('button', { name: 'Menu', exact: true });
   if (await toggle.isVisible()) await toggle.click();
-  await page.getByRole('navigation', { name: 'Sezioni' }).getByRole('link', { name }).click();
+  await page
+    .getByRole('navigation', { name: nav, exact: true })
+    .getByRole('link', { name, exact: true })
+    .click();
 }
 
 /** A name nobody else used in the run. */

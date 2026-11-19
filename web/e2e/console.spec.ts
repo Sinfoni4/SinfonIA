@@ -5,7 +5,13 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { accessibilityProblems, enterCode, focusPageStart, PLATFORM_ADMIN } from './helpers';
+import {
+  accessibilityProblems,
+  enterCode,
+  focusPageStart,
+  openSection,
+  PLATFORM_ADMIN,
+} from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -50,9 +56,8 @@ test('reaches the content of the console from the keyboard with «Vai al contenu
 
 test('goes through every section of the console, which fits the screen and passes the checks', async () => {
   const found: Record<string, string[]> = {};
-  const nav = page.getByRole('navigation', { name: 'Sezioni della console' });
   for (const [link, heading] of SECTIONS) {
-    await nav.getByRole('link', { name: link, exact: true }).click();
+    await openSection(page, link, 'Sezioni della console');
     await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -65,8 +70,7 @@ test('goes through every section of the console, which fits the screen and passe
 });
 
 test('opens the page of an organization', async () => {
-  const nav = page.getByRole('navigation', { name: 'Sezioni della console' });
-  await nav.getByRole('link', { name: 'Organizzazioni', exact: true }).click();
+  await openSection(page, 'Organizzazioni', 'Sezioni della console');
   await page.getByRole('searchbox', { name: 'Cerca' }).fill('Azienda E2E');
   await page.getByRole('link', { name: 'Azienda E2E' }).first().click();
   await expect(page.getByRole('heading', { level: 1, name: 'Azienda E2E' })).toBeVisible();

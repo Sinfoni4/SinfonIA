@@ -1,16 +1,20 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  Link,
-  NavLink,
-  Navigate,
-  Outlet,
-  Route,
-  Routes,
-  useLocation,
-  useNavigate,
-  useParams,
-} from 'react-router';
+  ArrowLeftRight,
+  CircleCheck,
+  CirclePause,
+  Plus,
+  Building2,
+  ChartColumn,
+  CirclePlus,
+  HeartPulse,
+  LogOut,
+  ScrollText,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
+import { useMemo, useState, type FormEvent } from 'react';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 
 import { describeError, type PlatformAdmin } from '../api/client';
 import { invitationLink } from '../api/members';
@@ -30,6 +34,7 @@ import {
   type OrganizationDetail,
   type OrganizationLinks,
   type OrganizationPage,
+  type OrganizationRow,
   type OrganizationStatus,
   type OrganizationType,
   type Feature,
@@ -38,10 +43,20 @@ import {
   type Verification,
 } from '../api/platform';
 import { formatDate } from '../api/practices';
+import { AppFrame } from '../components/AppFrame';
+import { DataTable, TablePagination, type DataColumn } from '../components/DataTable';
 import { useSession } from '../session/session';
 
 import { AiUsagePage, HealthPage } from './PlatformHealthPages';
 import { PlatformUsagePage } from './UsagePages';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { SidebarMenuButton } from '@/components/ui/sidebar';
 
 /**
  * FE7: the platform console (docs/PROGETTO_FRONTEND_V2.md §5): organizations, new organization,
@@ -64,21 +79,13 @@ export function PlatformApp({ admin }: { admin: PlatformAdmin }) {
   );
 }
 
+/**
+ * The console in the same frame as the dashboard (dashboard-01 of shadcn/ui), told apart by its
+ * own sections, «Nuova organizzazione» and the «Console» badge in the bar on top.
+ */
 function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
   const { leavePlatform, logout } = useSession();
   const [error, setError] = useState<string | null>(null);
-  // FE5: as in the dashboard, after a change of page keyboard and screen readers start from the
-  // new content.
-  const { pathname } = useLocation();
-  const main = useRef<HTMLElement>(null);
-  const firstPage = useRef(true);
-  useEffect(() => {
-    if (firstPage.current) {
-      firstPage.current = false;
-      return;
-    }
-    main.current?.focus();
-  }, [pathname]);
 
   const back = async () => {
     setError(null);
@@ -90,51 +97,67 @@ function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
   };
 
   return (
-    <div className="shell">
-      <a href="#contenuto" className="skip-link">
-        Vai al contenuto
-      </a>
-      <header className="topbar console">
-        <NavLink to="/piattaforma" className="brand">
-          SinfonIA
-        </NavLink>
-        <div className="org">
-          <span>Console di piattaforma</span>
-          <span className="badge warn">{admin.email}</span>
-        </div>
-        <nav aria-label="Sezioni della console">
-          <NavLink to="/piattaforma" end>
-            Organizzazioni
-          </NavLink>
-          <NavLink to="/piattaforma/registro">Registro</NavLink>
-          <NavLink to="/piattaforma/salute">Salute</NavLink>
-          <NavLink to="/piattaforma/consumi-ia">Consumi IA</NavLink>
-          <NavLink to="/piattaforma/consumi">Consumi</NavLink>
-        </nav>
-        <nav aria-label="Account">
-          {admin.organizations.length > 0 && (
-            <button type="button" className="link" onClick={() => void back()}>
-              Le mie aziende
-            </button>
-          )}
-          <button type="button" className="link" onClick={() => void logout()}>
+    <AppFrame
+      sidebarLabel="Menu della console"
+      navLabel="Sezioni della console"
+      brand={{
+        to: '/piattaforma',
+        icon: <ShieldCheck aria-hidden className="size-5!" />,
+        name: 'SinfonIA',
+      }}
+      context={<span className="truncate text-sm font-medium">Console di piattaforma</span>}
+      action={{
+        to: '/piattaforma/nuova',
+        label: 'Nuova organizzazione',
+        icon: <CirclePlus aria-hidden />,
+      }}
+      groups={[
+        {
+          label: 'Gestione',
+          items: [
+            {
+              to: '/piattaforma',
+              label: 'Organizzazioni',
+              icon: <Building2 aria-hidden />,
+              end: true,
+            },
+            { to: '/piattaforma/registro', label: 'Registro', icon: <ScrollText aria-hidden /> },
+          ],
+        },
+        {
+          label: 'Sistema',
+          items: [
+            { to: '/piattaforma/salute', label: 'Salute', icon: <HeartPulse aria-hidden /> },
+            { to: '/piattaforma/consumi-ia', label: 'Consumi IA', icon: <Sparkles aria-hidden /> },
+            { to: '/piattaforma/consumi', label: 'Consumi', icon: <ChartColumn aria-hidden /> },
+          ],
+        },
+      ]}
+      switcher={
+        admin.organizations.length > 0 && (
+          <SidebarMenuButton onClick={() => void back()}>
+            <ArrowLeftRight aria-hidden />
+            <span>Le mie aziende</span>
+          </SidebarMenuButton>
+        )
+      }
+      account={{
+        email: admin.email,
+        detail: 'Gestore della piattaforma',
+        menu: (
+          <DropdownMenuItem onSelect={() => void logout()}>
+            <LogOut aria-hidden />
             Esci
-          </button>
-        </nav>
-      </header>
-      {error && (
-        <p className="error banner" role="alert">
-          {error}
-        </p>
-      )}
-      <main className="content" id="contenuto" tabIndex={-1} ref={main}>
-        <Outlet />
-      </main>
-    </div>
+          </DropdownMenuItem>
+        ),
+      }}
+      badge={{ label: 'Console', tone: 'console' }}
+      titles={{ '/piattaforma/nuova': 'Nuova organizzazione' }}
+      error={error}
+    />
   );
 }
 
-/** G2: asks for a code by email and collects it; the action sends it with its own request. */
 function useConfirmationCode() {
   const { api } = useSession();
   const [challenge, setChallenge] = useState<{ challengeId: string; devCode?: string } | null>(
@@ -217,7 +240,8 @@ function OrganizationsPage() {
     search: string;
     type: OrganizationType | '';
     status: OrganizationStatus | '';
-  }>({ page: 1, search: '', type: '', status: '' });
+    limit: number;
+  }>({ page: 1, search: '', type: '', status: '', limit: 20 });
   const query = useQuery({
     queryKey: ['platform', 'organizations', filters],
     queryFn: () => api<OrganizationPage>(organizationsQuery(filters)),
@@ -225,130 +249,161 @@ function OrganizationsPage() {
   });
   const data = query.data;
 
+  const columns = useMemo<Array<DataColumn<OrganizationRow>>>(
+    () => [
+      {
+        id: 'name',
+        header: 'Organizzazione',
+        enableHiding: false,
+        meta: { label: 'Organizzazione' },
+        cell: ({ row: { original: o } }) => (
+          <Link to={`/piattaforma/organizzazioni/${o.id}`} className="font-medium">
+            {o.name}
+          </Link>
+        ),
+      },
+      {
+        id: 'type',
+        header: 'Tipo',
+        meta: { label: 'Tipo', className: 'hidden md:table-cell' },
+        cell: ({ row }) => (
+          <Badge variant="outline" className="px-1.5 text-muted-foreground">
+            {TYPE_LABELS[row.original.type]}
+          </Badge>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'Stato',
+        meta: { label: 'Stato' },
+        cell: ({ row: { original: o } }) => (
+          <Badge variant="outline" className="px-1.5 text-muted-foreground">
+            {o.status === 'ACTIVE' ? (
+              <CircleCheck aria-hidden className="fill-green-600 text-white" />
+            ) : (
+              <CirclePause aria-hidden />
+            )}
+            <span className="text-foreground">{STATUS_LABELS[o.status]}</span>
+          </Badge>
+        ),
+      },
+      {
+        id: 'members',
+        header: 'Membri',
+        meta: { label: 'Membri', className: 'text-right tabular-nums' },
+        cell: ({ row }) => row.original.members,
+      },
+      {
+        id: 'practices',
+        header: 'Pratiche',
+        meta: { label: 'Pratiche', className: 'text-right tabular-nums' },
+        cell: ({ row }) => row.original.practices,
+      },
+      {
+        id: 'lastActivityAt',
+        header: 'Ultima attività',
+        meta: { label: 'Ultima attività', className: 'whitespace-nowrap' },
+        cell: ({ row }) =>
+          row.original.lastActivityAt ? formatDate(row.original.lastActivityAt) : '—',
+      },
+    ],
+    [],
+  );
+
   return (
-    <>
-      <div className="page-head">
-        <h1>Organizzazioni</h1>
-        <Link className="button" to="/piattaforma/nuova">
-          Nuova organizzazione
-        </Link>
-      </div>
-      <div className="filters">
-        <label>
-          Cerca
-          <input
-            type="search"
-            value={filters.search}
-            onChange={(e) => setFilters((f) => ({ ...f, page: 1, search: e.target.value }))}
-          />
-        </label>
-        <label>
-          Tipo
-          <select
-            value={filters.type}
-            onChange={(e) =>
-              setFilters((f) => ({ ...f, page: 1, type: e.target.value as OrganizationType | '' }))
-            }
-          >
-            <option value="">Tutti</option>
-            {TYPES.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Stato
-          <select
-            value={filters.status}
-            onChange={(e) =>
-              setFilters((f) => ({
-                ...f,
-                page: 1,
-                status: e.target.value as OrganizationStatus | '',
-              }))
-            }
-          >
-            <option value="">Tutti</option>
-            {(Object.keys(STATUS_LABELS) as OrganizationStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        </label>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Organizzazioni</h1>
+        <Button asChild>
+          <Link to="/piattaforma/nuova">
+            <Plus aria-hidden />
+            Nuova organizzazione
+          </Link>
+        </Button>
       </div>
       {query.isError && (
-        <p className="error" role="alert">
+        <p className="error m-0" role="alert">
           {describeError(query.error)}
         </p>
       )}
-      {query.isPending && <p className="muted">Caricamento…</p>}
-      {data && data.items.length === 0 && <p className="muted">Nessuna organizzazione.</p>}
-      {data && data.items.length > 0 && (
-        <>
-          <table className="list cards">
-            <thead>
-              <tr>
-                <th scope="col">Organizzazione</th>
-                <th scope="col">Stato</th>
-                <th scope="col">Membri</th>
-                <th scope="col">Pratiche</th>
-                <th scope="col">Ultima attività</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((o) => (
-                <tr key={o.id}>
-                  <td data-label="Organizzazione">
-                    <Link to={`/piattaforma/organizzazioni/${o.id}`}>{o.name}</Link>
-                    <div className="muted">{TYPE_LABELS[o.type]}</div>
-                  </td>
-                  <td data-label="Stato">
-                    <span className={`state ${o.status === 'ACTIVE' ? '' : 'state-failed'}`}>
-                      {STATUS_LABELS[o.status]}
-                    </span>
-                  </td>
-                  <td data-label="Membri">{o.members}</td>
-                  <td data-label="Pratiche">{o.practices}</td>
-                  <td data-label="Ultima attività">
-                    {o.lastActivityAt ? formatDate(o.lastActivityAt) : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {data.totalPages > 1 && (
-            <nav className="pager" aria-label="Pagine">
-              <button
-                type="button"
-                className="secondary"
-                disabled={data.page <= 1}
-                onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
-              >
-                Precedenti
-              </button>
-              <span>
-                Pagina {data.page} di {data.totalPages} ({data.total})
-              </span>
-              <button
-                type="button"
-                className="secondary"
-                disabled={data.page >= data.totalPages}
-                onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
-              >
-                Successive
-              </button>
-            </nav>
-          )}
-        </>
+      {query.isPending && <p className="m-0 text-muted-foreground">Caricamento…</p>}
+      {data && (
+        <DataTable
+          label="Elenco delle organizzazioni"
+          columns={columns}
+          data={data.items}
+          rowKey={(o) => o.id}
+          empty="Nessuna organizzazione."
+          toolbar={
+            <>
+              <Label className="w-full sm:w-64">
+                Cerca
+                <Input
+                  type="search"
+                  value={filters.search}
+                  onChange={(e) => setFilters((f) => ({ ...f, page: 1, search: e.target.value }))}
+                />
+              </Label>
+              <Label>
+                Tipo
+                <NativeSelect
+                  className="w-auto"
+                  value={filters.type}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      page: 1,
+                      type: e.target.value as OrganizationType | '',
+                    }))
+                  }
+                >
+                  <option value="">Tutti</option>
+                  {TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {TYPE_LABELS[t]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+              <Label>
+                Stato
+                <NativeSelect
+                  className="w-auto"
+                  value={filters.status}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      page: 1,
+                      status: e.target.value as OrganizationStatus | '',
+                    }))
+                  }
+                >
+                  <option value="">Tutti</option>
+                  {(Object.keys(STATUS_LABELS) as OrganizationStatus[]).map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+            </>
+          }
+          pagination={{
+            page: data.page,
+            totalPages: data.totalPages,
+            total: data.total,
+            noun: ['organizzazione', 'organizzazioni'],
+            limit: filters.limit,
+            onPage: (page) => setFilters((f) => ({ ...f, page })),
+            onLimit: (limit) => setFilters((f) => ({ ...f, limit, page: 1 })),
+          }}
+        />
       )}
-      <p className="muted">
+      <p className="m-0 text-sm text-muted-foreground">
         La console mostra numeri, stati e i contatti degli amministratori: mai pratiche, documenti o
         scadenze delle organizzazioni.
       </p>
-    </>
+    </div>
   );
 }
 
@@ -980,27 +1035,13 @@ function AuditPage() {
         </table>
       )}
       {data && data.totalPages > 1 && (
-        <nav className="pager" aria-label="Pagine">
-          <button
-            type="button"
-            className="secondary"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Precedenti
-          </button>
-          <span>
-            Pagina {data.page} di {data.totalPages}
-          </span>
-          <button
-            type="button"
-            className="secondary"
-            disabled={page >= data.totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Successive
-          </button>
-        </nav>
+        <TablePagination
+          page={data.page}
+          totalPages={data.totalPages}
+          total={data.total}
+          noun={['azione', 'azioni']}
+          onPage={setPage}
+        />
       )}
       <p className="muted">
         Ogni azione dei gestori resta qui e non si può modificare. Le azioni su

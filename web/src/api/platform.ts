@@ -143,8 +143,13 @@ export function organizationsQuery(filters: {
   search: string;
   type: OrganizationType | '';
   status: OrganizationStatus | '';
+  /** Rows per page, 25 when absent. */
+  limit?: number;
 }): string {
-  const params = new URLSearchParams({ page: String(filters.page), limit: '25' });
+  const params = new URLSearchParams({
+    page: String(filters.page),
+    limit: String(filters.limit ?? 25),
+  });
   if (filters.search.trim()) params.set('search', filters.search.trim());
   if (filters.type) params.set('type', filters.type);
   if (filters.status) params.set('status', filters.status);
