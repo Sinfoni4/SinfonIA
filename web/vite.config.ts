@@ -23,6 +23,8 @@ const proxied = [
   '/grants',
   '/roles',
   '/attachments',
+  '/miniapp',
+  '/modules',
   '/readyz',
 ];
 
