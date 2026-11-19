@@ -27,6 +27,7 @@ const ROW = {
   name: 'Cooperativa Alfa',
   type: 'COOPERATIVE',
   status: 'ACTIVE',
+  module: 'music',
   createdAt: '2026-10-01T10:00:00Z',
   members: 4,
   practices: 12,
@@ -35,7 +36,6 @@ const ROW = {
 
 const DETAIL = {
   ...ROW,
-  module: 'music',
   scheduledExport: false,
   webhook: false,
   deactivatedAt: null,
@@ -163,6 +163,19 @@ describe('platform console (FE7)', () => {
     expect(within(table).getByText('Cooperativa')).toBeTruthy();
     expect(tokenOf('/platform/organizations')).toBe('Bearer ptok');
     expect(localStorage.getItem('sinfonia.lastOrganization')).toBe('platform');
+  });
+
+  it('shows the sector of each organization and filters the list by it', async () => {
+    api({});
+    openAt('/piattaforma', 'platform');
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Musica e spettacolo')).toBeTruthy();
+    await userEvent.selectOptions(screen.getByLabelText('Settore'), 'agri');
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.path === '/platform/organizations' && c.query.get('module') === 'agri'),
+      ).toBe(true),
+    );
   });
 
   it('resumes the console after a reload and goes back to the organization', async () => {

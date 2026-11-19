@@ -285,7 +285,13 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
         data: { items: Array<{ id: string; members: number; practices: number }> };
       }>().data.items;
       expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({ id: orgId, members: 5, practices: 1 });
+      expect(items[0]).toMatchObject({ id: orgId, members: 5, practices: 1, module: 'generic' });
+      // A02: the list filters by sector module.
+      const bySector = async (module: string) =>
+        get(`/platform/organizations?search=fe7-${run}&module=${module}`, bearer());
+      expect((await bySector('generic')).json<{ data: { total: number } }>().data.total).toBe(1);
+      expect((await bySector('agri')).json<{ data: { total: number } }>().data.total).toBe(0);
+      expect((await bySector('sport')).statusCode).toBe(400);
       const detail = await get(`/platform/organizations/${orgId}`, bearer());
       const d = detail.json<{ data: { administrators: Array<{ email: string | null }> } }>().data;
       expect(d.administrators.map((a) => a.email)).toEqual([`admin-${run}@fe7.local`, null]);
