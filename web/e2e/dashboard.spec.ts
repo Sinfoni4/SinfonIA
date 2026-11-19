@@ -36,7 +36,8 @@ test.afterAll(async () => {
 /** Creates a practice from the dashboard and stays on its page. */
 async function createPractice(name: string) {
   await openSection(page, 'Pratiche');
-  await page.getByRole('link', { name: 'Nuova pratica' }).click();
+  // The button of the page (the sidebar has its own «Nuova pratica» too).
+  await page.locator('#contenuto').getByRole('link', { name: 'Nuova pratica' }).click();
   await page.getByLabel('Nome').fill(name);
   await page.getByRole('button', { name: 'Crea pratica' }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();

@@ -132,7 +132,15 @@ describe('people (FE4)', () => {
   it('lists members, hides revoked ones until asked, and never edits oneself', async () => {
     api('ADMIN', {});
     openAt('/persone');
-    const members = (await screen.findByText('mario@coop.it')).closest('table')!;
+    // The own email is also at the foot of the sidebar: the list is the table of the page.
+    const members = await waitFor(() => {
+      const table = screen
+        .getAllByText('mario@coop.it')
+        .map((e) => e.closest('table'))
+        .find((t) => t !== null);
+      if (!table) throw new Error('members table not shown yet');
+      return table;
+    });
     expect(within(members).getByText('tu')).toBeTruthy();
     expect(within(members).getByText('account della chat, senza email')).toBeTruthy();
     expect(within(members).queryByText('ex@coop.it')).toBeNull();

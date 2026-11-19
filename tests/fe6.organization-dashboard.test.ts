@@ -184,6 +184,7 @@ describe.runIf(Boolean(DATABASE_URL))('organization in the dashboard (FE6)', () 
         items: Array<{ fileName: string; practiceName: string; reason: string }>;
       };
       recentPractices: Array<{ name: string }>;
+      activity: Array<{ date: string; practices: number; documents: number }>;
     };
 
     it('counts the whole organization for staff', async () => {
@@ -203,6 +204,10 @@ describe.runIf(Boolean(DATABASE_URL))('organization in the dashboard (FE6)', () 
         ['scontrino.jpg', 'unreadable'],
       ]);
       expect(s.recentPractices).toHaveLength(3);
+      // The chart of the home: 90 days ending today, every practice of the setup counted once.
+      expect(s.activity).toHaveLength(90);
+      expect(s.activity.reduce((sum, d) => sum + d.practices, 0)).toBe(3);
+      expect(s.activity.reduce((sum, d) => sum + d.documents, 0)).toBeGreaterThanOrEqual(2);
     });
 
     it('shows a member only their own practices, documents and deadlines', async () => {
@@ -210,6 +215,7 @@ describe.runIf(Boolean(DATABASE_URL))('organization in the dashboard (FE6)', () 
       const s = res.json<{ data: Summary }>().data;
       expect(s.practices.total).toBe(1);
       expect(s.recentPractices.map((p) => p.name)).toEqual(['Spese del membro']);
+      expect(s.activity.reduce((sum, d) => sum + d.practices, 0)).toBe(1);
       expect(s.documents.items.map((d) => d.fileName)).toEqual(['scontrino.jpg']);
       expect(s.documents.toReview).toBe(0);
       expect(s.deadlines.upcoming.map((d) => d.title)).toEqual(['Visita del membro']);

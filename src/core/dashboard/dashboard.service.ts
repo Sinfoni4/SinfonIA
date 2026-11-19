@@ -1,4 +1,5 @@
 import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
+import { parseIsoDate, todayInRome } from '../compliance/compliance.dates.js';
 import { readPracticePayload } from '../practice/practice.payload.js';
 
 import type { ComplianceService } from '../compliance/compliance.service.js';
@@ -12,6 +13,9 @@ import type { PracticeStatus, Prisma, PrismaClient } from '@prisma/client';
  */
 
 export const DEADLINE_HORIZON_DAYS = 30;
+/** Days of the activity chart of the home: practices opened and documents received per day. */
+export const ACTIVITY_DAYS = 90;
+const DAY_MS = 86_400_000;
 const LIST_SIZE = 5;
 
 const STATES: PracticeStatus[] = ['CREATED', 'VALIDATED', 'SUBMITTED', 'FAILED', 'COMPLETED'];
@@ -41,7 +45,17 @@ export type DashboardSummary = {
     }>;
   };
   recentPractices: Array<{ id: string; name: string; status: PracticeStatus; updatedAt: Date }>;
+  /** One entry per day (Italian calendar), oldest first, the last one today; zeros included. */
+  activity: Array<{ date: string; practices: number; documents: number }>;
 };
+
+/** The last `ACTIVITY_DAYS` days, in Italy, as YYYY-MM-DD, oldest first. */
+function activityDays(now: Date): string[] {
+  const today = parseIsoDate(todayInRome(now))!.getTime();
+  return Array.from({ length: ACTIVITY_DAYS }, (_, i) =>
+    new Date(today - (ACTIVITY_DAYS - 1 - i) * DAY_MS).toISOString().slice(0, 10),
+  );
+}
 
 function practiceName(id: string, payload: unknown): string {
   return readPracticePayload(payload).name ?? `Pratica ${id.slice(0, 8)}`;
@@ -51,7 +65,11 @@ export async function dashboardSummary(
   prisma: PrismaClient,
   compliance: Pick<ComplianceService, 'listDeadlines'> | undefined,
   input: { tenantId: string; practiceUserId?: string; deadlineUserId?: string },
+  now = new Date(),
 ): Promise<DashboardSummary> {
+  const days = activityDays(now);
+  // A day more than the chart, so the first Italian day is whole whatever the hour in UTC.
+  const since = new Date(parseIsoDate(days[0])!.getTime() - DAY_MS);
   const practiceWhere: Prisma.PracticeWhereInput = {
     tenantId: input.tenantId,
     ...(input.practiceUserId ? personPracticesWhere(input.practiceUserId) : {}),
@@ -68,41 +86,61 @@ export async function dashboardSummary(
     ...(input.practiceUserId ? { practice: personPracticesWhere(input.practiceUserId) } : {}),
   };
 
-  const [groups, recent, toReview, unreadable, documents, deadlines] = await Promise.all([
-    prisma.practice.groupBy({ by: ['status'], where: practiceWhere, _count: { _all: true } }),
-    prisma.practice.findMany({
-      where: practiceWhere,
-      orderBy: { updatedAt: 'desc' },
-      take: LIST_SIZE,
-      select: { id: true, status: true, payload: true, updatedAt: true },
-    }),
-    prisma.practiceAttachment.count({ where: { ...attachmentWhere, ...review } }),
-    prisma.practiceAttachment.count({
-      where: { ...attachmentWhere, ocrStatus: 'FAILED', validatedAt: null, rejectedAt: null },
-    }),
-    prisma.practiceAttachment.findMany({
-      where: {
-        ...attachmentWhere,
-        OR: [review, { ocrStatus: 'FAILED', validatedAt: null, rejectedAt: null }],
-      },
-      orderBy: { createdAt: 'desc' },
-      take: LIST_SIZE,
-      select: {
-        id: true,
-        fileName: true,
-        ocrStatus: true,
-        practice: { select: { id: true, payload: true } },
-      },
-    }),
-    compliance
-      ? compliance.listDeadlines({
-          tenantId: input.tenantId,
-          status: 'OPEN',
-          userId: input.deadlineUserId,
-          withinDays: DEADLINE_HORIZON_DAYS,
-        })
-      : Promise.resolve([]),
-  ]);
+  const [groups, recent, toReview, unreadable, documents, deadlines, opened, received] =
+    await Promise.all([
+      prisma.practice.groupBy({ by: ['status'], where: practiceWhere, _count: { _all: true } }),
+      prisma.practice.findMany({
+        where: practiceWhere,
+        orderBy: { updatedAt: 'desc' },
+        take: LIST_SIZE,
+        select: { id: true, status: true, payload: true, updatedAt: true },
+      }),
+      prisma.practiceAttachment.count({ where: { ...attachmentWhere, ...review } }),
+      prisma.practiceAttachment.count({
+        where: { ...attachmentWhere, ocrStatus: 'FAILED', validatedAt: null, rejectedAt: null },
+      }),
+      prisma.practiceAttachment.findMany({
+        where: {
+          ...attachmentWhere,
+          OR: [review, { ocrStatus: 'FAILED', validatedAt: null, rejectedAt: null }],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: LIST_SIZE,
+        select: {
+          id: true,
+          fileName: true,
+          ocrStatus: true,
+          practice: { select: { id: true, payload: true } },
+        },
+      }),
+      compliance
+        ? compliance.listDeadlines({
+            tenantId: input.tenantId,
+            status: 'OPEN',
+            userId: input.deadlineUserId,
+            withinDays: DEADLINE_HORIZON_DAYS,
+          })
+        : Promise.resolve([]),
+      // Only the dates: the chart counts, it never shows which practice or document.
+      prisma.practice.findMany({
+        where: { ...practiceWhere, createdAt: { gte: since } },
+        select: { createdAt: true },
+      }),
+      prisma.practiceAttachment.findMany({
+        where: { ...attachmentWhere, createdAt: { gte: since } },
+        select: { createdAt: true },
+      }),
+    ]);
+
+  const activity = new Map(days.map((date) => [date, { date, practices: 0, documents: 0 }]));
+  for (const p of opened) {
+    const day = activity.get(todayInRome(p.createdAt));
+    if (day) day.practices += 1;
+  }
+  for (const a of received) {
+    const day = activity.get(todayInRome(a.createdAt));
+    if (day) day.documents += 1;
+  }
 
   const byStatus = Object.fromEntries(STATES.map((s) => [s, 0])) as Record<PracticeStatus, number>;
   for (const g of groups) byStatus[g.status] = g._count._all;
@@ -137,5 +175,6 @@ export async function dashboardSummary(
       status: p.status,
       updatedAt: p.updatedAt,
     })),
+    activity: [...activity.values()],
   };
 }

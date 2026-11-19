@@ -3,7 +3,7 @@
  * against a simulated API (the backend side is covered by tests/fe0.dashboard-backend.test.ts).
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -167,8 +167,11 @@ describe('dashboard session (FE1)', () => {
     });
     renderApp();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('link', { name: 'Profilo' }));
-    expect(await screen.findByText('mario@cooperativa.it')).toBeTruthy();
+    // The profile is in the account menu at the foot of the sidebar.
+    await user.click(await screen.findByRole('button', { name: /^Account:/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Profilo' }));
+    expect(await screen.findByRole('heading', { name: 'Profilo' })).toBeTruthy();
+    expect(within(screen.getByRole('main')).getByText('mario@cooperativa.it')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Esci da tutti i dispositivi' }));
     await user.click(screen.getByRole('button', { name: 'Sì, esci ovunque' }));
     expect(await screen.findByText('Sei uscito da tutti i dispositivi.')).toBeTruthy();
