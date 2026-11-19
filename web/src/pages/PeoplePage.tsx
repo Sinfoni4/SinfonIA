@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { CircleCheck, CircleDashed, CircleX } from 'lucide-react';
+import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 
 import { ApiError, describeError, type Me, type Role } from '../api/client';
@@ -22,7 +23,23 @@ import {
 } from '../api/members';
 import { formatDate } from '../api/practices';
 import { ChatInvites } from '../components/ChatInvites';
+import { DataTable, type DataColumn } from '../components/DataTable';
 import { useSession } from '../session/session';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFrame,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 type Pending =
   { kind: 'role'; userId: string; role: Role } | { kind: 'revoke'; userId: string } | null;
@@ -38,13 +55,13 @@ export function PeoplePage({ me }: { me: Me }) {
     );
   }
   return (
-    <>
-      <h1>Persone</h1>
+    <div className="flex flex-col gap-8">
+      <h1 className="m-0 text-2xl font-semibold tracking-tight">Persone</h1>
       <Members me={me} />
       <ChatInvites me={me} />
       <Invitations me={me} />
       <CustomRoles me={me} />
-    </>
+    </div>
   );
 }
 
@@ -52,7 +69,6 @@ function Members({ me }: { me: Me }) {
   const { api } = useSession();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<Pending>(null);
-  const [reason, setReason] = useState('');
   const [showRevoked, setShowRevoked] = useState(false);
 
   const query = useQuery({
@@ -69,188 +85,257 @@ function Members({ me }: { me: Me }) {
       api(call.path, { method: 'POST', body: call.body }),
     onSuccess: async () => {
       setPending(null);
-      setReason('');
       await queryClient.invalidateQueries({ queryKey: ['members'] });
     },
   });
-  const run = (userId: string, action: string, body: unknown = {}) =>
-    act.mutate({ path: `/members/${userId}/${action}`, body });
+  const { mutate } = act;
+  const run = useCallback(
+    (userId: string, action: string, body: unknown = {}) =>
+      mutate({ path: `/members/${userId}/${action}`, body }),
+    [mutate],
+  );
 
   const members = (query.data ?? []).filter((m) => showRevoked || m.status !== 'REVOKED');
   const revokedCount = (query.data ?? []).filter((m) => m.status === 'REVOKED').length;
 
-  return (
-    <section aria-labelledby="members-title">
-      <h2 id="members-title">Membri</h2>
-      {revokedCount > 0 && (
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={showRevoked}
-            onChange={(e) => setShowRevoked(e.target.checked)}
+  // The cells are components for the table: rebuilt only when what they show changes, so a
+  // field being filled (the reason of a revocation) keeps its text and focus.
+  const busy = act.isPending;
+  const customRoles = roles.data;
+  const columns = useMemo<Array<DataColumn<Member>>>(
+    () => [
+      {
+        id: 'person',
+        header: 'Persona',
+        enableHiding: false,
+        meta: { label: 'Persona' },
+        cell: ({ row: { original: m } }) => (
+          <span className="flex flex-wrap items-center gap-2">
+            <Link to={`/persone/${m.userId}`} className="font-medium">
+              {m.email ?? <span className="muted">account della chat, senza email</span>}
+            </Link>
+            {m.userId === me.userId && <Badge>tu</Badge>}
+          </span>
+        ),
+      },
+      {
+        id: 'role',
+        header: 'Ruolo',
+        meta: { label: 'Ruolo' },
+        cell: ({ row: { original: m } }) => {
+          const editable = memberState(m).active && m.userId !== me.userId;
+          const shownRole =
+            pending?.kind === 'role' && pending.userId === m.userId ? pending.role : m.role;
+          return (
+            <div className="flex flex-col gap-1.5">
+              {editable ? (
+                <NativeSelect
+                  className="h-8 w-auto"
+                  aria-label={`Ruolo di ${m.email ?? 'questa persona'}`}
+                  value={shownRole}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const role = e.target.value as Role;
+                    setPending(role === m.role ? null : { kind: 'role', userId: m.userId, role });
+                  }}
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_NAMES[r]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              ) : (
+                ROLE_NAMES[m.role]
+              )}
+              <CustomRoleCell
+                member={m}
+                roles={customRoles ?? []}
+                editable={editable}
+                busy={busy}
+                onChange={(roleId) => run(m.userId, 'custom-role', { roleId })}
+              />
+            </div>
+          );
+        },
+      },
+      {
+        id: 'status',
+        header: 'Stato',
+        meta: { label: 'Stato', className: 'whitespace-nowrap' },
+        cell: ({ row: { original: m } }) => {
+          const state = memberState(m);
+          return (
+            <div className="flex flex-col items-start gap-1">
+              <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                {state.active ? (
+                  <CircleCheck aria-hidden className="fill-green-600 text-white" />
+                ) : (
+                  <CircleX aria-hidden className="fill-destructive text-white" />
+                )}
+                <span className="text-foreground">{state.label}</span>
+              </Badge>
+              <span className="text-xs text-muted-foreground">dal {formatDate(m.since)}</span>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'export',
+        header: 'Export',
+        meta: { label: 'Export' },
+        cell: ({ row: { original: m } }) => (
+          <ExportCell
+            member={m}
+            self={m.userId === me.userId}
+            active={memberState(m).active}
+            busy={busy}
+            onPermission={(granted) =>
+              run(m.userId, 'permissions', { permission: 'practice.export', granted })
+            }
+            onScheduled={(enabled) => run(m.userId, 'scheduled-export', { enabled })}
           />
-          Mostra anche le persone revocate ({revokedCount})
-        </label>
-      )}
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">Azioni</span>,
+        enableHiding: false,
+        meta: { label: 'Azioni', className: 'text-right' },
+        cell: ({ row: { original: m } }) => {
+          const self = m.userId === me.userId;
+          return (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {pending?.userId === m.userId && pending.kind === 'role' && (
+                <>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => run(m.userId, 'role', { role: pending.role })}
+                  >
+                    Conferma: {ROLE_NAMES[pending.role].toLowerCase()}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setPending(null)}>
+                    Annulla
+                  </Button>
+                </>
+              )}
+              {pending?.userId === m.userId && pending.kind === 'revoke' && (
+                <RevokeForm
+                  busy={busy}
+                  onConfirm={(reason) => run(m.userId, 'revoke', reason ? { reason } : {})}
+                  onCancel={() => setPending(null)}
+                />
+              )}
+              {pending?.userId !== m.userId && !self && m.status === 'ACTIVE' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-foreground"
+                  onClick={() => setPending({ kind: 'revoke', userId: m.userId })}
+                >
+                  Revoca accesso
+                </Button>
+              )}
+              {!self && m.status === 'REVOKED' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-foreground"
+                  disabled={busy}
+                  onClick={() => run(m.userId, 'reactivate')}
+                >
+                  Riattiva
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [pending, busy, customRoles, me.userId, run],
+  );
+
+  return (
+    <section aria-labelledby="members-title" className="flex flex-col gap-3">
+      <h2 id="members-title" className="m-0">
+        Membri
+      </h2>
       {query.isError && (
-        <p className="error" role="alert">
+        <p className="error m-0" role="alert">
           {describeError(query.error)}
         </p>
       )}
-      {query.isPending && <p className="muted">Caricamento…</p>}
+      {query.isPending && <p className="m-0 text-muted-foreground">Caricamento…</p>}
       {query.data && (
-        <table className="list cards">
-          <thead>
-            <tr>
-              <th scope="col">Persona</th>
-              <th scope="col">Ruolo</th>
-              <th scope="col">Stato</th>
-              <th scope="col">Export</th>
-              <th scope="col">Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => {
-              const self = m.userId === me.userId;
-              const state = memberState(m);
-              const editable = state.active && !self;
-              const shownRole =
-                pending?.kind === 'role' && pending.userId === m.userId ? pending.role : m.role;
-              return (
-                <tr key={m.userId}>
-                  <td data-label="Persona">
-                    <Link to={`/persone/${m.userId}`}>
-                      {m.email ?? <span className="muted">account della chat, senza email</span>}
-                    </Link>
-                    {self && <span className="badge">tu</span>}
-                  </td>
-                  <td data-label="Ruolo">
-                    {editable ? (
-                      <select
-                        aria-label={`Ruolo di ${m.email ?? 'questa persona'}`}
-                        value={shownRole}
-                        disabled={act.isPending}
-                        onChange={(e) => {
-                          const role = e.target.value as Role;
-                          setPending(
-                            role === m.role ? null : { kind: 'role', userId: m.userId, role },
-                          );
-                        }}
-                      >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {ROLE_NAMES[r]}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      ROLE_NAMES[m.role]
-                    )}
-                    <CustomRoleCell
-                      member={m}
-                      roles={roles.data ?? []}
-                      editable={editable}
-                      busy={act.isPending}
-                      onChange={(roleId) => run(m.userId, 'custom-role', { roleId })}
-                    />
-                  </td>
-                  <td data-label="Stato">
-                    <span className={`state ${state.active ? '' : 'state-failed'}`}>
-                      {state.label}
-                    </span>
-                    <div className="muted">dal {formatDate(m.since)}</div>
-                  </td>
-                  <td data-label="Export">
-                    <ExportCell
-                      member={m}
-                      self={self}
-                      active={state.active}
-                      busy={act.isPending}
-                      onPermission={(granted) =>
-                        run(m.userId, 'permissions', { permission: 'practice.export', granted })
-                      }
-                      onScheduled={(enabled) => run(m.userId, 'scheduled-export', { enabled })}
-                    />
-                  </td>
-                  <td data-label="Azioni">
-                    {pending?.userId === m.userId && pending.kind === 'role' && (
-                      <span className="actions">
-                        <button
-                          type="button"
-                          disabled={act.isPending}
-                          onClick={() => run(m.userId, 'role', { role: pending.role })}
-                        >
-                          Conferma: {ROLE_NAMES[pending.role].toLowerCase()}
-                        </button>
-                        <button type="button" className="link" onClick={() => setPending(null)}>
-                          Annulla
-                        </button>
-                      </span>
-                    )}
-                    {pending?.userId === m.userId && pending.kind === 'revoke' && (
-                      <span className="actions confirm">
-                        <label>
-                          Motivo (facoltativo)
-                          <input
-                            maxLength={500}
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="danger"
-                          disabled={act.isPending}
-                          onClick={() =>
-                            run(m.userId, 'revoke', reason.trim() ? { reason: reason.trim() } : {})
-                          }
-                        >
-                          Conferma revoca
-                        </button>
-                        <button type="button" className="link" onClick={() => setPending(null)}>
-                          Annulla
-                        </button>
-                      </span>
-                    )}
-                    {pending?.userId !== m.userId && !self && m.status === 'ACTIVE' && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          setReason('');
-                          setPending({ kind: 'revoke', userId: m.userId });
-                        }}
-                      >
-                        Revoca accesso
-                      </button>
-                    )}
-                    {!self && m.status === 'REVOKED' && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={act.isPending}
-                        onClick={() => run(m.userId, 'reactivate')}
-                      >
-                        Riattiva
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <DataTable
+          label="Membri dell'azienda"
+          columns={columns}
+          data={members}
+          rowKey={(m) => m.userId}
+          empty="Nessuna persona."
+          toolbar={
+            revokedCount > 0 && (
+              <label className="m-0 flex h-9 items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  className="m-0 size-4 p-0 accent-primary"
+                  checked={showRevoked}
+                  onChange={(e) => setShowRevoked(e.target.checked)}
+                />
+                Mostra anche le persone revocate ({revokedCount})
+              </label>
+            )
+          }
+        />
       )}
       {act.isError && (
-        <p className="error" role="alert">
+        <p className="error m-0" role="alert">
           {describeError(act.error)}
         </p>
       )}
-      <p className="muted">
+      <p className="m-0 text-sm text-muted-foreground">
         La revoca e il cambio di ruolo valgono subito, su dashboard, API e chat. Per cambiare il tuo
         ruolo o revocare te stesso serve un altro amministratore.
       </p>
     </section>
+  );
+}
+
+/**
+ * The confirmation of a revocation with its optional reason. The text lives here, not in the
+ * table: a keystroke must not redraw the table (it would rebuild the field and lose the focus).
+ */
+function RevokeForm(props: {
+  busy: boolean;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  return (
+    <>
+      <Label className="text-left">
+        Motivo (facoltativo)
+        <Input
+          className="h-8"
+          maxLength={500}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </Label>
+      <Button
+        size="sm"
+        variant="destructive"
+        className="self-end"
+        disabled={props.busy}
+        onClick={() => props.onConfirm(reason.trim())}
+      >
+        Conferma revoca
+      </Button>
+      <Button size="sm" variant="ghost" className="self-end" onClick={props.onCancel}>
+        Annulla
+      </Button>
+    </>
   );
 }
 
@@ -265,10 +350,13 @@ function CustomRoleCell(props: {
   const { member } = props;
   const options = props.roles.filter((r) => r.baseRole === member.role);
   if (!props.editable || options.length === 0) {
-    return member.customRole ? <div className="muted">{member.customRole.name}</div> : null;
+    return member.customRole ? (
+      <span className="text-xs text-muted-foreground">{member.customRole.name}</span>
+    ) : null;
   }
   return (
-    <select
+    <NativeSelect
+      className="h-8 w-auto"
       aria-label={`Ruolo personalizzato di ${member.email ?? 'questa persona'}`}
       value={member.customRole?.id ?? ''}
       disabled={props.busy}
@@ -280,7 +368,7 @@ function CustomRoleCell(props: {
           {r.name}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -352,49 +440,60 @@ function CustomRoles({ me }: { me: Me }) {
         </p>
       )}
       {list.length > 0 && (
-        <table className="list cards">
-          <thead>
-            <tr>
-              <th scope="col">Ruolo</th>
-              <th scope="col">Base</th>
-              <th scope="col">Permessi</th>
-              <th scope="col">Persone</th>
-              <th scope="col">Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((r) => (
-              <tr key={r.id}>
-                <td data-label="Ruolo">{r.name}</td>
-                <td data-label="Base">{ROLE_NAMES[r.baseRole]}</td>
-                <td data-label="Permessi">
-                  <ul className="plain">
-                    {Object.entries(r.permissions).map(([p, scope]) => (
-                      <li key={p}>
-                        {permissionLabel(p)}
-                        {scope !== 'tenant' && (
-                          <span className="muted"> ({SCOPE_LABELS[scope]})</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-                <td data-label="Persone">{r.members}</td>
-                <td data-label="Azioni">
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={remove.isPending || r.members > 0}
-                    title={r.members > 0 ? 'Toglilo prima alle persone' : undefined}
-                    onClick={() => remove.mutate(r.id)}
-                  >
-                    Elimina
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <TableFrame>
+          <Table aria-label="Ruoli personalizzati">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Ruolo</TableHead>
+                <TableHead scope="col">Base</TableHead>
+                <TableHead scope="col">Permessi</TableHead>
+                <TableHead scope="col" className="text-right">
+                  Persone
+                </TableHead>
+                <TableHead scope="col">
+                  <span className="sr-only">Azioni</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                      {ROLE_NAMES[r.baseRole]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <ul className="m-0 list-none p-0">
+                      {Object.entries(r.permissions).map(([p, scope]) => (
+                        <li key={p}>
+                          {permissionLabel(p)}
+                          {scope !== 'tenant' && (
+                            <span className="muted"> ({SCOPE_LABELS[scope]})</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{r.members}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-foreground"
+                      disabled={remove.isPending || r.members > 0}
+                      title={r.members > 0 ? 'Toglilo prima alle persone' : undefined}
+                      onClick={() => remove.mutate(r.id)}
+                    >
+                      Elimina
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableFrame>
       )}
       {remove.isError && (
         <p className="error" role="alert">
@@ -483,9 +582,10 @@ function ExportCell(props: {
   if (member.role === 'OPERATOR') {
     const granted = exportsWholeOrganization(member);
     return (
-      <label className="check">
+      <label className="m-0 flex items-center gap-2 text-sm font-normal">
         <input
           type="checkbox"
+          className="m-0 size-4 p-0 accent-primary"
           checked={granted}
           disabled={busy}
           onChange={(e) => props.onPermission(e.target.checked)}
@@ -498,32 +598,29 @@ function ExportCell(props: {
     // Only the person turns the scheduled export on; anyone of the administrators turns it off.
     return (
       <>
-        <div>Pianificato in chat: {member.receivesScheduledExport ? 'sì' : 'no'}</div>
+        <div className="text-sm">
+          Pianificato in chat: {member.receivesScheduledExport ? 'sì' : 'no'}
+        </div>
         {member.receivesScheduledExport ? (
-          <button
-            type="button"
-            className="link"
-            disabled={busy}
-            onClick={() => props.onScheduled(false)}
-          >
+          <Button variant="link" size="sm" disabled={busy} onClick={() => props.onScheduled(false)}>
             Disattiva
-          </button>
+          </Button>
         ) : (
           self && (
-            <button
-              type="button"
-              className="link"
+            <Button
+              variant="link"
+              size="sm"
               disabled={busy}
               onClick={() => props.onScheduled(true)}
             >
               Attiva per me
-            </button>
+            </Button>
           )
         )}
       </>
     );
   }
-  return <span className="muted">solo le proprie</span>;
+  return <span className="text-sm text-muted-foreground">solo le proprie</span>;
 }
 
 function Invitations({ me }: { me: Me }) {
@@ -578,54 +675,74 @@ function Invitations({ me }: { me: Me }) {
         <p className="muted">Nessun invito {showClosed ? '' : 'in attesa'}.</p>
       )}
       {invitations.length > 0 && (
-        <table className="list cards">
-          <thead>
-            <tr>
-              <th scope="col">Email</th>
-              <th scope="col">Ruolo</th>
-              <th scope="col">Stato</th>
-              <th scope="col">Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invitations.map((i) => (
-              <tr key={i.id}>
-                <td data-label="Email">{i.email}</td>
-                <td data-label="Ruolo">{ROLE_NAMES[i.role]}</td>
-                <td data-label="Stato">
-                  <span className={`state ${i.status === 'ACCEPTED' ? 'state-completed' : ''}`}>
-                    {INVITATION_LABELS[i.status]}
-                  </span>
-                  {i.status === 'PENDING' && (
-                    <div className="muted">scade il {formatDate(i.expiresAt)}</div>
-                  )}
-                </td>
-                <td data-label="Azioni">
-                  {i.status === 'PENDING' &&
-                    (revoking === i.id ? (
-                      <span className="actions">
-                        <button
-                          type="button"
-                          className="danger"
-                          disabled={revoke.isPending}
-                          onClick={() => revoke.mutate(i.id)}
-                        >
-                          Conferma revoca
-                        </button>
-                        <button type="button" className="link" onClick={() => setRevoking(null)}>
-                          Annulla
-                        </button>
-                      </span>
-                    ) : (
-                      <button type="button" className="secondary" onClick={() => setRevoking(i.id)}>
-                        Revoca invito
-                      </button>
-                    ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <TableFrame>
+          <Table aria-label="Inviti">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Email</TableHead>
+                <TableHead scope="col">Ruolo</TableHead>
+                <TableHead scope="col">Stato</TableHead>
+                <TableHead scope="col">
+                  <span className="sr-only">Azioni</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invitations.map((i) => (
+                <TableRow key={i.id}>
+                  <TableCell className="font-medium">{i.email}</TableCell>
+                  <TableCell>{ROLE_NAMES[i.role]}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                        {i.status === 'ACCEPTED' ? (
+                          <CircleCheck aria-hidden className="fill-green-600 text-white" />
+                        ) : (
+                          <CircleDashed aria-hidden />
+                        )}
+                        <span className="text-foreground">{INVITATION_LABELS[i.status]}</span>
+                      </Badge>
+                      {i.status === 'PENDING' && (
+                        <span className="text-xs text-muted-foreground">
+                          scade il {formatDate(i.expiresAt)}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {i.status === 'PENDING' &&
+                        (revoking === i.id ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={revoke.isPending}
+                              onClick={() => revoke.mutate(i.id)}
+                            >
+                              Conferma revoca
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setRevoking(null)}>
+                              Annulla
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-foreground"
+                            onClick={() => setRevoking(i.id)}
+                          >
+                            Revoca invito
+                          </Button>
+                        ))}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableFrame>
       )}
       {revoke.isError && (
         <p className="error" role="alert">
