@@ -58,6 +58,7 @@
     "auth:token": "tsx scripts/auth.token.ts",
     "tenant:provision": "tsx scripts/tenant.provision.ts",
     "ocr:accuracy": "tsx scripts/ocr-accuracy.ts",
+    "load:test": "tsx scripts/load-test.ts",
     "ocr:samples": "tsx scripts/generate-ocr-pdf-samples.ts"
   },
   "keywords": [],
