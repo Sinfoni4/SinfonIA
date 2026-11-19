@@ -34,6 +34,10 @@ model Tenant {
   taxCode             String?            @map("tax_code")
   vatNumber           String?            @map("vat_number")
   externalRefs        Json?              @map("external_refs")
+  /// The logo shown in the Telegram Mini App: a file of the attachment storage, set from the console.
+  logoPath            String?            @map("logo_path")
+  logoType            String?            @map("logo_type")
+  logoUpdatedAt       DateTime?          @map("logo_updated_at") @db.Timestamptz
   deactivatedAt       DateTime?          @map("deactivated_at")
   deletionScheduledAt DateTime?          @map("deletion_scheduled_at")
   createdAt           DateTime           @default(now()) @map("created_at")

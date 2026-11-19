@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import { FEATURES } from '../../../core/features/features.js';
 import { MODULE_IDS } from '../../../core/modules/module.contract.js';
+import {
+  LOGO_MAX_BYTES,
+  LOGO_TYPES,
+  readOrganizationLogo,
+} from '../../../core/organization/organization-logo.js';
 import { aiUsage, systemHealth } from '../../../core/platform/platform-health.service.js';
 import {
   createOrganization,
@@ -11,6 +16,7 @@ import {
   listOrganizations,
   listPlatformAudit,
   setOrganizationIdentifiers,
+  setOrganizationLogo,
   setOrganizationModules,
   setOrganizationSuspended,
 } from '../../../core/platform/platform.service.js';
@@ -31,6 +37,7 @@ import { sendTableFile, TABLE_FILE_BODY_LIMIT } from './organization.routes.js';
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
 import type { HealthLocations } from '../../../core/platform/platform-storage.service.js';
+import type { StorageService } from '../../../data/storage/storage.service.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
 
@@ -43,6 +50,8 @@ export type PlatformRoutesDeps = {
   locations?: HealthLocations;
   /** AGX-07: euro per unit of usage (USAGE_RATES), for the internal cost. */
   usageRates?: UsageRates;
+  /** Where the logos of the organizations are kept (the attachment storage). */
+  storage?: StorageService;
 };
 
 const NO_SERVICES: ConfiguredServices = {
@@ -125,6 +134,17 @@ const IdentifiersBodySchema = z
     taxCode: z.string().max(40).nullable().optional(),
     vatNumber: z.string().max(40).nullable().optional(),
     externalRefs: z.record(z.string().max(32), z.string().max(200)).nullable().optional(),
+  })
+  .strict();
+
+/** The logo of an organization: its type and the file in base64 (checked again in Core). */
+const LogoBodySchema = z
+  .object({
+    contentType: z.enum(LOGO_TYPES),
+    data: z
+      .string()
+      .max(Math.ceil(LOGO_MAX_BYTES / 3) * 4 + 4)
+      .regex(/^[A-Za-z0-9+/]+={0,2}$/),
   })
   .strict();
 
@@ -250,6 +270,56 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       return sendError(reply, err);
     }
   });
+
+  // The logo shown in the Telegram Mini App: read, set (SVG, PNG, JPEG or WebP) or removed.
+  if (deps.storage) {
+    const storage = deps.storage;
+    app.get('/platform/organizations/:id/logo', { config }, async (req, reply) => {
+      try {
+        requirePlatform(req);
+        const { id } = IdParamsSchema.parse(req.params);
+        return reply.send(ok(await readOrganizationLogo(deps.prisma, storage, id)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    });
+    app.post(
+      '/platform/organizations/:id/logo',
+      { config, bodyLimit: 2 * LOGO_MAX_BYTES },
+      async (req, reply) => {
+        try {
+          const { userId } = requirePlatform(req);
+          const { id } = IdParamsSchema.parse(req.params);
+          const body = LogoBodySchema.parse(req.body);
+          const data = Buffer.from(body.data, 'base64');
+          return reply.send(
+            ok(
+              await setOrganizationLogo(
+                deps.prisma,
+                storage,
+                id,
+                { contentType: body.contentType, data },
+                { userId },
+              ),
+            ),
+          );
+        } catch (err: unknown) {
+          return sendError(reply, err);
+        }
+      },
+    );
+    app.delete('/platform/organizations/:id/logo', { config }, async (req, reply) => {
+      try {
+        const { userId } = requirePlatform(req);
+        const { id } = IdParamsSchema.parse(req.params);
+        return reply.send(
+          ok(await setOrganizationLogo(deps.prisma, storage, id, null, { userId })),
+        );
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    });
+  }
 
   // AGX-02: codice fiscale / CUAA, partita IVA and codes in other systems.
   app.patch('/platform/organizations/:id/identifiers', { config }, async (req, reply) => {

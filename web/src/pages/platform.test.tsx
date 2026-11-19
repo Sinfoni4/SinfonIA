@@ -249,6 +249,35 @@ describe('platform console (FE7)', () => {
     );
   });
 
+  it('uploads the logo of the Mini App and previews it on the dark grey', async () => {
+    let logo: unknown = null;
+    api({
+      [`GET /platform/organizations/${ORG}/logo`]: () => ok(logo),
+      [`POST /platform/organizations/${ORG}/logo`]: (c) => {
+        const body = c.body as { contentType: string; data: string };
+        logo = { ...body, updatedAt: '2026-11-19T18:00:00Z' };
+        return ok({ logoUpdatedAt: '2026-11-19T18:00:00Z' });
+      },
+    });
+    openAt(`/piattaforma/organizzazioni/${ORG}`, 'platform');
+    expect(await screen.findByText(/Nessun logo/)).toBeTruthy();
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1v1z"/></svg>';
+    await userEvent.upload(
+      screen.getByLabelText('Nuovo logo'),
+      new File([svg], 'logo.svg', { type: 'image/svg+xml' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Carica il logo' }));
+    await waitFor(() =>
+      expect(posted(`/platform/organizations/${ORG}/logo`)[0]?.body).toEqual({
+        contentType: 'image/svg+xml',
+        data: btoa(svg),
+      }),
+    );
+    const img = await screen.findByRole('img', { name: 'Logo attuale' });
+    expect(img.getAttribute('src')).toBe(`data:image/svg+xml;base64,${btoa(svg)}`);
+    expect(screen.getByRole('button', { name: 'Togli il logo' })).toBeTruthy();
+  });
+
   it('sets the identifiers of a company, with the codes in other systems', async () => {
     api({
       [`GET /platform/organizations/${ORG}`]: () =>

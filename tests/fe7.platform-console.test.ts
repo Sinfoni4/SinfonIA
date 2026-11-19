@@ -5,7 +5,8 @@
  * action is in the platform audit log and in the organization's own log.
  */
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -22,6 +23,7 @@ import { PracticeApplicationService } from '../src/core/practice/practice.applic
 import { createPrismaClient } from '../src/data/db/prisma.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../src/data/repositories/user.repository.js';
+import { LocalStorageService } from '../src/data/storage/storage.service.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { createLogger } from '../src/shared/logger.js';
 
@@ -46,6 +48,7 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
   let prisma: PrismaClient;
   let app: ReturnType<typeof buildServer>;
   const mail = new SimulatedEmailSender();
+  const storageDir = path.join(os.tmpdir(), `sinfonia-fe7-${run}`);
   let orgId: string;
   let adminId: string;
   let platformAdminId: string;
@@ -152,6 +155,7 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       contextService: new ContextService(practices),
       decisionEngine: new DecisionEngine(),
       normalizerService: new NormalizerService(),
+      storage: new LocalStorageService(storageDir),
     });
     await app.ready();
     token = (await platformToken(await login(platformEmail))).token;
@@ -606,6 +610,93 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       ).toBe(2);
     });
   });
+  describe('logo of an organization (Telegram Mini App)', () => {
+    const SVG =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>.a{fill:#fff}</style>' +
+      '<path class="a" d="M0 0h10v10H0z"/></svg>';
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+    const b64 = (text: string | Buffer) => Buffer.from(text).toString('base64');
+    const put = (payload: unknown, headers: Record<string, string>) =>
+      app.inject({
+        method: 'POST',
+        url: `/platform/organizations/${orgId}/logo`,
+        payload: payload as object,
+        headers,
+      });
+    const del = (headers: Record<string, string>) =>
+      app.inject({ method: 'DELETE', url: `/platform/organizations/${orgId}/logo`, headers });
+    const member = () => authHeaders(orgId, adminId, 'ADMIN');
+    const logoOf = async () =>
+      (await get('/organization/logo', member())).json<{
+        data: { contentType: string; data: string } | null;
+      }>().data;
+    const pathOf = async () =>
+      (await prisma.tenant.findUnique({ where: { id: orgId }, select: { logoPath: true } }))
+        ?.logoPath ?? null;
+
+    it('is set only from the console and read by the members of the organization', async () => {
+      expect(await logoOf()).toBeNull();
+      const body = { contentType: 'image/svg+xml', data: b64(SVG) };
+      expect([401, 403]).toContain((await put(body, member())).statusCode);
+      const res = await put(body, bearer());
+      expect(res.statusCode).toBe(200);
+      expect(await logoOf()).toMatchObject({ contentType: 'image/svg+xml', data: b64(SVG) });
+      const detail = await get(`/platform/organizations/${orgId}`, bearer());
+      expect(detail.json<{ data: { logoUpdatedAt: string | null } }>().data.logoUpdatedAt).not.toBe(
+        null,
+      );
+      expect(
+        await prisma.platformAuditLog.count({
+          where: { orgId, action: 'ORGANIZATION_LOGO_CHANGED' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { tenantId: orgId, eventType: 'ORGANIZATION_LOGO_CHANGED', userId: null },
+        }),
+      ).toBe(1);
+    });
+
+    it('refuses active content, a wrong format and files too large', async () => {
+      const refused = [
+        { contentType: 'image/svg+xml', data: b64('<svg><script>alert(1)</script></svg>') },
+        { contentType: 'image/svg+xml', data: b64('<svg><rect onload="x()"/></svg>') },
+        {
+          contentType: 'image/svg+xml',
+          data: b64('<svg><image href="https://x.it/a.png"/></svg>'),
+        },
+        { contentType: 'image/svg+xml', data: b64('<!DOCTYPE svg [<!ENTITY a "b">]><svg/>') },
+        { contentType: 'image/png', data: b64(SVG) },
+        { contentType: 'image/gif', data: b64('GIF89a') },
+        { contentType: 'image/png', data: b64(Buffer.concat([PNG, Buffer.alloc(210 * 1024)])) },
+      ];
+      for (const body of refused) {
+        const res = await put(body, bearer());
+        expect([400, 413], body.data.slice(0, 20)).toContain(res.statusCode);
+      }
+      expect((await logoOf())?.contentType).toBe('image/svg+xml');
+    });
+
+    it('replaces the file and removes it, with nothing left in the storage', async () => {
+      const first = await pathOf();
+      expect((await put({ contentType: 'image/png', data: b64(PNG) }, bearer())).statusCode).toBe(
+        200,
+      );
+      const second = await pathOf();
+      expect(second).not.toBe(first);
+      expect(existsSync(path.join(storageDir, first!))).toBe(false);
+      expect((await logoOf())?.contentType).toBe('image/png');
+      expect((await del(bearer())).statusCode).toBe(200);
+      expect(await logoOf()).toBeNull();
+      expect(existsSync(path.join(storageDir, second!))).toBe(false);
+      expect(
+        await prisma.platformAuditLog.count({
+          where: { orgId, action: 'ORGANIZATION_LOGO_REMOVED' },
+        }),
+      ).toBe(1);
+    });
+  });
+
   describe('network and companies from the console (Cantiere 1, voce 17)', () => {
     let networkId = '';
     let companyId = '';

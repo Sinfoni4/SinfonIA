@@ -4,6 +4,7 @@ import { listAuditEvents } from '../../../core/audit/audit-view.service.js';
 import { authorize, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { dashboardSummary } from '../../../core/dashboard/dashboard.service.js';
 import { miniAppSummary } from '../../../core/miniapp/miniapp.service.js';
+import { readOrganizationLogo } from '../../../core/organization/organization-logo.js';
 import {
   getOrganizationSettings,
   updateOrganizationSettings,
@@ -17,6 +18,7 @@ import { fail, ok } from '../errors/http.errors.js';
 import { StatsQuerySchema } from './network.routes.js';
 
 import type { ComplianceService } from '../../../core/compliance/compliance.service.js';
+import type { StorageService } from '../../../data/storage/storage.service.js';
 import type { AppChat } from '../../conversation/app-chat.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
@@ -26,6 +28,8 @@ export type OrganizationRoutesDeps = {
   complianceService?: Pick<ComplianceService, 'listDeadlines'>;
   /** The assistant of the Telegram Mini App (the same conversation as the bot). */
   appChat?: AppChat;
+  /** Where the logo of the organization is kept (the attachment storage). */
+  storage?: StorageService;
 };
 
 const AppChatBodySchema = z.object({ text: z.string().trim().min(1).max(2000) }).strict();
@@ -131,6 +135,23 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
       }
     },
   );
+
+  // The logo of one's own organization (set from the platform console), for the Mini App.
+  if (deps.storage) {
+    const storage = deps.storage;
+    app.get(
+      '/organization/logo',
+      { config: { permission: 'authenticated' } },
+      async (req, reply) => {
+        try {
+          const { tenantId } = requirePrincipal(req);
+          return reply.send(ok(await readOrganizationLogo(deps.prisma, storage, tenantId)));
+        } catch (err: unknown) {
+          return sendError(reply, err);
+        }
+      },
+    );
+  }
 
   // Telegram Mini App: the assistant, the same conversation as the bot with the session's person.
   // Every command checks its own permission, as in the chat.

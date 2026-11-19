@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
 import { describeError, ROLE_LABELS, type Me } from '../api/client';
+import { logoSrc, type OrganizationLogo } from '../api/logo';
 import {
   deadlineWhen,
   describeFeed,
@@ -121,6 +122,14 @@ function Card({
  */
 export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIntent) => void }) {
   const query = useSummary(me);
+  const { api } = useSession();
+  // The logo set from the platform console; without it (or with an older server) the initials.
+  const logo = useQuery({
+    queryKey: ['miniapp', me.current.orgId, 'logo'],
+    queryFn: () => api<OrganizationLogo | null>('/organization/logo'),
+    staleTime: 10 * 60 * 1000,
+    retry: false,
+  });
   const navigate = useNavigate();
   const [question, setQuestion] = useState('');
   const s = query.data;
@@ -155,9 +164,13 @@ export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetInt
       </header>
 
       <p className="ma-org">
-        <span className="ma-org-mark" aria-hidden="true">
-          {initials(org?.name ?? '')}
-        </span>
+        {logo.data ? (
+          <img className="ma-org-logo" src={logoSrc(logo.data)} alt="" />
+        ) : (
+          <span className="ma-org-mark" aria-hidden="true">
+            {initials(org?.name ?? '')}
+          </span>
+        )}
         <span>
           <strong>{org?.name ?? 'La tua organizzazione'}</strong>
           <small>{ROLE_LABELS[me.current.role].toLowerCase()}</small>

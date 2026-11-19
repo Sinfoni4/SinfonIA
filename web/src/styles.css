@@ -1060,3 +1060,21 @@ section + section {
 table.list {
   margin-bottom: 1.5rem;
 }
+
+/* The logo of an organization, previewed on the dark grey of the Telegram Mini App. */
+.logo-preview {
+  display: flex;
+  align-items: center;
+  min-height: 88px;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  background: #1f1f1f;
+  color: #a3a3a3;
+  font-size: 0.875rem;
+}
+
+.logo-preview img {
+  display: block;
+  max-height: 56px;
+  max-width: 220px;
+}
