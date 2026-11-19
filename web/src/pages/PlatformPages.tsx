@@ -240,8 +240,9 @@ function OrganizationsPage() {
     search: string;
     type: OrganizationType | '';
     status: OrganizationStatus | '';
+    module: ModuleId | '';
     limit: number;
-  }>({ page: 1, search: '', type: '', status: '', limit: 20 });
+  }>({ page: 1, search: '', type: '', status: '', module: '', limit: 20 });
   const query = useQuery({
     queryKey: ['platform', 'organizations', filters],
     queryFn: () => api<OrganizationPage>(organizationsQuery(filters)),
@@ -271,6 +272,12 @@ function OrganizationsPage() {
             {TYPE_LABELS[row.original.type]}
           </Badge>
         ),
+      },
+      {
+        id: 'module',
+        header: 'Settore',
+        meta: { label: 'Settore', className: 'hidden md:table-cell' },
+        cell: ({ row }) => moduleLabel(row.original.module),
       },
       {
         id: 'status',
@@ -382,6 +389,27 @@ function OrganizationsPage() {
                   {(Object.keys(STATUS_LABELS) as OrganizationStatus[]).map((s) => (
                     <option key={s} value={s}>
                       {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+              <Label>
+                Settore
+                <NativeSelect
+                  className="w-auto"
+                  value={filters.module}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      page: 1,
+                      module: e.target.value as ModuleId | '',
+                    }))
+                  }
+                >
+                  <option value="">Tutti</option>
+                  {MODULES.map((m) => (
+                    <option key={m} value={m}>
+                      {MODULE_LABELS[m]}
                     </option>
                   ))}
                 </NativeSelect>

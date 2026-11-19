@@ -30,6 +30,8 @@ export type OrganizationRow = {
   name: string;
   type: OrganizationType;
   status: OrganizationStatus;
+  /** A02: the sector module. */
+  module: string;
   createdAt: string;
   members: number;
   practices: number;
@@ -44,7 +46,6 @@ export type OrganizationPage = {
 };
 
 export type OrganizationDetail = OrganizationRow & {
-  module: string;
   /** A03: functions turned off for the organization. */
   disabledFeatures?: string[];
   scheduledExport: boolean;
@@ -143,6 +144,8 @@ export function organizationsQuery(filters: {
   search: string;
   type: OrganizationType | '';
   status: OrganizationStatus | '';
+  /** A02: only the organizations of this sector module. */
+  module?: ModuleId | '';
   /** Rows per page, 25 when absent. */
   limit?: number;
 }): string {
@@ -153,6 +156,7 @@ export function organizationsQuery(filters: {
   if (filters.search.trim()) params.set('search', filters.search.trim());
   if (filters.type) params.set('type', filters.type);
   if (filters.status) params.set('status', filters.status);
+  if (filters.module) params.set('module', filters.module);
   return `/platform/organizations?${params.toString()}`;
 }
 

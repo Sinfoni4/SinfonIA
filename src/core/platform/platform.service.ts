@@ -73,6 +73,8 @@ export type OrganizationRow = {
   name: string;
   type: OrganizationType;
   status: OrganizationStatus;
+  /** A02: the sector module (one of MODULE_IDS). */
+  module: string;
   createdAt: Date;
   members: number;
   practices: number;
@@ -87,12 +89,14 @@ export async function listOrganizations(
     search?: string;
     type?: OrganizationType;
     status?: OrganizationStatus;
+    module?: ModuleId;
   },
 ): Promise<{ items: OrganizationRow[]; total: number; page: number; totalPages: number }> {
   const where: Prisma.TenantWhereInput = {
     ...(input.search ? { name: { contains: input.search, mode: 'insensitive' } } : {}),
     ...(input.type ? { type: input.type } : {}),
     ...(input.status ? { status: input.status } : {}),
+    ...(input.module ? { module: input.module } : {}),
   };
   const [total, rows] = await Promise.all([
     prisma.tenant.count({ where }),
@@ -101,7 +105,7 @@ export async function listOrganizations(
       orderBy: { name: 'asc' },
       skip: (input.page - 1) * input.limit,
       take: input.limit,
-      select: { id: true, name: true, type: true, status: true, createdAt: true },
+      select: { id: true, name: true, type: true, status: true, module: true, createdAt: true },
     }),
   ]);
   const ids = rows.map((r) => r.id);

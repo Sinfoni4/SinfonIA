@@ -84,6 +84,7 @@ const ListQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   type: z.enum(TYPES).optional(),
   status: z.enum(STATUSES).optional(),
+  module: z.enum(MODULE_IDS).optional(),
 });
 
 const CreateBodySchema = z
