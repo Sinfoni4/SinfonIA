@@ -361,7 +361,8 @@ table.list td {
 
 table.list th {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--text);
+  white-space: nowrap;
 }
 
 .pager {
@@ -911,13 +912,14 @@ table.list {
   font-size: 0.875rem;
 }
 
+/* The tables not yet built on the data table get its look: grey header, light row hover. */
 table.list th {
-  background: var(--bg);
+  background: var(--notice-bg);
   font-weight: 500;
 }
 
 table.list tbody tr:hover {
-  background: color-mix(in srgb, var(--notice-bg) 50%, var(--surface));
+  background: color-mix(in srgb, var(--notice-bg) 60%, var(--surface));
 }
 
 table.list tbody tr:last-child td {

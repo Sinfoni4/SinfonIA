@@ -138,6 +138,42 @@ describe('practices (FE2)', () => {
     });
   });
 
+  it('hides a column from «Colonne» and asks for more rows per page', async () => {
+    api('ADMIN', {
+      'GET /practices': (c) =>
+        ok({
+          items: [practice()],
+          total: 1,
+          page: 1,
+          limit: Number(c.query.get('limit')),
+          totalPages: 1,
+        }),
+    });
+    openAt('/pratiche');
+    const user = userEvent.setup();
+    const table = await screen.findByRole('table', { name: 'Elenco delle pratiche' });
+    expect(within(table).getByRole('columnheader', { name: 'Tipo' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Colonne' }));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Tipo' }));
+    expect(within(table).queryByRole('columnheader', { name: 'Tipo' })).toBeNull();
+    await user.keyboard('{Escape}');
+    expect(
+      calls
+        .filter((c) => c.path === '/practices')
+        .at(-1)!
+        .query.get('limit'),
+    ).toBe('20');
+    await user.selectOptions(screen.getByLabelText('Righe per pagina'), '50');
+    await waitFor(() =>
+      expect(
+        calls
+          .filter((c) => c.path === '/practices')
+          .at(-1)!
+          .query.get('limit'),
+      ).toBe('50'),
+    );
+  });
+
   it('does not offer «solo le mie» to a MEMBER, who sees only their own anyway', async () => {
     api('MEMBER', {
       'GET /practices': () =>
