@@ -11,6 +11,7 @@ import {
   type ReviewPage as Page,
   type ReviewStatus,
 } from '../api/review';
+import { TablePagination } from '../components/DataTable';
 import { ValidationForm } from '../components/ValidationForm';
 import { useSession } from '../session/session';
 
@@ -96,27 +97,13 @@ export function ReviewPage({ me }: { me: Me }) {
         </ul>
       )}
       {data && data.totalPages > 1 && (
-        <nav className="pager" aria-label="Pagine">
-          <button
-            type="button"
-            className="secondary"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Precedenti
-          </button>
-          <span>
-            Pagina {data.page} di {data.totalPages}
-          </span>
-          <button
-            type="button"
-            className="secondary"
-            disabled={page >= data.totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Successivi
-          </button>
-        </nav>
+        <TablePagination
+          page={data.page}
+          totalPages={data.totalPages}
+          total={data.total}
+          noun={['documento', 'documenti']}
+          onPage={setPage}
+        />
       )}
       <p className="muted">
         I dati confermati diventano quelli ufficiali della pratica; quelli letti automaticamente

@@ -98,6 +98,8 @@ export type PracticeFilters = {
   status: PracticeState | '';
   /** Only the caller's practices (for those who see the whole organization). */
   mine: boolean;
+  /** Rows per page; `PAGE_SIZE` when absent. */
+  limit?: number;
 };
 
 export const PAGE_SIZE = 20;
@@ -105,7 +107,7 @@ export const PAGE_SIZE = 20;
 export function practicesQuery(filters: PracticeFilters, userId: string): string {
   const params = new URLSearchParams({
     page: String(filters.page),
-    limit: String(PAGE_SIZE),
+    limit: String(filters.limit ?? PAGE_SIZE),
     sortBy: 'updatedAt',
     sortOrder: 'desc',
   });
