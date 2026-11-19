@@ -1,4 +1,4 @@
--- Rollback of 20261107100000_mf12_contract_user_columns. The columns come back filled from the
+-- Rollback of 20261119090000_mf12_contract_user_columns. The columns come back filled from the
 -- new model: the first membership of each person (its organization and role) and the active
 -- Telegram link. A person with no membership at all cannot get a tenant_id back: the rollback
 -- stops and names them, so nothing is guessed.

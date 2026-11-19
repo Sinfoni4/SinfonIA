@@ -2,7 +2,7 @@
 -- Organizations and roles of a person are in "membership" (MF4), chat links in
 -- "channel_identity" (MF3); since MF12 steps 1-3 the application neither reads nor writes these
 -- columns (tests/mf12.legacy-columns.test.ts). To apply only after the verification period on
--- staging, with a backup. Rollback: prisma/rollback/20261107100000_mf12_contract_user_columns.down.sql
+-- staging, with a backup. Rollback: prisma/rollback/20261119090000_mf12_contract_user_columns.down.sql
 
 -- The trigger that mirrored the old columns into membership and channel_identity.
 DROP TRIGGER IF EXISTS mf3_sync_user ON "user";
