@@ -22,7 +22,8 @@ const QueueQuerySchema = z.object({
 
 const ParamsSchema = z.object({ id: z.string().uuid(), attachmentId: z.string().uuid() });
 
-const ValidationBodySchema = z
+/** A1: the data of a document as a person confirms or corrects it (also used by AGX-04). */
+export const ValidationBodySchema = z
   .object({
     documentType: z.string().max(40),
     fields: z.record(z.string().max(40), z.union([z.string().max(500), z.number(), z.null()])),

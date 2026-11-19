@@ -14,6 +14,7 @@ import { isPlatformAdmin, resolvePlatformPrincipal } from '../authz/platform.js'
 
 import { revokeAllSessions } from './revocation.service.js';
 
+import type { PrismaTx } from '../../data/types/prisma.js';
 import type { EmailSender } from '../email/email.sender.js';
 import type { OrganizationType, PrismaClient, UserRole } from '@prisma/client';
 
@@ -38,6 +39,11 @@ export const MAX_CHALLENGES_PER_HOUR = 5;
 /** Proposal: a session lasts 30 days, the access token 10 minutes. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60_000;
+/**
+ * The marker of an invitation by Telegram link (ChatInviteService): never accepted on the web and
+ * not listed among the email invitations.
+ */
+export const CHAT_INVITE_EMAIL = 'invito-telegram@local.invalid';
 
 export class LoginError extends Error {
   readonly statusCode = 401;
@@ -240,7 +246,32 @@ export class LoginService {
     return { email: challenge.email, userId: challenge.userId };
   }
 
-  private async openSession(userId: string): Promise<LoginSession> {
+  /**
+   * Telegram Mini App: a session for the person whose chat account is linked (AGX-10), once the
+   * caller has checked Telegram's signature of the opening. Nothing for an unlinked account.
+   */
+  async openChatSession(
+    channel: 'TELEGRAM' | 'WHATSAPP',
+    externalId: string,
+  ): Promise<LoginSession> {
+    const identity = await this.prisma.channelIdentity.findFirst({
+      where: {
+        channel,
+        externalId: externalId.trim(),
+        revokedAt: null,
+        user: { status: 'ACTIVE' },
+      },
+      select: { id: true, userId: true },
+    });
+    if (!identity) throw new LoginError();
+    await this.prisma.channelIdentity.update({
+      where: { id: identity.id },
+      data: { lastUsedAt: this.now() },
+    });
+    return this.openSession(identity.userId, channel === 'TELEGRAM' ? 'telegram' : 'whatsapp');
+  }
+
+  private async openSession(userId: string, channel?: string): Promise<LoginSession> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, status: 'ACTIVE' },
       select: { authVersion: true, emailVerifiedAt: true, platformRole: true },
@@ -256,7 +287,7 @@ export class LoginService {
       },
       select: { id: true },
     });
-    if (!user.emailVerifiedAt) {
+    if (!user.emailVerifiedAt && !channel) {
       // The code proves control of the mailbox (not the legal identity).
       await this.prisma.user.update({
         where: { id: userId },
@@ -278,7 +309,7 @@ export class LoginService {
         tenantId: m.orgId,
         userId,
         eventType: 'LOGIN_SUCCEEDED',
-        payload: { sessionId: session.id },
+        payload: { sessionId: session.id, ...(channel ? { channel } : {}) },
       });
     }
     return {
@@ -521,6 +552,7 @@ export class LoginService {
     });
     if (
       !invitation ||
+      invitation.email === CHAT_INVITE_EMAIL ||
       invitation.acceptedAt ||
       invitation.revokedAt ||
       invitation.expiresAt <= this.now()
@@ -548,7 +580,7 @@ export class LoginService {
   /** Invitations of an organization, newest first, with their state (no token). */
   async listInvitations(orgId: string): Promise<InvitationView[]> {
     const rows = await this.prisma.invitation.findMany({
-      where: { orgId },
+      where: { orgId, email: { not: CHAT_INVITE_EMAIL } },
       orderBy: { createdAt: 'desc' },
       take: 200,
       select: {
@@ -636,56 +668,69 @@ export class LoginService {
     const challenge = await this.consumeChallenge(challengeId, code, 'INVITATION');
     if (challenge.email !== invitation.email) throw new LoginError();
 
-    const userId = await withTransaction(this.prisma, async (tx) => {
-      const accepted = await tx.invitation.updateMany({
-        where: { id: invitation.id, acceptedAt: null, revokedAt: null },
-        data: { acceptedAt: this.now() },
-      });
-      if (accepted.count !== 1) throw new InvitationError('Invito non valido o scaduto');
-      const existing = await tx.user.findMany({
-        where: { email: { equals: invitation.email, mode: 'insensitive' }, status: 'ACTIVE' },
-        select: { id: true },
-        take: 2,
-      });
-      if (existing.length > 1) {
-        throw new InvitationError("L'email appartiene a più account: serve l'amministratore");
-      }
-      let id: string;
-      if (existing.length === 1) {
-        id = existing[0].id;
-        await tx.membership.upsert({
-          where: { userId_orgId: { userId: id, orgId: invitation.orgId } },
-          create: { userId: id, orgId: invitation.orgId, role: invitation.role, invitedBy: null },
-          update: {
-            role: invitation.role,
-            status: 'ACTIVE',
-            revokedAt: null,
-            revokedBy: null,
-            revocationReason: null,
-            // B2: a custom role is built on the previous role.
-            customRoleId: null,
-          },
-        });
-      } else {
-        // New person, with the membership of the invitation (MF12 step 3).
-        const created = await new UserRepository(tx).createUser(invitation.orgId, {
-          email: invitation.email,
-          role: invitation.role,
-          emailVerifiedAt: this.now(),
-        });
-        id = created.id;
-      }
-      await tx.invitation.update({ where: { id: invitation.id }, data: { acceptedBy: id } });
-      await new AuditService(tx).logEvent({
-        tenantId: invitation.orgId,
-        userId: id,
-        eventType: 'INVITATION_ACCEPTED',
-        payload: { invitationId: invitation.id, role: invitation.role },
-      });
-      return id;
-    });
+    const userId = await withTransaction(this.prisma, (tx) =>
+      acceptInvitationIn(tx, invitation, this.now()),
+    );
     return this.openSession(userId);
   }
+}
+
+/**
+ * Accepts a valid invitation inside the caller's transaction, once the invited email is proven: a
+ * membership for the existing person with that email, otherwise a new person (MF6; AGX-10 also
+ * accepts from the chat, with the code sent to that same email). Returns the person's id.
+ */
+export async function acceptInvitationIn(
+  tx: PrismaTx,
+  invitation: { id: string; orgId: string; email: string; role: UserRole },
+  now: Date,
+): Promise<string> {
+  const accepted = await tx.invitation.updateMany({
+    where: { id: invitation.id, acceptedAt: null, revokedAt: null },
+    data: { acceptedAt: now },
+  });
+  if (accepted.count !== 1) throw new InvitationError('Invito non valido o scaduto');
+  const existing = await tx.user.findMany({
+    where: { email: { equals: invitation.email, mode: 'insensitive' }, status: 'ACTIVE' },
+    select: { id: true },
+    take: 2,
+  });
+  if (existing.length > 1) {
+    throw new InvitationError("L'email appartiene a più account: serve l'amministratore");
+  }
+  let id: string;
+  if (existing.length === 1) {
+    id = existing[0].id;
+    await tx.membership.upsert({
+      where: { userId_orgId: { userId: id, orgId: invitation.orgId } },
+      create: { userId: id, orgId: invitation.orgId, role: invitation.role, invitedBy: null },
+      update: {
+        role: invitation.role,
+        status: 'ACTIVE',
+        revokedAt: null,
+        revokedBy: null,
+        revocationReason: null,
+        // B2: a custom role is built on the previous role.
+        customRoleId: null,
+      },
+    });
+  } else {
+    // New person, with the membership of the invitation (MF12 step 3).
+    const created = await new UserRepository(tx).createUser(invitation.orgId, {
+      email: invitation.email,
+      role: invitation.role,
+      emailVerifiedAt: now,
+    });
+    id = created.id;
+  }
+  await tx.invitation.update({ where: { id: invitation.id }, data: { acceptedBy: id } });
+  await new AuditService(tx).logEvent({
+    tenantId: invitation.orgId,
+    userId: id,
+    eventType: 'INVITATION_ACCEPTED',
+    payload: { invitationId: invitation.id, role: invitation.role },
+  });
+  return id;
 }
 
 export class InvitationError extends Error {

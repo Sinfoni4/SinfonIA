@@ -1,3 +1,4 @@
+import { OCR_WARNINGS } from './ocr-warnings.js';
 import {
   CertificateOcrSchema,
   DeliveryNoteOcrSchema,
@@ -41,7 +42,7 @@ const VAT_AMOUNT_REGEX = new RegExp(
 );
 const VAT_NUMBER_REGEX = /(?:p\.?\s*iva|partita\s*iva|vat)\s*[:.]?\s*((?:IT)?\s?\d{11})\b/i;
 // A zero total is legitimate (non-fiscal slips, free items) but unusual enough to be checked.
-const ZERO_TOTAL_WARNING = 'Document total is zero: check whether it is a non-fiscal document';
+const ZERO_TOTAL_WARNING = OCR_WARNINGS.zeroTotal;
 const LEGAL_FORM_REGEX =
   /\b(?:s\.?\s?r\.?\s?l\.?|s\.?\s?p\.?\s?a\.?|s\.?\s?n\.?\s?c\.?|s\.?\s?a\.?\s?s\.?|soc\.?\s*coop)(?![a-z])/i;
 
@@ -82,7 +83,7 @@ export class DocumentOcrService {
     const lowConfidence =
       typeof extraction.confidence === 'number' && extraction.confidence < this.minOcrConfidence;
     const warnings = lowConfidence
-      ? [...result.warnings, `Low OCR confidence (${Math.round(extraction.confidence ?? 0)}%)`]
+      ? [...result.warnings, OCR_WARNINGS.lowConfidence(Math.round(extraction.confidence ?? 0))]
       : result.warnings;
 
     return {
@@ -92,6 +93,7 @@ export class DocumentOcrService {
       extraction: {
         source: extraction.source,
         pages: extraction.pages,
+        ...(extraction.ocrPages !== undefined ? { ocrPages: extraction.ocrPages } : {}),
         confidence:
           typeof extraction.confidence === 'number'
             ? Math.round(extraction.confidence * 10) / 10
@@ -173,7 +175,7 @@ export class DocumentOcrService {
       vatAmount !== null &&
       Math.abs(taxableAmount + vatAmount - totalAmount) > 0.02
     ) {
-      warnings.push('Totals do not add up: taxable amount + VAT differs from document total');
+      warnings.push(OCR_WARNINGS.totalsMismatch);
     }
     if (totalAmount === 0) {
       warnings.push(ZERO_TOTAL_WARNING);
@@ -313,7 +315,7 @@ export class DocumentOcrService {
     if (!raw) return this.findUnlabeledVatNumber(text, warnings);
     const vat = raw.replace(/\s/g, '').toUpperCase();
     if (!isValidItalianVat(vat.replace(/^IT/, ''))) {
-      warnings.push(`VAT number ${vat} fails the check digit`);
+      warnings.push(OCR_WARNINGS.vatCheckDigit(vat));
     }
     return vat;
   }
@@ -331,7 +333,7 @@ export class DocumentOcrService {
     );
     if (candidates.size !== 1) return null;
     const [vat] = candidates;
-    warnings.push(`VAT number ${vat} found without its label`);
+    warnings.push(OCR_WARNINGS.vatUnlabeled(vat));
     return vat;
   }
 

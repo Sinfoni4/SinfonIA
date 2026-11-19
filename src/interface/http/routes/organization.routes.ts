@@ -3,22 +3,55 @@ import { z } from 'zod';
 import { listAuditEvents } from '../../../core/audit/audit-view.service.js';
 import { authorize, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { dashboardSummary } from '../../../core/dashboard/dashboard.service.js';
+import { miniAppSummary } from '../../../core/miniapp/miniapp.service.js';
 import {
   getOrganizationSettings,
   updateOrganizationSettings,
 } from '../../../core/organization/organization-settings.service.js';
-import { requirePermission } from '../auth/guards.js';
+import { organizationUsage, usageExport } from '../../../core/usage/usage.service.js';
+import { TABLE_FILE_MAX_CSV, tableFile } from '../../../shared/table-file.js';
+import { requirePermission, requirePrincipal } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
+import { StatsQuerySchema } from './network.routes.js';
+
 import type { ComplianceService } from '../../../core/compliance/compliance.service.js';
+import type { AppChat } from '../../conversation/app-chat.js';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyPluginCallback, FastifyReply } from 'fastify';
 
 export type OrganizationRoutesDeps = {
   prisma: PrismaClient;
   complianceService?: Pick<ComplianceService, 'listDeadlines'>;
+  /** The assistant of the Telegram Mini App (the same conversation as the bot). */
+  appChat?: AppChat;
 };
+
+const AppChatBodySchema = z.object({ text: z.string().trim().min(1).max(2000) }).strict();
+
+/** An export the person already received, to have it as Excel or PDF (no data is read here). */
+export const TableFileBodySchema = z
+  .object({
+    title: z.string().trim().max(200),
+    csv: z.string().max(TABLE_FILE_MAX_CSV),
+    format: z.enum(['xlsx', 'pdf']),
+  })
+  .strict();
+
+/** The file in JSON: name, type and content in base64, for the dashboard to save. */
+export async function sendTableFile(body: unknown) {
+  const input = TableFileBodySchema.parse(body);
+  const file = await tableFile(input);
+  return {
+    fileName: file.fileName,
+    mimeType: file.mimeType,
+    contentBase64: file.content.toString('base64'),
+  };
+}
+
+/** Room for a 5 MB CSV in JSON, with its escapes. */
+export const TABLE_FILE_BODY_LIMIT = 12 * 1024 * 1024;
 
 const AuditQuerySchema = z
   .object({
@@ -43,6 +76,8 @@ const SettingsBodySchema = z
     name: z.string().max(200).optional(),
     municipality: z.string().max(200).nullable().optional(),
     sector: z.string().max(200).nullable().optional(),
+    taxCode: z.string().max(40).nullable().optional(),
+    vatNumber: z.string().max(40).nullable().optional(),
     scheduledExport: z
       .object({
         enabled: z.boolean(),
@@ -78,6 +113,93 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
         deadlineUserId: scopedUserId(deadlines),
       });
       return reply.send(ok(summary));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // The exports of the dashboard as Excel or PDF: the CSV the person already has, converted.
+  app.post(
+    '/exports/file',
+    { config: { permission: 'authenticated' }, bodyLimit: TABLE_FILE_BODY_LIMIT },
+    async (req, reply) => {
+      try {
+        requirePrincipal(req);
+        return reply.send(ok(await sendTableFile(req.body)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // Telegram Mini App: the assistant, the same conversation as the bot with the session's person.
+  // Every command checks its own permission, as in the chat.
+  if (deps.appChat) {
+    const appChat = deps.appChat;
+    app.post('/miniapp/chat', { config: { permission: 'practice.read' } }, async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'practice.read').principal;
+        const body = AppChatBodySchema.parse(req.body);
+        return reply.send(ok({ replies: await appChat.ask(auth, body.text) }));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    });
+  }
+
+  // Telegram Mini App: the «Oggi» and «Agenda» screens in one call, within the caller's grants.
+  app.get('/miniapp/summary', { config: { permission: 'practice.read' } }, async (req, reply) => {
+    try {
+      const practices = requirePermission(req, 'practice.read');
+      const deadlines = authorize(practices.principal, 'compliance.read');
+      return reply.send(
+        ok(
+          await miniAppSummary(deps.prisma, deps.complianceService, {
+            tenantId: practices.principal.tenantId,
+            practiceUserId: scopedUserId(practices),
+            deadlineUserId: scopedUserId(deadlines),
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-07: the usage of the organization in a fixed period, with the part done by others
+  // through a delegation. Who reads the activity log reads this too.
+  app.get('/usage', { config: { permission: 'audit.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'audit.read').principal;
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await organizationUsage(deps.prisma, {
+            tenantId: auth.tenantId,
+            kind: query.period,
+            previous: query.previous,
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // The usage events of the period as a CSV file (one row each), for invoicing and checks.
+  app.get('/usage/export', { config: { permission: 'audit.read' } }, async (req, reply) => {
+    try {
+      const auth = requirePermission(req, 'audit.read').principal;
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await usageExport(deps.prisma, {
+            tenantId: auth.tenantId,
+            kind: query.period,
+            previous: query.previous,
+          }),
+        ),
+      );
     } catch (err: unknown) {
       return sendError(reply, err);
     }

@@ -1,6 +1,9 @@
 import { permits } from '../../core/authz/authorization.service.js';
 import { parseComplianceCommand } from '../../core/compliance/compliance.commands.js';
-import { AttachmentRejectedError } from '../../core/errors/attachment.errors.js';
+import {
+  AttachmentRejectedError,
+  DuplicateAttachmentError,
+} from '../../core/errors/attachment.errors.js';
 import { featureEnabled, type Feature } from '../../core/features/features.js';
 import { MemberAccessError } from '../../core/identity/member-access.service.js';
 import {
@@ -24,18 +27,28 @@ import { formatPracticeCommandResult } from '../telegram/practice.command.format
 import {
   formatAttachmentQuestion,
   parseAttachmentSelection,
-  PendingAttachmentStore,
+  PENDING_FILE_TTL_MS,
+  readPendingFile,
   resolveAttachmentTarget,
   type AttachmentCandidate,
+  type PendingFile,
 } from '../telegram/telegram.attachment-target.js';
 import { mapTelegramErrorToMessage } from '../telegram/telegram.errors.js';
 import { runtimeAwareExecute } from '../telegram/telegram.runtimeAware.js';
 
+import {
+  ChatLinkFlow,
+  type ChannelLinkPort,
+  type DemoPort,
+  type InvitePort,
+} from './chat-link.flow.js';
 import { suggestCommand } from './command.typos.js';
 import { InMemoryConversationMemory, type ConversationMemory } from './conversation.memory.js';
 
+import type { Principal } from '../../core/authz/authorization.service.js';
 import type { CustomPermissions } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
+import type { CompanyCard } from '../../core/organization/company-card.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { Tenant } from '../../core/tenant/tenant.store.js';
 import type { PracticeState } from '../../core/types/workflow.types.js';
@@ -65,6 +78,11 @@ export type InboundFile = {
   compressedPhoto?: boolean;
   /** Caption sent with the file: a hint for the document type (kept while a practice is chosen). */
   hint?: string;
+  /**
+   * AGX-01: the channel's id of the file (Telegram file_id, WhatsApp media id), to download it
+   * again after a restart while the person still has to answer.
+   */
+  ref?: string;
   download: () => Promise<Buffer>;
 };
 
@@ -77,8 +95,6 @@ export type InboundMessage = {
 };
 
 export interface ChannelIdentityProvider {
-  /** Links the sender to the tenant of an invite code; null when the code is unknown. */
-  link(inviteCode: string, senderId: string): Promise<string | null>;
   /**
    * Throws TenantNotLinkedError when the sender is not linked to any tenant, and
    * OrganizationChoiceRequiredError when they belong to several organizations.
@@ -108,6 +124,8 @@ export type ConversationDeps = {
     listPractices?: PracticeApplicationService['listPractices'];
   };
   complianceService?: Pick<ComplianceService, 'listDeadlines' | 'createDeadline' | 'closeDeadline'>;
+  /** AGX-06: the person's practices with an open document request, proposed first for a file. */
+  practicesWithOpenRequests?: (input: { tenantId: string; userId: string }) => Promise<string[]>;
   /** The AI for free text; a ChatAnswer also says when it asked a question back. */
   handleMessage: (input: string, identity: ConversationIdentity) => Promise<string | ChatAnswer>;
   /**
@@ -132,21 +150,46 @@ export type ConversationDeps = {
   }) => Promise<{ created: boolean; createdAt: Date }>;
   /** Turns the scheduled export in chat on or off for the person (D5b); returns whether it changed. */
   scheduledExport?: (orgId: string, userId: string, enabled: boolean) => Promise<boolean>;
+  /** AGX-12a: the card of the company («🏢 La mia azienda»), within the person's grants. */
+  companyCard?: (actor: Principal) => Promise<CompanyCard>;
+  /** AGX-12a: the full codes, for who manages the organization only (null otherwise); audited. */
+  revealCompanyIdentifiers?: (
+    actor: Principal,
+    channel: string,
+  ) => Promise<{ taxCode: string | null; vatNumber: string | null } | null>;
+  /**
+   * AGX-10 / MF7: the verified link (/accedi with a code by email). Absent where email login is
+   * off: then nobody can link, since an organization's invite code no longer does.
+   */
+  channelLinks?: ChannelLinkPort;
+  /** Staging only (DEMO_ACCESS): «/start demo» gives an account in the demo organization. */
+  demoAccess?: DemoPort;
+  /** Personal Telegram links: «/start i…» accepts an invitation, «/start l…» links one's own. */
+  chatInvites?: InvitePort;
   /** Defaults to process memory; production passes the database one. */
   memory?: ConversationMemory;
   log?: { info: (obj: unknown, msg?: string) => void; error: (obj: unknown, msg?: string) => void };
 };
 
 export type ChannelOptions = {
-  /** Channel name, used in logs and to keep users of different channels apart. */
-  name: 'telegram' | 'whatsapp';
+  /**
+   * Channel name, used in logs and to keep users of different channels apart. `app`: the
+   * assistant of the Telegram Mini App, where the person is already identified by the session.
+   */
+  name: 'telegram' | 'whatsapp' | 'app';
   identity: ChannelIdentityProvider;
+  /** How the channel stores a sender id (WhatsApp: digits only); defaults to as it is. */
+  normalizeSender?: (senderId: string) => string;
   /** Largest file the channel lets the bot download (Telegram: 20 MB). */
   maxDownloadBytes?: number;
   /** Added to the reply when a compressed photo gives a read that needs review. */
   compressedPhotoTip?: string;
   /** Address of the dashboard page of the documents to verify, for «Modifica» (A2). */
   reviewUrl?: string;
+  /** The Telegram Mini App (https), offered by «/app» and after «/start». */
+  miniAppUrl?: string;
+  /** AGX-01: downloads a file again from its `ref`, for a file waiting across a restart. */
+  downloadRef?: (ref: string) => () => Promise<Buffer>;
 };
 
 /** A button under a reply: pressing it is the same as writing `answer` (A2). */
@@ -157,6 +200,8 @@ export type ReplyOptions = {
   buttons?: ReplyButton[];
   /** Shows the main menu at the bottom of the chat. */
   menu?: boolean;
+  /** A button that opens the Telegram Mini App (https only); other channels show the text. */
+  webApp?: { label: string; url: string };
 };
 
 type Reply = (text: string, options?: ReplyOptions) => Promise<unknown>;
@@ -165,6 +210,8 @@ type Reply = (text: string, options?: ReplyOptions) => Promise<unknown>;
 export const MENU_BUTTONS: ReplyButton[] = [
   { label: '📁 Le mie pratiche', answer: 'lista pratiche' },
   { label: '⏰ Le mie scadenze', answer: 'scadenze' },
+  { label: '📎 I miei documenti', answer: 'documenti' },
+  { label: '🏢 La mia azienda', answer: 'la mia azienda' },
   { label: '🙋 Operatore', answer: 'operatore' },
   { label: '❓ Aiuto', answer: 'aiuto' },
 ];
@@ -244,9 +291,52 @@ export const TELEGRAM_COMPRESSED_PHOTO_TIP =
 export const VOICE_NOT_SUPPORTED =
   '🎙️ I messaggi vocali non sono ancora supportati: scrivi la richiesta come testo.';
 
-const LINK_COMMAND = /^\/?start\s+(\S+)/i;
 const SCHEDULED_EXPORT_COMMAND = /^(attiva|disattiva)\s+export\s+pianificato$/i;
 const ORG_COMMAND = /^\/?azienda(?:\s+(\d{1,2}))?$/i;
+/** The Telegram Mini App: «/app», «app», «apri app». */
+const APP_COMMAND = /^(?:\/app|app|apri (?:l'|la )?app|apri sinfonia)[.!]?$/i;
+const CARD_COMMAND =
+  /^(?:la mia azienda|scheda(?: dell')?(?: ?azienda)?|dati (?:della mia |dell')?azienda)[.!?]?$/i;
+const REVEAL_COMMAND = /^mostra (?:i )?codici(?: per intero)?$/i;
+
+const TYPE_LABELS: Record<CompanyCard['type'], string> = {
+  COMPANY: 'Azienda',
+  COOPERATIVE: 'Cooperativa',
+  NETWORK: "Rete d'impresa",
+  CONSORTIUM: 'Consorzio',
+  TRADE_ASSOCIATION: 'Associazione di categoria',
+  ASSOCIATION: 'Associazione',
+  PROFESSIONAL_FIRM: 'Studio professionale',
+  OTHER: 'Altro',
+};
+
+function daysText(daysLeft: number): string {
+  if (daysLeft === 0) return 'oggi';
+  if (daysLeft === 1) return 'domani';
+  if (daysLeft > 0) return `tra ${daysLeft} giorni`;
+  return daysLeft === -1 ? 'scaduta ieri' : `scaduta da ${-daysLeft} giorni`;
+}
+
+/** AGX-12a: the card in chat; the codes, when present, are already masked. */
+export function formatCompanyCard(card: CompanyCard, role: UserRole): string {
+  const lines = [`🏢 Lavori per ${card.name} come ${ROLE_LABELS[role]}.`, ''];
+  lines.push(`Tipo: ${TYPE_LABELS[card.type]}`);
+  if (card.municipality) lines.push(`Comune: ${card.municipality}`);
+  if (card.sector) lines.push(`Settore: ${card.sector}`);
+  if (card.networks.length > 0) lines.push(`Reti: ${card.networks.join(', ')}`);
+  if (card.openPractices !== null) lines.push(`📁 Pratiche aperte: ${card.openPractices}`);
+  if (card.nextDeadline) {
+    const d = card.nextDeadline;
+    const [y, m, day] = d.dueDate.split('-');
+    lines.push(`⏰ Prossima scadenza: ${d.title}, ${day}/${m}/${y} (${daysText(d.daysLeft)})`);
+  }
+  if (card.identifiers) {
+    lines.push('');
+    lines.push(`Codice fiscale / CUAA: ${card.identifiers.taxCode ?? 'non inserito'}`);
+    lines.push(`Partita IVA: ${card.identifiers.vatNumber ?? 'non inserita'}`);
+  }
+  return lines.join('\n');
+}
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'amministratore',
@@ -274,10 +364,13 @@ function isGreeting(text: string): boolean {
 
 export function onboardingMessage(
   who: UserRole | { role: UserRole; customPermissions: CustomPermissions | null },
+  /** The organization the person works for, named in the greeting. */
+  orgName?: string,
 ): string {
   const person = typeof who === 'string' ? { role: who, customPermissions: null } : who;
+  const of = orgName ? ` di ${orgName}` : '';
   if (permits(person, 'practice.transition')) {
-    return `👋 Ciao! Ti aiuto a gestire le pratiche.
+    return `👋 Ciao! Ti aiuto a gestire le pratiche${of}.
 
 Puoi:
 • validarle
@@ -285,13 +378,15 @@ Puoi:
 • controllarne lo stato
 • gestire le scadenze (DURC, sicurezza, bio, visite mediche, patentini)
 • chiedere aiuto a un operatore (scrivi "operatore")
+• vedere i documenti delle pratiche (scrivi "documenti")
+• vedere i dati della tua azienda (scrivi "la mia azienda")
 
 Prova a scrivere:
 "valida la pratica di Mario Rossi"
 "scadenze" oppure "nuova scadenza durc 31/12/2026 DURC annuale"`;
   }
 
-  return `👋 Ciao! Ti aiuto a gestire le tue pratiche.
+  return `👋 Ciao! Ti aiuto a gestire le tue pratiche${of}.
 
 Puoi:
 • creare una pratica
@@ -299,14 +394,17 @@ Puoi:
 • chiedere aggiornamenti
 • vedere le tue scadenze (scrivi "scadenze")
 • parlare con un operatore (scrivi "operatore")
+• vedere i documenti delle pratiche (scrivi "documenti")
+• vedere i dati della tua azienda (scrivi "la mia azienda")
 
 Prova a scrivere:
 "crea pratica per Mario Rossi"`;
 }
 
 export class ConversationService {
-  // Files received while the user still has to choose the target practice.
-  private readonly pendingAttachments = new PendingAttachmentStore<InboundFile>();
+  // AGX-01: the files waiting for an answer, with their download, in this process; what survives
+  // a restart is the record in the conversation memory (see pendingFileOf).
+  private readonly liveFiles = new Map<string, InboundFile>();
   // Transitions of practices of others waiting for «sì», by person (C2).
   private readonly pendingTransitions = new Map<string, PendingTransition>();
   // Commands suggested after a typing error, waiting for «sì», by person.
@@ -338,12 +436,92 @@ export class ConversationService {
   }
   private readonly memory: ConversationMemory;
 
+  /** AGX-01: keeps a file waiting for the person's answer, in this process and in the memory. */
+  private async savePendingFile(
+    tenantId: string,
+    userId: string,
+    file: InboundFile,
+    record: Omit<PendingFile, 'channel' | 'tenantId' | 'file' | 'expiresAt'>,
+  ): Promise<void> {
+    this.liveFiles.set(userId, file);
+    const stored: PendingFile = {
+      ...record,
+      channel: this.channel.name,
+      tenantId,
+      file: {
+        ref: file.ref,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        fileSize: file.fileSize,
+        hint: file.hint,
+        compressedPhoto: file.compressedPhoto,
+      },
+      expiresAt: Date.now() + PENDING_FILE_TTL_MS,
+    };
+    await this.memory.setPendingFile(tenantId, userId, stored);
+  }
+
+  private async clearPendingFile(tenantId: string, userId: string): Promise<void> {
+    this.liveFiles.delete(userId);
+    await this.memory.setPendingFile(tenantId, userId, null);
+  }
+
+  /**
+   * The file waiting for this person in this organization and channel, with a way to download it:
+   * from this process, or again from the channel after a restart. `lost` when the record is there
+   * but the file can no longer be downloaded (the person sends it again).
+   */
+  private async pendingFileOf(
+    tenantId: string,
+    userId: string,
+  ): Promise<{ record: PendingFile; file: InboundFile } | 'lost' | null> {
+    const record = readPendingFile(await this.memory.getPendingFile(userId));
+    if (!record || record.channel !== this.channel.name) return null;
+    if (record.tenantId !== tenantId || record.expiresAt <= Date.now()) {
+      await this.clearPendingFile(tenantId, userId);
+      return null;
+    }
+    const live = this.liveFiles.get(userId);
+    if (live) return { record, file: live };
+    if (record.file.ref && this.channel.downloadRef) {
+      return {
+        record,
+        file: { ...record.file, download: this.channel.downloadRef(record.file.ref) },
+      };
+    }
+    await this.clearPendingFile(tenantId, userId);
+    return 'lost';
+  }
+
   constructor(
     private readonly deps: ConversationDeps,
     private readonly channel: ChannelOptions,
   ) {
     this.memory = deps.memory ?? new InMemoryConversationMemory();
+    this.linkFlow = new ChatLinkFlow(
+      deps.channelLinks,
+      channel.name === 'telegram' ? 'TELEGRAM' : 'WHATSAPP',
+      async (result) => {
+        const names = result.organizations.map((o) => o.name);
+        const first = result.organizations[0];
+        const tenant = first
+          ? await this.channel.identity.tenantFor?.(first.orgId).catch(() => null)
+          : null;
+        return (
+          `✅ Account collegato${names.length > 0 ? ` a ${names.join(', ')}` : ''}.\n\n` +
+          getModule(tenant?.module).welcome
+        );
+      },
+      Date.now,
+      {
+        ...(deps.demoAccess ? { demo: deps.demoAccess } : {}),
+        ...(deps.chatInvites ? { invites: deps.chatInvites } : {}),
+        ...(channel.miniAppUrl ? { miniAppUrl: channel.miniAppUrl } : {}),
+      },
+    );
   }
+
+  private readonly linkFlow: ChatLinkFlow;
 
   async handle(message: InboundMessage, reply: Reply): Promise<void> {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -414,33 +592,25 @@ export class ConversationService {
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
 
-    const inviteCode = LINK_COMMAND.exec(trimmed)?.[1];
-    if (inviteCode) {
-      const tenantId = await this.channel.identity.link(inviteCode, message.senderId);
-      if (!tenantId) {
-        await reply('Codice invito non valido');
-        return;
-      }
-      deps.log?.info({ tenantId, requestId, channel: this.channel.name }, 'User linked to tenant');
-      // A02: the welcome of the organization's module.
-      const linked = await this.channel.identity.tenantFor?.(tenantId).catch(() => null);
-      await reply(getModule(linked?.module).welcome);
-      return;
+    // AGX-10: /accedi, /collegamenti, /scollega and their answers, before the person is known
+    // (not in the app: its session already says who the person is).
+    if (!message.file && this.channel.name !== 'app') {
+      const sender = this.channel.normalizeSender?.(message.senderId) ?? message.senderId;
+      if (await this.linkFlow.handle(sender, trimmed, reply)) return;
     }
 
     const orgCommand = ORG_COMMAND.exec(trimmed);
     let identity: Awaited<ReturnType<ChannelIdentityProvider['resolve']>>;
     try {
       identity = await this.channel.identity.resolve(message.senderId);
-      if (orgCommand) {
+      // AGX-12a: with the card available, «azienda» shows it (below, once the actor is known).
+      if (orgCommand && !deps.companyCard) {
         await reply(`🏢 Lavori per ${identity.tenant.name}.`);
         return;
       }
     } catch (err: unknown) {
       if (err instanceof TenantNotLinkedError) {
-        await reply(
-          'Il tuo account non è ancora collegato a nessuna organizzazione.\nScrivi `start <codice invito>`.',
-        );
+        await reply(this.linkFlow.notLinkedText());
         return;
       }
       if (!(err instanceof OrganizationChoiceRequiredError)) throw err;
@@ -467,8 +637,42 @@ export class ConversationService {
     const featureOn = (feature: Feature) => featureEnabled(tenant.disabledFeatures, feature);
     const FEATURE_OFF = 'ℹ️ Questa funzione non è attiva per la tua organizzazione.';
 
+    // AGX-12a: the card of the company, read only and without the AI.
+    if ((orgCommand || CARD_COMMAND.test(trimmed)) && deps.companyCard) {
+      const card = await deps.companyCard(actor);
+      const masked = card.identifiers;
+      const canReveal =
+        Boolean(deps.revealCompanyIdentifiers) &&
+        masked !== null &&
+        (masked.taxCode !== null || masked.vatNumber !== null);
+      await reply(
+        formatCompanyCard(card, dbUser.role),
+        canReveal
+          ? { buttons: [{ label: '🔓 Mostra per intero', answer: 'mostra codici' }] }
+          : undefined,
+      );
+      return;
+    }
+    if (REVEAL_COMMAND.test(trimmed) && deps.revealCompanyIdentifiers) {
+      const codes = await deps.revealCompanyIdentifiers(actor, this.channel.name);
+      if (!codes) {
+        await reply('🔒 Solo gli amministratori vedono codice fiscale e partita IVA.');
+        return;
+      }
+      await reply(
+        `Codice fiscale / CUAA: ${codes.taxCode ?? 'non inserito'}\n` +
+          `Partita IVA: ${codes.vatNumber ?? 'non inserita'}\n\n` +
+          'Per modificarli usa Impostazioni nella dashboard.',
+      );
+      return;
+    }
+
     // Downloads the file and attaches it to the chosen practice (OCR included).
-    const uploadToPractice = async (file: InboundFile, practice: AttachmentCandidate) => {
+    const uploadToPractice = async (
+      file: InboundFile,
+      practice: AttachmentCandidate,
+      allowDuplicate = false,
+    ) => {
       if (!deps.practiceService.addAttachment) return;
       try {
         const content = await file.download();
@@ -480,6 +684,8 @@ export class ConversationService {
           mimeType: file.mimeType,
           content,
           hint: file.hint,
+          allowDuplicate,
+          channel: this.channel.name,
         });
         await this.memory.setLastPractice(tenant.id, dbUser.id, practice.id);
 
@@ -496,9 +702,14 @@ export class ConversationService {
             expiresAt: Date.now() + CLARIFICATION_MS,
           });
         }
+        const answered = uploadResult.fulfilledRequest;
         await reply(
           `📁 Pratica: ${practice.name}\n` +
             formatAttachmentResult(uploadResult.attachment.ocrStatus, uploadResult.ocrResult) +
+            // AGX-06: the file answered a request of the practice.
+            (answered
+              ? `\n📎 Ho risposto alla richiesta: ${answered.expectedLabel ?? `«${answered.message}»`}.`
+              : '') +
             (askConfirmation
               ? '\nSe i dati sono giusti rispondi «conferma»; per correggerli usa la dashboard ' +
                 '(«Da verificare»).'
@@ -518,6 +729,20 @@ export class ConversationService {
       } catch (uploadErr) {
         if (uploadErr instanceof AttachmentRejectedError) {
           await reply(formatAttachmentRejection(uploadErr));
+          return;
+        }
+        // AGX-01: the same file again; sent only if the person says so.
+        if (uploadErr instanceof DuplicateAttachmentError) {
+          await this.savePendingFile(tenant.id, dbUser.id, file, {
+            stage: 'duplicate',
+            candidates: [],
+            suggested: false,
+            practice,
+          });
+          await reply(
+            `⚠️ ${uploadErr.message}\nLo carico di nuovo nella pratica «${practice.name}»?`,
+            { buttons: YES_NO },
+          );
           return;
         }
         deps.log?.error({ error: errorLabel(uploadErr), requestId }, 'Attachment upload error');
@@ -554,7 +779,10 @@ export class ConversationService {
             limit: ATTACHMENT_PRACTICE_LOOKUP_LIMIT,
           })
         : [];
-      const target = resolveAttachmentTarget(practices, text);
+      const requested = deps.practicesWithOpenRequests
+        ? await deps.practicesWithOpenRequests({ tenantId: tenant.id, userId: dbUser.id })
+        : [];
+      const target = resolveAttachmentTarget(practices, text, requested);
 
       if (target.type === 'none') {
         await reply(
@@ -562,34 +790,49 @@ export class ConversationService {
         );
         return;
       }
-      if (target.type === 'ask') {
-        this.pendingAttachments.set(dbUser.id, file, target.candidates);
-        await reply(formatAttachmentQuestion(target.candidates), {
-          buttons: [
-            ...target.candidates.map((c, i) => ({
-              label: buttonLabel(c.name),
-              answer: String(i + 1),
-            })),
-            { label: 'Annulla', answer: 'annulla' },
-          ],
-        });
-        return;
-      }
-      await uploadToPractice(file, target.practice);
+      // AGX-01: always asked, even when only one practice is possible.
+      await this.savePendingFile(tenant.id, dbUser.id, file, {
+        stage: 'choose',
+        candidates: target.candidates,
+        suggested: target.suggested,
+      });
+      await reply(formatAttachmentQuestion(target.candidates, target.suggested), {
+        buttons: [
+          ...target.candidates.map((c, i) => ({
+            label:
+              target.suggested && i === 0 ? `✅ Sì, ${buttonLabel(c.name)}` : buttonLabel(c.name),
+            answer: String(i + 1),
+          })),
+          { label: 'Annulla', answer: 'annulla' },
+        ],
+      });
       return;
     }
 
-    const pending = this.pendingAttachments.get(dbUser.id);
-    if (pending) {
-      const selection = parseAttachmentSelection(trimmed, pending.candidates.length);
+    const pending = await this.pendingFileOf(tenant.id, dbUser.id);
+    if (pending === 'lost') {
+      await reply('⌛ Non riesco più a recuperare il file che avevi inviato: mandalo di nuovo.');
+      return;
+    }
+    if (pending?.record.stage === 'duplicate' && pending.record.practice) {
+      await this.clearPendingFile(tenant.id, dbUser.id);
+      if (CONFIRMATION.test(trimmed)) {
+        await uploadToPractice(pending.file, pending.record.practice, true);
+        return;
+      }
+      await reply('Ok, il file non è stato caricato di nuovo.');
+      if (!this.isCommand(trimmed)) return;
+    } else if (pending) {
+      const { candidates, suggested } = pending.record;
+      const selection = parseAttachmentSelection(trimmed, candidates.length, suggested);
       if (selection === 'cancel') {
-        this.pendingAttachments.delete(dbUser.id);
+        await this.clearPendingFile(tenant.id, dbUser.id);
         await reply('Ok, il file non è stato associato a nessuna pratica.');
         return;
       }
-      const chosen = typeof selection === 'number' ? pending.candidates[selection - 1] : null;
+      const chosen = typeof selection === 'number' ? candidates[selection - 1] : null;
       if (chosen) {
-        this.pendingAttachments.delete(dbUser.id);
+        await this.clearPendingFile(tenant.id, dbUser.id);
         await uploadToPractice(pending.file, chosen);
         return;
       }
@@ -873,28 +1116,51 @@ export class ConversationService {
 
     // «Aiuto» (also from the menu) always explains what the bot does.
     if (/^(aiuto|\/help)$/i.test(trimmed)) {
-      await reply(onboardingMessage(dbUser), { menu: true });
+      await reply(onboardingMessage(dbUser, tenant.name), { menu: true });
+      return;
+    }
+
+    if (APP_COMMAND.test(trimmed)) {
+      await reply(
+        this.channel.miniAppUrl
+          ? '📱 Apri SinfonIA: pratiche, documenti e scadenze in un colpo d’occhio.'
+          : 'L’app di SinfonIA non è ancora disponibile qui: continua pure in chat.',
+        this.channel.miniAppUrl
+          ? { webApp: { label: '📱 Apri SinfonIA', url: this.channel.miniAppUrl } }
+          : undefined,
+      );
       return;
     }
 
     if (lower.startsWith('/start') || isGreeting(text)) {
       const firstTime = await this.memory.markOnboarded(tenant.id, dbUser.id);
-      await reply(firstTime ? onboardingMessage(dbUser) : '👋 Bentornato! Come posso aiutarti?', {
-        menu: true,
-      });
+      await reply(
+        firstTime
+          ? onboardingMessage(dbUser, tenant.name)
+          : `👋 Bentornato! Lavori per ${tenant.name}. Come posso aiutarti?`,
+        {
+          menu: true,
+        },
+      );
+      // The Mini App, when available, right after the greeting of /start.
+      if (this.channel.miniAppUrl && lower.startsWith('/start')) {
+        await reply('📱 Oppure apri l’app di SinfonIA:', {
+          webApp: { label: '📱 Apri SinfonIA', url: this.channel.miniAppUrl },
+        });
+      }
       return;
     }
 
     // Defensive layer: never let a slash command reach the AI pipeline.
     if (trimmed.startsWith('/')) {
-      await reply(onboardingMessage(dbUser));
+      await reply(onboardingMessage(dbUser, tenant.name));
       return;
     }
 
     // A03: with the AI off, free text gets the list of commands instead of an interpretation.
     if (!featureOn('ai_chat')) {
       await reply(
-        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser)}`,
+        `ℹ️ L'assistente IA non è attivo per la tua organizzazione: usa i comandi.\n\n${onboardingMessage(dbUser, tenant.name)}`,
         { menu: true },
       );
       return;

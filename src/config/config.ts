@@ -59,6 +59,20 @@ const ConfigSchema = z
       .refine((v) => /^https?:\/\//.test(v), 'WEB_PUBLIC_URL must be an http(s) address')
       .optional(),
     // Email login (MF6): off until an email provider is chosen (D11); emails are simulated.
+    // Telegram Mini App (/app/tg): login with the data Telegram signs, for linked accounts. It
+    // needs no email provider, so it is allowed in production; it needs TELEGRAM_BOT_TOKEN.
+    // Demo (staging only): «/start demo» gives an unlinked Telegram account its own account in
+    // the «SinfonIA Demo» organization, with invented data deleted after a week.
+    DEMO_ACCESS: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
+    TELEGRAM_MINIAPP: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
     AUTH_EMAIL_LOGIN: z
       .string()
       .optional()
@@ -76,6 +90,23 @@ const ConfigSchema = z
     STORAGE_LOCAL_DIR: z.string().min(1).optional(),
     // Folder of the encrypted backups (npm run db:backup): the console shows the last one.
     BACKUP_DIR: z.string().min(1).optional(),
+    // B4: the nightly backup made by the application, at this time (HH:MM, local); unset: off.
+    BACKUP_NIGHTLY_AT: unsetIfEmpty(
+      z
+        .string()
+        .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'BACKUP_NIGHTLY_AT must be HH:MM')
+        .optional(),
+    ),
+    // The 32-byte key of the backups (base64 or hex), kept by the owner also outside this PC.
+    BACKUP_KEY: unsetIfEmpty(z.string().optional()),
+    // The database read by the nightly backup (default DATABASE_URL); it needs read access to
+    // every table, migrations included.
+    BACKUP_SOURCE_URL: unsetIfEmpty(z.string().optional()),
+    // How many nightly backups are kept (the newest one checked with a restore is kept as well).
+    BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
+    // AGX-07: euro per unit of usage, JSON (e.g. {"OCR_PAGES":0.002}); only for the internal cost
+    // shown in the platform console. Checked at start: a wrong value stops it.
+    USAGE_RATES: unsetIfEmpty(z.string().optional()),
     S3_BUCKET: z.string().min(1).optional(),
     // Default region: Milan, to keep attachments inside the EU.
     S3_REGION: z.string().min(1).default('eu-south-1'),
@@ -92,6 +123,9 @@ const ConfigSchema = z
     SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
     OUTBOX_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(500).default(5_000),
     OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
+    // AGX-08: background reads of a document whose first read failed, before the manual check.
+    // Never more than OUTBOX_MAX_ATTEMPTS.
+    OCR_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     // Shared secret for signing webhook deliveries; webhooks are not sent without it.
     OUTBOX_WEBHOOK_SECRET: z.string().min(32).optional(),
     // WhatsApp Business Cloud API: the channel is on only when all four values are set.
@@ -125,6 +159,11 @@ const ConfigSchema = z
     message: 'AUTH_DEV_SHOW_CODE is allowed only with NODE_ENV=development',
     path: ['AUTH_DEV_SHOW_CODE'],
   })
+  .refine((c) => !(c.DEMO_ACCESS && c.NODE_ENV === 'production'), {
+    // Anyone with the link gets an account: never next to real organizations.
+    message: 'DEMO_ACCESS is allowed only outside production',
+    path: ['DEMO_ACCESS'],
+  })
   .refine((c) => !(c.AUTH_EMAIL_LOGIN && c.NODE_ENV === 'production'), {
     // The login codes would go nowhere: no email provider is configured yet (D11).
     message: 'AUTH_EMAIL_LOGIN needs a real email provider, not available yet',
@@ -133,6 +172,10 @@ const ConfigSchema = z
   .refine((c) => c.LLM_PROVIDER !== 'mistral' || Boolean(c.MISTRAL_API_KEY), {
     message: 'LLM_PROVIDER=mistral needs MISTRAL_API_KEY',
     path: ['LLM_PROVIDER'],
+  })
+  .refine((c) => !c.BACKUP_NIGHTLY_AT || Boolean(c.BACKUP_DIR && c.BACKUP_KEY), {
+    message: 'BACKUP_NIGHTLY_AT needs BACKUP_DIR and BACKUP_KEY',
+    path: ['BACKUP_NIGHTLY_AT'],
   })
   .refine((c) => c.STORAGE_DRIVER !== 's3' || Boolean(c.S3_BUCKET), {
     message: 'S3_BUCKET is required when STORAGE_DRIVER=s3',

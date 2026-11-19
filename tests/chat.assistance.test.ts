@@ -23,7 +23,6 @@ function setup(result = { created: true, createdAt: new Date('2026-11-04T10:00:0
     {
       name: 'telegram',
       identity: {
-        link: () => Promise.resolve(null),
         resolve: () =>
           Promise.resolve({ tenant, userId: 'u-1', role: 'MEMBER', customPermissions: null }),
       },
@@ -104,10 +103,11 @@ describe('«parla con un operatore» in the chat (H10)', () => {
     expect(c.handleMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the four menu entries two per row on Telegram', () => {
+  it('shows the menu entries two per row on Telegram', () => {
     expect(replyMarkup({ menu: true })).toEqual({
       keyboard: [
         [{ text: '📁 Le mie pratiche' }, { text: '⏰ Le mie scadenze' }],
+        [{ text: '📎 I miei documenti' }, { text: '🏢 La mia azienda' }],
         [{ text: '🙋 Operatore' }, { text: '❓ Aiuto' }],
       ],
       resize_keyboard: true,

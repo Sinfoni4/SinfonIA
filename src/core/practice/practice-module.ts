@@ -1,4 +1,5 @@
 import { NotFoundError } from '../../data/errors/errors.js';
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import {
@@ -22,7 +23,12 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 export class PracticeModuleError extends Error {
   readonly statusCode = 400;
   constructor(
-    readonly code: 'KIND_NOT_IN_MODULE' | 'INVALID_FIELDS' | 'INVALID_SUB_STATE',
+    readonly code:
+      | 'KIND_NOT_IN_MODULE'
+      | 'INVALID_FIELDS'
+      | 'INVALID_SUB_STATE'
+      // AGX-05: not a document the practice's type expects.
+      | 'INVALID_EXPECTED_DOCUMENT',
     message: string,
   ) {
     super(message);
@@ -98,7 +104,7 @@ export async function setPracticeSubState(
       where: {
         id: input.practiceId,
         tenantId: input.tenantId,
-        ...(input.ownerUserId ? { userId: input.ownerUserId } : {}),
+        ...(input.ownerUserId ? personPracticesWhere(input.ownerUserId) : {}),
       },
       select: { status: true, payload: true },
     });

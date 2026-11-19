@@ -1,15 +1,32 @@
+import { createHash } from 'node:crypto';
+
 import { defaultDocumentOcrService } from '../../ai/ocr/document-ocr.service.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AttachmentRepository } from '../../data/repositories/attachment.repository.js';
+import { OutboxRepository } from '../../data/repositories/outbox.repository.js';
 import { PracticeRepository } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { defaultStorageService, type StorageService } from '../../data/storage/storage.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { authorize, scopedUserId, type Principal } from '../authz/authorization.service.js';
-import { AttachmentRejectedError } from '../errors/attachment.errors.js';
+import { AttachmentRejectedError, DuplicateAttachmentError } from '../errors/attachment.errors.js';
+import { attachmentUsage, recordUsage } from '../usage/usage.service.js';
 import { PracticeWorkflow } from '../workflow/practice.workflow.js';
 
+import { ATTACHMENT_OCR, type AttachmentOcrPayload } from './attachment-ocr.js';
+import {
+  practiceChecklist,
+  requireExpectedKey,
+  type ChecklistState,
+} from './document-checklist.js';
+import {
+  fulfilWithAttachment,
+  listDocumentRequests,
+  requireOpenRequest,
+  type FulfilledRequest,
+} from './document-request.js';
+import { isPersonPractice } from './practice-holder.js';
 import { moduleOfTenant, resolvePracticeCreation, visibleSubState } from './practice-module.js';
 import { escapeCsvField, exportFilterRange, exportFilterTitle } from './practice.export.js';
 import { readPracticePayload } from './practice.payload.js';
@@ -32,6 +49,7 @@ export type PracticeActor = Principal;
 const COMMAND_PERMISSIONS: Record<PracticeCommand['type'], Permission> = {
   CREATE_PRACTICE: 'practice.create',
   LIST_PRACTICES: 'practice.read',
+  LIST_PRACTICE_DOCUMENTS: 'attachment.read',
   GET_PRACTICE_STATUS: 'practice.read',
   DELETE_PRACTICE: 'practice.delete',
   EXPORT_PRACTICES: 'practice.export',
@@ -63,6 +81,8 @@ export type PracticeView = {
   updatedAt: Date;
   /** A4: who follows the practice, if anyone. */
   assignedTo: string | null;
+  /** AGX-03: the person the practice was opened for; null = its creator. */
+  holderUserId: string | null;
   /** A05: the sub-state of the module inside the common state, if any. */
   subState: string | null;
   /** A04: the values of the fields the module declares for the kind. */
@@ -71,7 +91,10 @@ export type PracticeView = {
 
 export type PracticePaginationParams = {
   tenantId: string;
+  /** The person's practices: created by them or opened for them (AGX-03). */
   userId?: string;
+  /** B2: the person's practices or those assigned to them. */
+  reachableBy?: string;
   assignedTo?: string;
   status?: PracticeState;
   search?: string;
@@ -95,6 +118,8 @@ const EXPORT_BATCH_SIZE = 1000;
 export type PracticeCommandResult =
   | { type: 'created'; practice: PracticeView }
   | { type: 'list'; practices: PracticeView[] }
+  /** AGX-12b: what each practice expects, the files sent and the documents asked for. */
+  | { type: 'documents'; practices: PracticeDocuments[]; more: number }
   | { type: 'status'; practice: PracticeView }
   | { type: 'deleted'; practice: PracticeView }
   | { type: 'export'; result: PracticeExportResult; send: boolean }
@@ -116,7 +141,41 @@ export type PracticeCommandResult =
   | { type: 'confirm_transition'; practice: PracticeView; nextState: PracticeState }
   /** S05: a deletion is asked before it is done; «sì» confirms it. */
   | { type: 'confirm_delete'; practice: PracticeView }
+  /** AGX-03: the practice was opened for the person by someone else, who alone deletes it. */
+  | { type: 'delete_denied'; practice: PracticeView }
   | { type: 'transitioned'; practice: PracticeView };
+
+/** The state of a file for the person: confirmed, being read, to check, unreadable, refused. */
+export type ChatFileState =
+  'confirmed' | 'read' | 'to_check' | 'reading' | 'unreadable' | 'rejected';
+
+export type PracticeDocuments = {
+  name: string;
+  status: PracticeState;
+  expected: Array<{ label: string; required: boolean; state: ChecklistState }>;
+  /** Files that are not an expected document (most recent first, at most 5). */
+  files: Array<{ fileName: string; state: ChatFileState }>;
+  otherFiles: number;
+  requests: Array<{ label: string | null; message: string; dueDate: string | null }>;
+};
+
+/** Practices shown at once by «documenti». */
+const CHAT_DOCUMENT_PRACTICES = 5;
+
+function chatFileState(a: {
+  ocrStatus: string;
+  ocrResult: unknown;
+  validatedAt: Date | null;
+  rejectedAt: Date | null;
+}): ChatFileState {
+  if (a.rejectedAt) return 'rejected';
+  if (a.validatedAt) return 'confirmed';
+  if (a.ocrStatus === 'FAILED') return 'unreadable';
+  if (a.ocrStatus === 'PENDING' || a.ocrStatus === 'PROCESSING') return 'reading';
+  return (a.ocrResult as { reviewRequired?: unknown } | null)?.reviewRequired === true
+    ? 'to_check'
+    : 'read';
+}
 
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -148,6 +207,7 @@ function toView(dto: PracticeDTO): PracticeView {
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     assignedTo: dto.assignedTo ?? null,
+    holderUserId: dto.holderUserId ?? null,
     subState: visibleSubState(payload, dto.status),
     fields: payload.fields,
   };
@@ -169,6 +229,8 @@ export class PracticeApplicationService {
 
   private readonly maxAttachmentBytes: number;
 
+  private readonly retryFailedOcr: boolean;
+
   constructor(
     private readonly prisma: PrismaClient,
     options?: {
@@ -176,6 +238,11 @@ export class PracticeApplicationService {
       ocrService?: DocumentOcrService;
       attachmentRepository?: AttachmentRepository;
       maxAttachmentBytes?: number;
+      /**
+       * AGX-08: a failed read is retried in the background (default). Off, the file is marked
+       * FAILED at once, as before, for processes that run no outbox dispatcher.
+       */
+      retryFailedOcr?: boolean;
     },
   ) {
     this.workflow = new PracticeWorkflow(prisma);
@@ -184,6 +251,7 @@ export class PracticeApplicationService {
     this.storageService = options?.storageService ?? defaultStorageService;
     this.ocrService = options?.ocrService ?? defaultDocumentOcrService;
     this.maxAttachmentBytes = options?.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
+    this.retryFailedOcr = options?.retryFailedOcr ?? true;
   }
 
   getMaxAttachmentBytes(): number {
@@ -199,6 +267,18 @@ export class PracticeApplicationService {
     /** A04: the fields the module declares for the kind. */
     fields?: Record<string, unknown>;
     metadata?: Record<string, unknown>;
+    /**
+     * AGX-03: the person the practice is opened for. The caller checks that the actor may choose
+     * it (`practice.assign`); here it must be an active member of the organization.
+     */
+    holderUserId?: string | null;
+    /**
+     * AGX-04: who acts, when not the owner (a person working through a delegation): recorded in
+     * the audit as the creator; the practice still belongs to `userId`.
+     */
+    actorUserId?: string;
+    /** AGX-07: the organization that acts through a delegation, for the usage events. */
+    actorOrgId?: string;
   }): Promise<PracticeView> {
     const name = input.name.trim();
     if (!name) throw new NotFoundError('Practice name is required');
@@ -218,6 +298,9 @@ export class PracticeApplicationService {
       name,
       kind,
       metadata: fields ? { ...metadata, fields } : metadata,
+      holderUserId: input.holderUserId,
+      actorUserId: input.actorUserId,
+      actorOrgId: input.actorOrgId,
     });
     return toView(dto);
   }
@@ -227,12 +310,15 @@ export class PracticeApplicationService {
     userId: string;
     practiceId: string;
     nextState: PracticeState;
+    /** AGX-07: the organization that acts through a delegation, for the usage events. */
+    actorOrgId?: string;
   }): Promise<PracticeView> {
     const dto = await this.workflow.transitionPractice({
       tenantId: input.tenantId,
       userId: input.userId,
       practiceId: input.practiceId,
       nextState: input.nextState,
+      actorOrgId: input.actorOrgId,
     });
     return toView(dto);
   }
@@ -262,6 +348,7 @@ export class PracticeApplicationService {
 
     const result = await this.repository.findPracticesPaginated(input.tenantId, {
       userId: input.userId,
+      reachableBy: input.reachableBy,
       assignedTo: input.assignedTo,
       status: input.status,
       search: input.search,
@@ -283,12 +370,22 @@ export class PracticeApplicationService {
   async getPractice(input: {
     tenantId: string;
     practiceId: string;
+    /** Reachable when it is this person's: created by them or opened for them (AGX-03). */
     userId?: string;
+    /** B2: also reachable when assigned to this person. */
+    reachableBy?: string;
   }): Promise<PracticeView> {
     requireDatabase();
 
     const dto = await this.repository.getPracticeById(input.tenantId, input.practiceId);
-    if (input.userId && dto.userId !== input.userId) {
+    if (input.userId && !isPersonPractice(dto, input.userId)) {
+      throw new NotFoundError('Practice not found');
+    }
+    if (
+      input.reachableBy &&
+      !isPersonPractice(dto, input.reachableBy) &&
+      dto.assignedTo !== input.reachableBy
+    ) {
       throw new NotFoundError('Practice not found');
     }
     return toView(dto);
@@ -306,6 +403,7 @@ export class PracticeApplicationService {
       const audit = new AuditService(tx);
 
       const dto = await repository.getPracticeById(input.tenantId, input.practiceId);
+      // Only its creator deletes a practice: not the person it was opened for (AGX-03).
       if (input.userId && dto.userId !== input.userId) {
         throw new NotFoundError('Practice not found');
       }
@@ -330,20 +428,58 @@ export class PracticeApplicationService {
     mimeType: string;
     content: Buffer | Uint8Array;
     hint?: string;
+    /**
+     * AGX-01: the person confirmed sending a file they already sent; without it the same content
+     * in one of their practices (or in this one) is refused with DuplicateAttachmentError.
+     */
+    allowDuplicate?: boolean;
+    /** Where the file came from, for the audit (`dashboard`, `telegram`, `whatsapp`). */
+    channel?: string;
+    /**
+     * AGX-04: sent through a delegation already checked by the caller: any practice of the tenant,
+     * not only the uploader's own (they are not a member of it).
+     */
+    delegated?: boolean;
+    /** AGX-05: the expected document of the practice's type this file is. */
+    expectedKey?: string | null;
+    /** AGX-06: the open request this file answers; otherwise matched when unambiguous. */
+    requestId?: string;
+    /** AGX-07: the organization that sends it through a delegation, for the usage events. */
+    actorOrgId?: string;
   }): Promise<{
     attachment: PracticeAttachmentDTO;
     practice: PracticeView;
     ocrResult?: DocumentOcrResult;
+    /** AGX-06: the request this file fulfilled, if any. */
+    fulfilledRequest?: FulfilledRequest | null;
   }> {
     requireDatabase();
 
     const practice = await this.getPractice({
       tenantId: input.tenantId,
       practiceId: input.practiceId,
-      userId: input.userId,
+      ...(input.delegated ? {} : { userId: input.userId }),
     });
 
+    if (input.expectedKey) requireExpectedKey(practice.payload, input.expectedKey);
+    if (input.requestId) {
+      await requireOpenRequest(this.prisma, {
+        tenantId: input.tenantId,
+        practiceId: input.practiceId,
+        requestId: input.requestId,
+      });
+    }
     const mimeType = this.validateAttachment(input.content);
+    const contentHash = createHash('sha256').update(input.content).digest('hex');
+    const duplicateOf = await this.findDuplicate(
+      input.tenantId,
+      input.userId,
+      input.practiceId,
+      contentHash,
+    );
+    if (duplicateOf && !input.allowDuplicate) {
+      throw new DuplicateAttachmentError(duplicateOf);
+    }
 
     const storageResult = await this.storageService.save(
       input.tenantId,
@@ -352,7 +488,8 @@ export class PracticeApplicationService {
       mimeType,
     );
 
-    let ocrStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED';
+    // AGX-08: a failed read waits for the background one (PENDING) instead of failing at once.
+    let ocrStatus: 'COMPLETED' | 'FAILED' | 'PENDING' = 'COMPLETED';
     let ocrResult: DocumentOcrResult | undefined;
     try {
       ocrResult = await this.ocrService.processDocument(
@@ -362,7 +499,7 @@ export class PracticeApplicationService {
         input.hint,
       );
     } catch {
-      ocrStatus = 'FAILED';
+      ocrStatus = this.retryFailedOcr ? 'PENDING' : 'FAILED';
     }
 
     let attachment: PracticeAttachmentDTO;
@@ -375,9 +512,65 @@ export class PracticeApplicationService {
         storagePath: storageResult.storagePath,
         ocrStatus,
         ocrResult,
+        contentHash,
+        expectedKey: input.expectedKey ?? null,
       });
     } catch (err: unknown) {
       // Without its record the stored file could never be listed or deleted: remove it.
+      await this.storageService
+        .delete(input.tenantId, storageResult.storagePath)
+        .catch(() => undefined);
+      throw err;
+    }
+
+    // AGX-01: every file received leaves a trace, without its name or content. AGX-07: with its
+    // usage (the document, and the pages read with OCR), in the same transaction.
+    const usage = attachmentUsage(attachment.id, ocrResult);
+    try {
+      await withTransaction(this.prisma, async (tx) => {
+        await new AuditService(tx).logEvent({
+          tenantId: input.tenantId,
+          userId: input.userId,
+          eventType: 'ATTACHMENT_ADDED',
+          payload: {
+            practiceId: input.practiceId,
+            attachmentId: attachment.id,
+            ocrStatus,
+            documentType: ocrResult?.documentType ?? null,
+            channel: input.channel ?? null,
+            duplicateOf: duplicateOf?.attachmentId ?? null,
+          },
+        });
+        await recordUsage(
+          tx,
+          usage.map((u) => ({
+            ...u,
+            tenantId: input.tenantId,
+            actorOrgId: input.actorOrgId,
+            userId: input.userId,
+            practiceId: input.practiceId,
+          })),
+        );
+        // AGX-08: the read is tried again in the background, with the file's own record.
+        if (ocrStatus === 'PENDING') {
+          await new OutboxRepository(tx).createMessage({
+            tenantId: input.tenantId,
+            eventType: ATTACHMENT_OCR,
+            payload: {
+              attachmentId: attachment.id,
+              practiceId: input.practiceId,
+              userId: input.userId,
+              channel: input.channel ?? null,
+              actorOrgId: input.actorOrgId ?? null,
+            } satisfies AttachmentOcrPayload,
+          });
+        }
+      });
+    } catch (err: unknown) {
+      // A file without its trace is not kept: the person sends it again.
+      await this.attachmentRepository
+        .deleteAttachment(input.tenantId, attachment.id)
+        .catch(() => undefined);
       await this.storageService
         .delete(input.tenantId, storageResult.storagePath)
         .catch(() => undefined);
@@ -420,14 +613,64 @@ export class PracticeApplicationService {
       updatedPractice = toView(updatedDto);
     }
 
+    // AGX-06: the file answers an open request of the practice. The file is kept even if the
+    // request changed meanwhile (cancelled, answered by another file).
+    let fulfilledRequest: FulfilledRequest | null = null;
+    try {
+      fulfilledRequest = await fulfilWithAttachment(this.prisma, {
+        tenantId: input.tenantId,
+        practiceId: input.practiceId,
+        attachmentId: attachment.id,
+        expectedKey: attachment.expectedKey,
+        actorUserId: input.userId,
+        requestId: input.requestId,
+      });
+    } catch {
+      fulfilledRequest = null;
+    }
+
     return {
       attachment,
       practice: updatedPractice,
       ocrResult,
+      fulfilledRequest,
     };
   }
 
   /** Enforces size and format limits; returns the MIME type detected from the content. */
+  /**
+   * AGX-01: the same content already attached to this practice or to one of the person's own
+   * practices. Practices of others are never looked at, so the answer reveals nothing about them.
+   */
+  private async findDuplicate(
+    tenantId: string,
+    userId: string,
+    practiceId: string,
+    contentHash: string,
+  ): Promise<DuplicateAttachmentError['duplicate'] | null> {
+    const found = await this.prisma.practiceAttachment.findFirst({
+      where: {
+        tenantId,
+        contentHash,
+        OR: [{ practiceId }, { practice: { OR: [{ userId }, { holderUserId: userId }] } }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        createdAt: true,
+        practiceId: true,
+        practice: { select: { payload: true } },
+      },
+    });
+    if (!found) return null;
+    return {
+      attachmentId: found.id,
+      practiceId: found.practiceId,
+      practiceName: readPracticePayload(found.practice.payload).name ?? 'Pratica senza nome',
+      uploadedAt: found.createdAt,
+    };
+  }
+
   private validateAttachment(content: Buffer | Uint8Array): string {
     if (content.length === 0) {
       throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'The attached file is empty');
@@ -453,6 +696,7 @@ export class PracticeApplicationService {
     tenantId: string;
     practiceId: string;
     userId?: string;
+    reachableBy?: string;
   }): Promise<PracticeAttachmentDTO[]> {
     requireDatabase();
 
@@ -460,6 +704,7 @@ export class PracticeApplicationService {
       tenantId: input.tenantId,
       practiceId: input.practiceId,
       userId: input.userId,
+      reachableBy: input.reachableBy,
     });
 
     return this.attachmentRepository.listAttachmentsByPractice(input.tenantId, input.practiceId);
@@ -474,12 +719,14 @@ export class PracticeApplicationService {
     practiceId: string;
     attachmentId: string;
     userId?: string;
+    reachableBy?: string;
   }): Promise<{ fileName: string; mimeType: string; content: Buffer }> {
     requireDatabase();
     await this.getPractice({
       tenantId: input.tenantId,
       practiceId: input.practiceId,
       userId: input.userId,
+      reachableBy: input.reachableBy,
     });
     const attachment = await this.attachmentRepository.getAttachmentById(
       input.tenantId,
@@ -577,6 +824,31 @@ export class PracticeApplicationService {
           }),
         };
 
+      case 'LIST_PRACTICE_DOCUMENTS': {
+        const named = command.payload.name;
+        if (named) {
+          const practice = await this.findPracticeByName(actor, named);
+          if (!practice) return { type: 'not_found', name: named };
+          return {
+            type: 'documents',
+            practices: [await this.practiceDocuments(actor.tenantId, practice)],
+            more: 0,
+          };
+        }
+        const open = (
+          await this.listPractices({ tenantId: actor.tenantId, userId: actor.userId })
+        ).filter((p) => p.status !== 'COMPLETED' && p.status !== 'FAILED');
+        return {
+          type: 'documents',
+          practices: await Promise.all(
+            open
+              .slice(0, CHAT_DOCUMENT_PRACTICES)
+              .map((p) => this.practiceDocuments(actor.tenantId, p)),
+          ),
+          more: Math.max(0, open.length - CHAT_DOCUMENT_PRACTICES),
+        };
+      }
+
       case 'GET_PRACTICE_STATUS': {
         const practice = await this.findPracticeByName(actor, command.payload.name);
         return practice
@@ -599,7 +871,7 @@ export class PracticeApplicationService {
         });
         return {
           type: 'org_list',
-          practices: page.items.map((p) => ({ ...p, own: p.userId === actor.userId })),
+          practices: page.items.map((p) => ({ ...p, own: isPersonPractice(p, actor.userId) })),
           page: page.page,
           totalPages: page.totalPages,
           total: page.total,
@@ -613,7 +885,11 @@ export class PracticeApplicationService {
         if (found.length > 1) {
           return { type: 'ambiguous', name: command.payload.name, practices: found };
         }
-        return { type: 'org_status', practice: found[0], own: found[0].userId === actor.userId };
+        return {
+          type: 'org_status',
+          practice: found[0],
+          own: isPersonPractice(found[0], actor.userId),
+        };
       }
 
       case 'TRANSITION_ORG_PRACTICE': {
@@ -624,7 +900,7 @@ export class PracticeApplicationService {
           return { type: 'ambiguous', name: command.payload.name, practices: found };
         }
         const practice = found[0];
-        if (practice.userId !== actor.userId) {
+        if (!isPersonPractice(practice, actor.userId)) {
           return { type: 'confirm_transition', practice, nextState: command.payload.nextState };
         }
         return {
@@ -661,6 +937,8 @@ export class PracticeApplicationService {
         if (!practice) {
           return { type: 'not_found', name: command.payload.name };
         }
+        // AGX-03: a practice opened for the person by someone else is deleted only by its creator.
+        if (practice.userId !== actor.userId) return { type: 'delete_denied', practice };
 
         // S05: never deleted by the command itself: the person confirms first.
         return { type: 'confirm_delete', practice };
@@ -711,6 +989,45 @@ export class PracticeApplicationService {
       limit: ORG_NAME_LOOKUP_LIMIT,
     });
     return practices.filter((practice) => practice.name.toLowerCase() === needle);
+  }
+
+  /** AGX-12b: the documents of one practice the caller reaches, for the chat. */
+  private async practiceDocuments(
+    tenantId: string,
+    practice: PracticeView,
+  ): Promise<PracticeDocuments> {
+    const [checklist, attachments, requests] = await Promise.all([
+      practiceChecklist(this.prisma, { tenantId, practiceId: practice.id }),
+      this.prisma.practiceAttachment.findMany({
+        where: { tenantId, practiceId: practice.id, expectedKey: null },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          fileName: true,
+          ocrStatus: true,
+          ocrResult: true,
+          validatedAt: true,
+          rejectedAt: true,
+        },
+      }),
+      listDocumentRequests(this.prisma, { tenantId, practiceId: practice.id }),
+    ]);
+    return {
+      name: practice.name,
+      status: practice.status,
+      expected: checklist.items.map((i) => ({
+        label: i.label,
+        required: i.required,
+        state: i.state,
+      })),
+      files: attachments.slice(0, 5).map((a) => ({
+        fileName: a.fileName,
+        state: chatFileState(a),
+      })),
+      otherFiles: Math.max(0, attachments.length - 5),
+      requests: requests
+        .filter((r) => r.status === 'OPEN')
+        .map((r) => ({ label: r.expectedLabel, message: r.message, dueDate: r.dueDate })),
+    };
   }
 
   private async findPracticeByName(

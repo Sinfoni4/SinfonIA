@@ -21,6 +21,7 @@ const proxied = [
   '/network',
   '/memberships',
   '/grants',
+  '/roles',
   '/attachments',
   '/readyz',
 ];

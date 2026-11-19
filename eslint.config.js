@@ -68,6 +68,20 @@ export default [
     },
   },
   {
+    // The service worker of the installable dashboard runs in the browser's worker scope.
+    files: ['web/public/sw.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        Response: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', 'web/dist/**', 'web/node_modules/**'],
   },
 ];

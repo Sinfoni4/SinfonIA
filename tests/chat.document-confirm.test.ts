@@ -41,14 +41,13 @@ function setup(reviewRequired: boolean) {
     {
       name: 'telegram',
       identity: {
-        link: () => Promise.resolve(null),
         resolve: () =>
           Promise.resolve({ tenant, userId: 'u-1', role: 'MEMBER', customPermissions: null }),
       },
     },
   );
   const replies: string[] = [];
-  const send = (text: string, withFile = false) =>
+  const handle = (text: string, withFile: boolean) =>
     service.handle(
       {
         senderId: '1',
@@ -68,6 +67,11 @@ function setup(reviewRequired: boolean) {
         return Promise.resolve();
       },
     );
+  // A file is attached only after the person confirms the proposed practice (AGX-01).
+  const send = async (text: string, withFile = false) => {
+    await handle(text, withFile);
+    if (withFile) await handle('sì', false);
+  };
   return { send, replies, confirmDocument, handleMessage };
 }
 

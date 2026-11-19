@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 
 import { resolvePlatformPrincipal } from '../../core/authz/platform.js';
+import { parseUsageRates } from '../../core/usage/usage.service.js';
 import { runtimeState } from '../../runtime/runtime.state.js';
 
 import { createAuthHook, isPublicPath } from './auth/auth.hook.js';
@@ -38,9 +39,12 @@ import type { AppConfig } from '../../config/config.js';
 import type { PrincipalResolver } from '../../core/authz/authorization.service.js';
 import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
+import type { ChannelLinkService } from '../../core/identity/channel-link.service.js';
+import type { ChatInviteService } from '../../core/identity/chat-invite.service.js';
 import type { LoginService } from '../../core/identity/login.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
 import type { AppLogger } from '../../shared/logger.js';
+import type { AppChat } from '../conversation/app-chat.js';
 import type { PrismaClient } from '@prisma/client';
 
 declare module 'fastify' {
@@ -71,6 +75,19 @@ export type ServerDeps = {
   prisma?: PrismaClient;
   /** Email login and invitations (MF6); routes absent when not given. */
   login?: LoginService;
+  /**
+   * Email login is on (AUTH_EMAIL_LOGIN). `login` may exist without it, only for the Telegram
+   * Mini App: then no email routes, invitations or platform console. Default on.
+   */
+  emailLogin?: boolean;
+  /** Telegram Mini App: the bot token (tests); otherwise TELEGRAM_BOT_TOKEN. */
+  telegramBotToken?: string;
+  /** AGX-10: verified chat links, listed and revoked from the dashboard. */
+  channelLinks?: ChannelLinkService;
+  /** Personal Telegram links: invitations by link and one's own link. */
+  chatInvites?: ChatInviteService;
+  /** The assistant of the Telegram Mini App. */
+  appChat?: AppChat;
 };
 
 /** Access tokens issued by a login session last 10 minutes (§5, D7). */
@@ -188,7 +205,13 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(whatsappRoutes, deps.whatsappWebhook);
   }
   if (deps.prisma) {
-    void app.register(membersRoutes, { prisma: deps.prisma, login: deps.login });
+    void app.register(membersRoutes, {
+      prisma: deps.prisma,
+      // Invitations are sent by email: only with email login.
+      login: deps.emailLogin === false ? undefined : deps.login,
+      channelLinks: deps.channelLinks,
+      chatInvites: deps.chatInvites,
+    });
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
     void app.register(assistanceRoutes, { prisma: deps.prisma });
     void app.register(networkRoutes, { prisma: deps.prisma });
@@ -199,6 +222,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(organizationRoutes, {
       prisma: deps.prisma,
       complianceService: deps.complianceService,
+      ...(deps.appChat ? { appChat: deps.appChat } : {}),
     });
   }
   if (deps.login) {
@@ -214,9 +238,14 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
       issuePlatformToken: (grant) => authService.issuePlatform(grant),
       accessTokenTtlSeconds: SESSION_ACCESS_TOKEN_TTL_SECONDS,
       perMinute: config.RATE_LIMIT_AUTH_PER_MINUTE,
+      telegramBotToken: deps.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN?.trim(),
+      // Shown codes and a signed preview of the Mini App: development only (the config refuses
+      // AUTH_DEV_SHOW_CODE elsewhere).
+      devTelegramWebApp: config.AUTH_DEV_SHOW_CODE,
+      emailLogin: deps.emailLogin !== false,
     });
     // The platform console needs the login service (confirmation codes, first invitations).
-    if (deps.prisma) {
+    if (deps.prisma && deps.emailLogin !== false) {
       void app.register(platformRoutes, {
         prisma: deps.prisma,
         login: deps.login,
@@ -234,6 +263,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
           backupDir: config.BACKUP_DIR ? path.resolve(config.BACKUP_DIR) : null,
           databaseName: databaseNameOf(config.DATABASE_URL),
         },
+        usageRates: parseUsageRates(config.USAGE_RATES),
       });
     }
   }

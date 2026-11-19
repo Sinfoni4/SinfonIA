@@ -47,6 +47,26 @@ describe('custom roles in the catalog (B2)', () => {
     ).toEqual({ 'practice.read': 'own' });
   });
 
+  it('allows the assigned scope only on practice reads, within the base role', () => {
+    expect(customRoleProblems('OPERATOR', { 'practice.read': 'assigned' })).toEqual([]);
+    expect(customRoleProblems('OPERATOR', { 'attachment.read': 'assigned' })).toEqual([]);
+    expect(customRoleProblems('OPERATOR', { 'practice.transition': 'assigned' })).toEqual([
+      '«practice.transition» non può valere per le pratiche assegnate',
+    ]);
+    // A MEMBER reads only their own practices: assigned would be more.
+    expect(customRoleProblems('MEMBER', { 'practice.read': 'assigned' })).toEqual([
+      '«practice.read» vale solo per le proprie pratiche nel ruolo di base',
+    ]);
+    expect(parseCustomPermissions(['practice.transition:assigned'])).toEqual({});
+    const reader = {
+      tenantId: 't',
+      userId: 'u',
+      role: 'OPERATOR' as const,
+      customPermissions: { 'practice.read': 'assigned' as const },
+    };
+    expect(authorize(reader, 'practice.read').scope).toBe('assigned');
+  });
+
   it('takes away permissions and narrows scopes in authorize()', () => {
     const operator = {
       tenantId: 't',
@@ -314,5 +334,55 @@ describe.runIf(Boolean(DATABASE_URL))('custom roles with PostgreSQL (B2)', () =>
         where: { tenantId: orgId, eventType: 'MEMBER_CUSTOM_ROLE_CHANGED' },
       }),
     ).toBe(1);
+  });
+  it('lets a role see its own practices and those assigned to the person, nothing else', async () => {
+    const follower = (
+      await new UserRepository(prisma).createUser(orgId, {
+        email: `segue-${run}@b2.local`,
+        role: 'OPERATOR',
+      })
+    ).id;
+    const practices = new PracticeApplicationService(prisma);
+    const assigned = await practices.createPractice({
+      tenantId: orgId,
+      userId: admin,
+      name: `Assegnata ${run}`,
+    });
+    await prisma.practice.update({ where: { id: assigned.id }, data: { assignedTo: follower } });
+    const own = await practices.createPractice({
+      tenantId: orgId,
+      userId: follower,
+      name: `Sua ${run}`,
+    });
+    const created = await call('POST', '/roles', asAdmin(), {
+      name: 'Segue le pratiche',
+      baseRole: 'OPERATOR',
+      permissions: { 'practice.read': 'assigned', 'attachment.read': 'assigned' },
+    });
+    expect(created.statusCode).toBe(201);
+    const followRole = created.json<{ data: { id: string } }>().data.id;
+    expect(
+      (await call('POST', `/members/${follower}/custom-role`, asAdmin(), { roleId: followRole }))
+        .statusCode,
+    ).toBe(200);
+    const asFollower = () => authHeaders(orgId, follower, 'OPERATOR');
+
+    const list = await call('GET', '/practices?limit=100', asFollower());
+    const ids = list.json<{ data: { items: Array<{ id: string }> } }>().data.items.map((p) => p.id);
+    expect(ids.sort()).toEqual([assigned.id, own.id].sort());
+    expect((await call('GET', `/practices/${assigned.id}`, asFollower())).statusCode).toBe(200);
+    expect(
+      (await call('GET', `/practices/${assigned.id}/attachments`, asFollower())).statusCode,
+    ).toBe(200);
+    // Another practice of the organization: as if it did not exist.
+    expect((await call('GET', `/practices/${practiceOfAdmin}`, asFollower())).statusCode).toBe(404);
+    // Reading what one follows is not changing it.
+    expect(
+      (
+        await call('POST', `/practices/${assigned.id}/transition`, asFollower(), {
+          nextState: 'VALIDATED',
+        })
+      ).statusCode,
+    ).toBe(403);
   });
 });

@@ -6,6 +6,8 @@ export type PracticeCommand =
   | { type: 'GET_PRACTICE_STATUS'; payload: { name: string } }
   | { type: 'DELETE_PRACTICE'; payload: { name: string } }
   | { type: 'LIST_PRACTICES'; payload: Record<string, never> }
+  // AGX-12b: the documents of one's practices (all open ones, or the one named).
+  | { type: 'LIST_PRACTICE_DOCUMENTS'; payload: { name: string | null } }
   | {
       type: 'EXPORT_PRACTICES';
       payload: { filter: PracticeExportFilter; send: boolean };
@@ -23,6 +25,7 @@ export type PracticeCommand =
 /** States a practice can be moved to with a chat command. */
 export type ChatTransition = Extract<PracticeState, 'VALIDATED' | 'COMPLETED'>;
 
+const DOCUMENTS = /^(?:i\s+miei\s+)?documenti(?:\s+(?:della\s+)?(?:pratica\s+)?(.+?))?[.!?]?$/i;
 const ORG_LIST = /^(?:lista\s+)?pratiche\s+(?:dell['’]\s*)?azienda(?:\s+(\d{1,4}))?$/i;
 const ORG_TRANSITIONS = [
   ['valida pratica azienda ', 'VALIDATED'],
@@ -55,7 +58,7 @@ export function parsePracticeCommand(input: string): PracticeCommand | null {
 
   const createName = extractAfterPrefix(trimmed, 'crea pratica ');
   // "crea pratica per Mario Rossi" is natural language, not an exact command:
-  // let the AI flow create the canonical artist practice instead of a music one.
+  // let the AI flow extract the name.
   if (createName !== null && !/^(per|di|del|della|dei|degli|delle|da|con)\b/i.test(createName)) {
     return { type: 'CREATE_PRACTICE', payload: { name: createName } };
   }
@@ -72,6 +75,12 @@ export function parsePracticeCommand(input: string): PracticeCommand | null {
 
   if (trimmed.toLowerCase() === 'lista pratiche') {
     return { type: 'LIST_PRACTICES', payload: {} };
+  }
+
+  // AGX-12b: «documenti», «i miei documenti», «documenti <pratica>», «documenti pratica <pratica>».
+  const docs = DOCUMENTS.exec(trimmed);
+  if (docs) {
+    return { type: 'LIST_PRACTICE_DOCUMENTS', payload: { name: docs[1]?.trim() || null } };
   }
 
   const lower = trimmed.toLowerCase();

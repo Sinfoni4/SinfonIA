@@ -8,6 +8,8 @@ const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in Y
 export const ExtractionMetaSchema = z.object({
   source: z.enum(['plain_text', 'pdf_text', 'ocr_image', 'ocr_pdf']),
   pages: z.number().int().nonnegative(),
+  /** AGX-07: pages actually read with OCR (a long scanned PDF is read only up to a limit). */
+  ocrPages: z.number().int().nonnegative().optional(),
   /** Mean OCR confidence 0-100; null when no OCR was needed. */
   confidence: z.number().min(0).max(100).nullable(),
 });

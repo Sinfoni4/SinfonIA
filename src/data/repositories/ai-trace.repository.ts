@@ -1,4 +1,5 @@
 import { redactPIIForLogging } from '../../ai/security/pii-minimizer.js';
+import { recordUsage } from '../../core/usage/usage.service.js';
 import { DatabaseError } from '../errors/errors.js';
 import { requireTenantId } from '../guard/tenant.js';
 
@@ -39,24 +40,52 @@ export class AiTraceRepository implements AITraceStore {
   async save(trace: AITraceRecord): Promise<void> {
     requireTenantId(trace.tenantId);
     try {
-      await this.prisma.aiTrace.create({
-        data: {
-          tenantId: trace.tenantId,
-          userId: trace.userId ?? null,
-          requestId: trace.requestId,
-          model: trace.model,
-          provider: trace.provider,
-          outcome: trace.outcome,
-          action: trace.action ?? null,
-          latencyMs: Math.max(0, Math.round(trace.latencyMs)),
-          promptTokens: trace.tokens?.promptTokens ?? null,
-          completionTokens: trace.tokens?.completionTokens ?? null,
-          totalTokens: trace.tokens?.totalTokens ?? null,
-          // Error messages may quote user input: redacted and truncated before storage.
-          error: trace.error ? redactPIIForLogging(trace.error).slice(0, MAX_ERROR_LENGTH) : null,
-          createdAt: new Date(trace.timestamp),
-        },
-      });
+      // AGX-07: each call to the AI, and its tokens when the provider reports them, are usage of
+      // the organization, recorded together with the trace.
+      const save = async (db: PrismaLike) => {
+        const row = await db.aiTrace.create({
+          select: { id: true },
+          data: {
+            tenantId: trace.tenantId,
+            userId: trace.userId ?? null,
+            requestId: trace.requestId,
+            model: trace.model,
+            provider: trace.provider,
+            outcome: trace.outcome,
+            action: trace.action ?? null,
+            latencyMs: Math.max(0, Math.round(trace.latencyMs)),
+            promptTokens: trace.tokens?.promptTokens ?? null,
+            completionTokens: trace.tokens?.completionTokens ?? null,
+            totalTokens: trace.tokens?.totalTokens ?? null,
+            // Error messages may quote user input: redacted and truncated before storage.
+            error: trace.error ? redactPIIForLogging(trace.error).slice(0, MAX_ERROR_LENGTH) : null,
+            createdAt: new Date(trace.timestamp),
+          },
+        });
+        const occurredAt = new Date(trace.timestamp);
+        await recordUsage(db, [
+          {
+            key: `ai.call:${row.id}`,
+            tenantId: trace.tenantId,
+            kind: 'AI_CALL',
+            userId: trace.userId ?? null,
+            occurredAt,
+          },
+          {
+            key: `ai.tokens:${row.id}`,
+            tenantId: trace.tenantId,
+            kind: 'AI_TOKENS',
+            quantity: trace.tokens?.totalTokens ?? 0,
+            userId: trace.userId ?? null,
+            occurredAt,
+          },
+        ]);
+      };
+      if ('$transaction' in this.prisma) {
+        await this.prisma.$transaction(async (tx) => save(tx));
+      } else {
+        await save(this.prisma);
+      }
     } catch (err: unknown) {
       throw new DatabaseError('Failed to save AI trace', err);
     }

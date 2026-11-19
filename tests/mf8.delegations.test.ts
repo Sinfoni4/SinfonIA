@@ -57,6 +57,15 @@ describe('D3 durations', () => {
       /12 mesi/,
     );
     expect(() => checkDelegation(['READ', 'EXPORT'], at(120), now)).toThrow(/3 mesi/);
+    // Just after midnight in Italy (still the day before in UTC) 12 months from the Italian
+    // today are allowed, as the dashboard proposes them.
+    const night = new Date('2026-11-05T23:30:00Z'); // 00:30 of 6 November in Italy
+    expect(checkDelegation(['READ'], new Date('2027-11-06T23:59:59+01:00'), night)).toEqual([
+      'READ',
+    ]);
+    expect(() => checkDelegation(['READ'], new Date('2027-11-07T23:59:59+01:00'), night)).toThrow(
+      /12 mesi/,
+    );
     expect(() => checkDelegation(['UPDATE'], at(30), now)).toThrow(/lettura/);
     expect(() => checkDelegation(['READ', 'DELETE'], at(30), now)).toThrow(
       /non ancora disponibili/,

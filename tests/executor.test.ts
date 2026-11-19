@@ -21,6 +21,7 @@ function makePracticeView(): PracticeView {
     createdAt: new Date(),
     updatedAt: new Date(),
     assignedTo: null,
+    holderUserId: null,
     subState: null,
     fields: {},
   };

@@ -1,16 +1,22 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { Layout } from './components/Layout';
+import { MiniApp } from './miniapp/MiniApp';
 import { ActivityPage, AssistantUsagePage } from './pages/ActivityPage';
 import { AssistancePage } from './pages/AssistancePage';
 import { BoardPage } from './pages/BoardPage';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
-import { DelegatedPracticesPage, DelegationsPage } from './pages/DelegationPages';
+import {
+  DelegatedPracticeDetailPage,
+  DelegatedPracticesPage,
+  DelegationsPage,
+} from './pages/DelegationPages';
 import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
 import { InvitationPage } from './pages/InvitationPage';
 import { LoginPage } from './pages/LoginPage';
+import { MemberCardPage } from './pages/MemberCardPage';
 import { MembershipsPage, NetworkMembersPage, NetworkStatsPage } from './pages/NetworkPages';
 import { NewPracticePage } from './pages/NewPracticePage';
 import { PeoplePage } from './pages/PeoplePage';
@@ -18,14 +24,19 @@ import { PlatformApp } from './pages/PlatformPages';
 import { PracticeDetailPage } from './pages/PracticeDetailPage';
 import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { RequestsPage } from './pages/RequestsPage';
 import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { OrganizationUsagePage } from './pages/UsagePages';
 import { useSession } from './session/session';
 
 /** The pages follow the session: login, choice of the organization, then the dashboard. */
 export function App() {
   const { state } = useSession();
   const { pathname } = useLocation();
+
+  // Telegram Mini App: its own screens and its own login (the data Telegram signs).
+  if (pathname === '/tg' || pathname.startsWith('/tg/')) return <MiniApp />;
 
   if (state.status === 'loading') {
     return (
@@ -54,15 +65,22 @@ export function App() {
         <Route path="adesioni" element={<MembershipsPage me={me} />} />
         <Route path="deleghe" element={<DelegationsPage me={me} />} />
         <Route path="deleghe/:grantId" element={<DelegatedPracticesPage />} />
-        <Route path="pratiche/nuova" element={<NewPracticePage />} />
+        <Route
+          path="deleghe/:grantId/pratiche/:practiceId"
+          element={<DelegatedPracticeDetailPage />}
+        />
+        <Route path="pratiche/nuova" element={<NewPracticePage me={me} />} />
         <Route path="pratiche/:id" element={<PracticeDetailPage me={me} />} />
         <Route path="scadenze" element={<DeadlinesPage me={me} />} />
         <Route path="verifica" element={<ReviewPage me={me} />} />
+        <Route path="richieste" element={<RequestsPage me={me} />} />
         <Route path="assistenza" element={<AssistancePage me={me} />} />
         <Route path="export" element={<ExportPage me={me} />} />
         <Route path="persone" element={<PeoplePage me={me} />} />
+        <Route path="persone/:userId" element={<MemberCardPage me={me} />} />
         <Route path="attivita" element={<ActivityPage me={me} />} />
         <Route path="attivita/assistente" element={<AssistantUsagePage me={me} />} />
+        <Route path="attivita/consumi" element={<OrganizationUsagePage me={me} />} />
         <Route path="impostazioni" element={<SettingsPage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

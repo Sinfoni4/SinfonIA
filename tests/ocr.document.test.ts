@@ -214,7 +214,14 @@ describe('Phase 3B: Document AI, OCR & Multimodal Attachments', () => {
             return Promise.resolve({ count: 1 });
           }),
         },
+        // AGX-01: no earlier copy of the file, and the upload is recorded in the audit.
+        auditLog: { create: vi.fn().mockResolvedValue({}) },
+        membership: { findFirst: vi.fn().mockResolvedValue({ id: 'm-1' }) },
+        // AGX-07: the usage of the file, written with its audit in one transaction.
+        usageEvent: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+        $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(mockPrisma),
         practiceAttachment: {
+          findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockImplementation((args: { data: Record<string, unknown> }) =>
             Promise.resolve({
               id: 'att-1234',
@@ -320,6 +327,7 @@ describe('Phase 3B: Document AI, OCR & Multimodal Attachments', () => {
           }),
         },
         practiceAttachment: {
+          findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockRejectedValue(new Error('db down')),
         },
       } as unknown as PrismaClient;

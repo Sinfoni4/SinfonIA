@@ -1,4 +1,9 @@
-import type { PracticeCommandResult } from '../../core/practice/practice.application.service.js';
+import type { ChecklistState } from '../../core/practice/document-checklist.js';
+import type {
+  ChatFileState,
+  PracticeCommandResult,
+  PracticeDocuments,
+} from '../../core/practice/practice.application.service.js';
 import type { PracticeState } from '../../core/types/workflow.types.js';
 
 /** The verb of a transition, as in «vuoi davvero validarla?». */
@@ -17,6 +22,53 @@ function shortDate(date: Date): string {
   return date.toISOString().slice(0, 10).split('-').reverse().join('/');
 }
 
+const EXPECTED_STATE: Record<ChecklistState, string> = {
+  valid: '✅ {label} — confermato',
+  to_verify: '🕓 {label} — ricevuto, da controllare',
+  rejected: '❌ {label} — rifiutato, va rimandato',
+  missing: '⬜ {label} — manca',
+};
+
+const FILE_STATE: Record<ChatFileState, string> = {
+  confirmed: '✅ confermato',
+  read: '📄 letto',
+  to_check: '🕓 da controllare',
+  reading: '⏳ in lettura',
+  unreadable: '⚠️ non leggibile',
+  rejected: '❌ rifiutato',
+};
+
+function isoToItalian(date: string): string {
+  return date.split('-').reverse().join('/');
+}
+
+/** AGX-12b: one practice's documents, as lines for the chat. */
+export function formatPracticeDocuments(p: PracticeDocuments): string {
+  const lines = [`📁 ${p.name}`];
+  const asked = new Map(
+    p.requests.filter((r) => r.label).map((r) => [r.label as string, r.dueDate]),
+  );
+  for (const item of p.expected) {
+    let line = EXPECTED_STATE[item.state].replace('{label}', item.label);
+    if (item.state === 'missing' && !item.required) line += ' (facoltativo)';
+    const due = asked.get(item.label);
+    if (item.state !== 'valid' && asked.has(item.label)) {
+      line += due ? ` · richiesto entro il ${isoToItalian(due)}` : ' · richiesto';
+    }
+    lines.push(line);
+  }
+  for (const r of p.requests.filter(
+    (x) => !x.label || !p.expected.some((e) => e.label === x.label),
+  )) {
+    const due = r.dueDate ? ` (entro il ${isoToItalian(r.dueDate)})` : '';
+    lines.push(`📨 Richiesto: ${r.label ?? r.message}${due}`);
+  }
+  for (const f of p.files) lines.push(`📎 ${f.fileName} — ${FILE_STATE[f.state]}`);
+  if (p.otherFiles > 0) lines.push(`… e altri ${p.otherFiles} file`);
+  if (lines.length === 1) lines.push('Nessun documento previsto né ricevuto.');
+  return lines.join('\n');
+}
+
 export function formatPracticeCommandResult(result: PracticeCommandResult): string {
   switch (result.type) {
     case 'created':
@@ -31,6 +83,19 @@ export function formatPracticeCommandResult(result: PracticeCommandResult): stri
       return `📋 Pratiche:\n${list}`;
     }
 
+    case 'documents': {
+      if (result.practices.length === 0) {
+        return '📁 Non hai pratiche aperte con documenti.';
+      }
+      const more =
+        result.more > 0
+          ? `\n\nAltre ${result.more} pratiche: scrivi «documenti» seguito dal nome della pratica.`
+          : '';
+      const tail =
+        '\n\nPer mandare un documento allegalo qui con il nome della pratica nella didascalia.';
+      return result.practices.map(formatPracticeDocuments).join('\n\n') + more + tail;
+    }
+
     case 'status':
       return `📋 Stato pratica ${result.practice.name}: ${result.practice.status}`;
 
@@ -39,6 +104,12 @@ export function formatPracticeCommandResult(result: PracticeCommandResult): stri
         `🗑️ Vuoi davvero eliminare la pratica ${result.practice.name}? ` +
         "L'eliminazione non si può annullare. Rispondi «sì» per confermare, qualsiasi altra " +
         'risposta annulla.'
+      );
+
+    case 'delete_denied':
+      return (
+        `🔒 La pratica ${result.practice.name} è stata aperta per te: può eliminarla solo chi ` +
+        "l'ha aperta. Se serve, scrivi «operatore»."
       );
 
     case 'deleted':

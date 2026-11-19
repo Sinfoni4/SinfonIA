@@ -3,12 +3,14 @@ import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { REMINDER_THRESHOLDS } from '../compliance/compliance.dates.js';
 
+import { changeMark, normalizeTaxCode, normalizeVatNumber } from './company-identifiers.js';
+
 import type { SchedulerFrequency } from '../tenant/tenant.store.js';
 import type { OrganizationType, PrismaClient } from '@prisma/client';
 
 /**
  * Settings an administrator manages from the dashboard (P12, docs/PROGETTO_FRONTEND_V2.md §3):
- * the name and the scheduled export of the organization. The type is shown but changed only by
+ * the name, the profile, the identifiers (AGX-02) and the scheduled export of the organization. The type is shown but changed only by
  * the platform; deadline reminders are always on, with fixed thresholds.
  */
 
@@ -21,6 +23,9 @@ export type OrganizationSettings = {
   /** MF9: what a network sees of its members, with the name (I1). */
   municipality: string | null;
   sector: string | null;
+  /** AGX-02: codice fiscale / CUAA and partita IVA, never shown to networks. */
+  taxCode: string | null;
+  vatNumber: string | null;
   scheduledExport: { enabled: boolean; frequency: SchedulerFrequency };
   reminderDays: number[];
 };
@@ -29,6 +34,8 @@ export type OrganizationSettingsChange = {
   name?: string;
   municipality?: string | null;
   sector?: string | null;
+  taxCode?: string | null;
+  vatNumber?: string | null;
   scheduledExport?: { enabled: boolean; frequency?: SchedulerFrequency };
 };
 
@@ -59,6 +66,8 @@ export async function getOrganizationSettings(
       type: true,
       municipality: true,
       sector: true,
+      taxCode: true,
+      vatNumber: true,
       schedulerEnabled: true,
       schedulerFrequency: true,
     },
@@ -70,6 +79,8 @@ export async function getOrganizationSettings(
     type: row.type,
     municipality: row.municipality,
     sector: row.sector,
+    taxCode: row.taxCode,
+    vatNumber: row.vatNumber,
     scheduledExport: {
       enabled: row.schedulerEnabled,
       frequency: frequencyOf(row.schedulerFrequency),
@@ -99,6 +110,8 @@ export async function updateOrganizationSettings(
   };
   const municipality = profile(change.municipality, 'Comune');
   const sector = profile(change.sector, 'Settore');
+  const taxCode = normalizeTaxCode(change.taxCode);
+  const vatNumber = normalizeVatNumber(change.vatNumber);
   await withTransaction(prisma, async (tx) => {
     const current = await tx.tenant.findUnique({
       where: { id: orgId },
@@ -106,6 +119,8 @@ export async function updateOrganizationSettings(
         name: true,
         municipality: true,
         sector: true,
+        taxCode: true,
+        vatNumber: true,
         schedulerEnabled: true,
         schedulerFrequency: true,
       },
@@ -115,6 +130,8 @@ export async function updateOrganizationSettings(
       name?: string;
       municipality?: string | null;
       sector?: string | null;
+      taxCode?: string | null;
+      vatNumber?: string | null;
       schedulerEnabled?: boolean;
       schedulerFrequency?: string;
     } = {};
@@ -130,6 +147,15 @@ export async function updateOrganizationSettings(
     if (sector !== undefined && sector !== current.sector) {
       data.sector = sector;
       changed.sector = sector;
+    }
+    // The identifiers: the audit says set or removed, never the value (personal data).
+    if (taxCode !== undefined && taxCode !== current.taxCode) {
+      data.taxCode = taxCode;
+      changed.taxCode = changeMark(taxCode);
+    }
+    if (vatNumber !== undefined && vatNumber !== current.vatNumber) {
+      data.vatNumber = vatNumber;
+      changed.vatNumber = changeMark(vatNumber);
     }
     const exportChange = change.scheduledExport;
     if (exportChange) {

@@ -15,6 +15,8 @@ export type Practice = {
   updatedAt: string;
   /** A4: the administrator or operator who follows the practice, if anyone. */
   assignedTo: string | null;
+  /** AGX-03: the person the practice was opened for; null = its creator. */
+  holderUserId?: string | null;
   /** A05: the step of the module inside the common state, if any. */
   subState?: string | null;
   /** A04: the values of the fields of the module (missing on an older backend). */
@@ -44,8 +46,46 @@ export type Attachment = {
   /** A1: the data confirmed or corrected by a person; the official ones when present. */
   validatedData: ValidatedData | null;
   validatedAt: string | null;
+  /** AGX-05: the expected document this file is, and its rejection (missing on older APIs). */
+  expectedKey?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
   createdAt: string;
 };
+
+/** AGX-05: the state of an expected document, computed by the backend. */
+export type ChecklistState = 'missing' | 'to_verify' | 'valid' | 'rejected';
+
+export type DocumentChecklist = {
+  items: Array<{
+    key: string;
+    label: string;
+    required: boolean;
+    state: ChecklistState;
+    attachment: { id: string; fileName: string } | null;
+    rejectionReason: string | null;
+  }>;
+  complete: boolean;
+  counts: Record<ChecklistState, number>;
+};
+
+/** AGX-06: a request for a document on a practice, answered with a file. */
+export type DocumentRequest = {
+  id: string;
+  practiceId: string;
+  expectedKey: string | null;
+  expectedLabel: string | null;
+  message: string;
+  dueDate: string | null;
+  status: 'OPEN' | 'FULFILLED' | 'CANCELLED';
+  createdAt: string;
+  fulfilledAt: string | null;
+  fulfilledAttachmentId: string | null;
+  cancelledAt: string | null;
+};
+
+/** A document the practice's type expects (from the module). */
+export type ExpectedDocument = { key: string; label: string; required: boolean };
 
 export type ValidatedData = {
   documentType: string;
@@ -77,6 +117,27 @@ export function practicesQuery(filters: PracticeFilters, userId: string): string
 
 /** A4: who can follow a practice. */
 export type Assignee = { userId: string; email: string | null; role: 'ADMIN' | 'OPERATOR' };
+
+/** AGX-03: a person a practice can be opened for (an active member of the organization). */
+export type HolderCandidate = {
+  userId: string;
+  email: string | null;
+  role: 'ADMIN' | 'OPERATOR' | 'MEMBER';
+};
+
+export function holderLabel(c: Pick<HolderCandidate, 'email' | 'role'>): string {
+  if (c.email) return c.email;
+  return c.role === 'MEMBER'
+    ? 'membro (solo chat)'
+    : c.role === 'ADMIN'
+      ? 'amministratore (solo chat)'
+      : 'operatore (solo chat)';
+}
+
+/** Whether the practice is the person's: created by them or opened for them (AGX-03). */
+export function isMine(p: Pick<Practice, 'userId' | 'holderUserId'>, userId: string): boolean {
+  return p.userId === userId || p.holderUserId === userId;
+}
 
 /** Who the board shows: everything, the caller's practices, or those followed by nobody. */
 export type BoardFilter = 'all' | 'me' | 'none';
@@ -181,6 +242,35 @@ export const FIELD_LABELS: Record<string, string> = {
 const AMOUNTS = new Set(['taxableAmount', 'vatAmount', 'totalAmount']);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Warnings of reads stored before they were written in Italian (the server writes them so now). */
+const LEGACY_WARNINGS: Array<[RegExp, (m: RegExpExecArray) => string]> = [
+  [
+    /^Totals do not add up\b/,
+    () => 'I totali non tornano: imponibile più IVA è diverso dal totale del documento',
+  ],
+  [
+    /^Document total is zero\b/,
+    () => 'Il totale del documento è zero: controlla se è un documento non fiscale',
+  ],
+  [
+    /^VAT number (\S+) fails the check digit$/,
+    (m) => `La partita IVA ${m[1]} non supera il controllo della cifra finale`,
+  ],
+  [
+    /^VAT number (\S+) found without its label$/,
+    (m) => `Partita IVA ${m[1]} trovata senza la dicitura «P.IVA»`,
+  ],
+  [/^Low OCR confidence \((\d+)%\)$/, (m) => `Lettura poco sicura (${m[1]}%): controlla i dati`],
+];
+
+export function italianWarning(warning: string): string {
+  for (const [pattern, text] of LEGACY_WARNINGS) {
+    const m = pattern.exec(warning);
+    if (m) return text(m);
+  }
+  return warning;
+}
+
 /** The data read from a document, as label and value, in a stable order; text only. */
 export function readFields(result: Record<string, unknown> | null): {
   documentType: string | null;
@@ -208,7 +298,7 @@ export function readFields(result: Record<string, unknown> | null): {
     fields,
     reviewRequired: result.reviewRequired === true,
     warnings: Array.isArray(result.warnings)
-      ? result.warnings.filter((w): w is string => typeof w === 'string')
+      ? result.warnings.filter((w): w is string => typeof w === 'string').map(italianWarning)
       : [],
   };
 }

@@ -106,7 +106,21 @@ export function authorize(principal: Principal, permission: Permission): Grant {
  * caller asked for (undefined = the whole tenant).
  */
 export function scopedUserId(grant: Grant, requestedUserId?: string): string | undefined {
-  return grant.scope === 'own' ? grant.principal.userId : requestedUserId;
+  // `assigned` counts as `own` wherever a single user filter is applied (never more access).
+  return grant.scope === 'tenant' ? requestedUserId : grant.principal.userId;
+}
+
+/**
+ * Which practices a read grant reaches (B2): `userId` filters on the creator, `reachableBy` on
+ * the creator or the person assigned. Only the practice reads use it; see scopedUserId.
+ */
+export function practiceReach(
+  grant: Grant,
+  requestedUserId?: string,
+): { userId?: string; reachableBy?: string } {
+  if (grant.scope === 'tenant') return requestedUserId ? { userId: requestedUserId } : {};
+  if (grant.scope === 'assigned') return { reachableBy: grant.principal.userId };
+  return { userId: grant.principal.userId };
 }
 
 /**

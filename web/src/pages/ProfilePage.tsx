@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { describeError, ROLE_LABELS, type Me } from '../api/client';
+import { ChatLinks } from '../components/ChatLinks';
 import { useSession } from '../session/session';
 
 /** P10: who is logged in, where they can work, and the two ways out. */
@@ -38,6 +39,7 @@ export function ProfilePage({ me }: { me: Me }) {
           </dd>
         </dl>
       </section>
+      <ChatLinks mode="own" />
       <section className="card">
         <h2>Uscita</h2>
         <div className="actions">

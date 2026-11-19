@@ -100,4 +100,18 @@ describeWithDb('conversation memory on PostgreSQL (Step 8)', () => {
     expect(await memory.getLastPractice(userId)).toBeNull();
     expect(await memory.markOnboarded(tenantId, userId)).toBe(true);
   });
+
+  it('keeps a file waiting for an answer across a restart, and removes it (AGX-01)', async () => {
+    const userId = await newUser();
+    const pending = { channel: 'telegram', file: { ref: 'f-1' }, expiresAt: 1 };
+    // Nothing to remove for a person without a conversation row yet.
+    await new PrismaConversationMemory(prisma).setPendingFile(tenantId, userId, null);
+    await new PrismaConversationMemory(prisma).setPendingFile(tenantId, userId, pending);
+    const restarted = new PrismaConversationMemory(prisma);
+    expect(await restarted.getPendingFile(userId)).toEqual(pending);
+    await restarted.setLastPractice(tenantId, userId, randomUUID());
+    expect(await restarted.getPendingFile(userId)).toEqual(pending);
+    await restarted.setPendingFile(tenantId, userId, null);
+    expect(await restarted.getPendingFile(userId)).toBeNull();
+  });
 });

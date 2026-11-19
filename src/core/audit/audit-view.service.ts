@@ -39,6 +39,13 @@ const SHOWN_FIELDS = [
   // A05: the step of the module set on a practice, or cleared.
   'subState',
   'cleared',
+  // AGX-02: an identifier «set» or «removed», never its value.
+  'taxCode',
+  'vatNumber',
+  // AGX-05: which expected document of the practice a file is (a key of the module).
+  'expectedKey',
+  // AGX-10: the chat account shortened (last digits), never the whole id.
+  'ref',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

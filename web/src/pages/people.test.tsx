@@ -200,7 +200,14 @@ describe('people (FE4)', () => {
     await userEvent.type(screen.getByLabelText('Nome'), 'Accoglienza');
     expect(screen.queryByText('Gestire persone e ruoli')).toBeNull();
     await userEvent.click(screen.getByLabelText('Vedere le pratiche'));
-    await userEvent.selectOptions(screen.getByLabelText('Ambito di Vedere le pratiche'), 'own');
+    // Reading the practices may also cover those assigned to the person.
+    const scope = screen.getByLabelText('Ambito di Vedere le pratiche');
+    expect(
+      within(scope)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(["tutta l'organizzazione", 'proprie e assegnate', 'solo le proprie']);
+    await userEvent.selectOptions(scope, 'own');
     await userEvent.click(screen.getByLabelText('Creare pratiche'));
     await userEvent.click(screen.getByRole('button', { name: 'Crea il ruolo' }));
     await waitFor(() =>
@@ -209,6 +216,131 @@ describe('people (FE4)', () => {
         baseRole: 'OPERATOR',
         permissions: { 'practice.read': 'own', 'practice.create': 'own' },
       }),
+    );
+  });
+
+  it('creates a personal Telegram invitation link with a role', async () => {
+    const link = 'https://t.me/sinfonia_coop_bot?start=iABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
+    api('ADMIN', {
+      'GET /members/chat-invites': () => ok([]),
+      'POST /members/chat-invites': () => ({
+        status: 201,
+        body: {
+          success: true,
+          data: {
+            token: 'iABCDEFGHIJKLMNOPQRSTUVWXYZ012345',
+            link,
+            expiresAt: '2026-11-18T10:00:00.000Z',
+          },
+        },
+      }),
+    });
+    openAt('/persone');
+    expect(await screen.findByRole('heading', { name: 'Invito con link Telegram' })).toBeTruthy();
+    const section = screen.getByRole('region', { name: 'Invito con link Telegram' });
+    await userEvent.selectOptions(within(section).getByLabelText('Ruolo'), 'OPERATOR');
+    await userEvent.click(within(section).getByRole('button', { name: 'Crea il link' }));
+    expect(await screen.findByText(link)).toBeTruthy();
+    expect(posted('/members/chat-invites')[0]?.body).toEqual({ role: 'OPERATOR' });
+  });
+
+  it('opens the card of a member with practices, deadlines and documents', async () => {
+    const GIULIA = 'u0000000-0000-4000-8000-000000000002';
+    api('ADMIN', {
+      [`GET /members/${GIULIA}`]: () =>
+        ok({
+          userId: GIULIA,
+          email: 'giulia@coop.it',
+          role: 'OPERATOR',
+          customRole: { id: 'r1', name: 'Segreteria' },
+          status: 'ACTIVE',
+          since: '2026-09-01T10:00:00.000Z',
+          practices: {
+            total: 3,
+            open: 2,
+            items: [
+              {
+                id: 'p1',
+                name: 'Domanda PAC',
+                status: 'SUBMITTED',
+                typeLabel: 'agricultural practice',
+                updatedAt: '2026-11-01T10:00:00.000Z',
+              },
+            ],
+          },
+          assigned: [],
+          deadlines: [
+            {
+              id: 'd1',
+              title: 'Visita medica',
+              category: 'VISITA_MEDICA',
+              dueDate: '2026-11-15',
+              daysLeft: 10,
+            },
+          ],
+          documents: {
+            total: 1,
+            toReview: 1,
+            items: [
+              {
+                id: 'a1',
+                practiceId: 'p1',
+                practiceName: 'Domanda PAC',
+                fileName: 'fattura.pdf',
+                ocrStatus: 'COMPLETED',
+                validated: false,
+                createdAt: '2026-11-01T10:00:00.000Z',
+              },
+            ],
+          },
+        }),
+    });
+    openAt('/persone');
+    await userEvent.click(await screen.findByRole('link', { name: 'giulia@coop.it' }));
+    expect(await screen.findByRole('heading', { name: 'giulia@coop.it' })).toBeTruthy();
+    expect(screen.getByText('Operatore · Segreteria')).toBeTruthy();
+    expect(screen.getByText('3, di cui 2 in corso')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Domanda PAC' }).length).toBe(2);
+    expect(screen.getByText('Visita medica')).toBeTruthy();
+    expect(screen.getByText('fattura.pdf')).toBeTruthy();
+  });
+
+  it('lets an administrator revoke the chat linked to a member (AGX-10)', async () => {
+    const GIULIA = 'u0000000-0000-4000-8000-000000000002';
+    const LINK = 'c0000000-0000-4000-8000-000000000009';
+    api('ADMIN', {
+      [`GET /members/${GIULIA}`]: () =>
+        ok({
+          userId: GIULIA,
+          email: 'giulia@coop.it',
+          role: 'MEMBER',
+          customRole: null,
+          status: 'ACTIVE',
+          since: '2026-09-01T10:00:00.000Z',
+          practices: { total: 0, open: 0, items: [] },
+          assigned: [],
+          deadlines: [],
+          documents: { total: 0, toReview: 0, items: [] },
+        }),
+      [`GET /members/${GIULIA}/channels`]: () =>
+        ok([
+          {
+            id: LINK,
+            channel: 'TELEGRAM',
+            ref: '…123',
+            linkedAt: '2026-11-07T10:00:00.000Z',
+            verified: true,
+            lastUsedAt: null,
+          },
+        ]),
+      [`POST /members/${GIULIA}/channels/${LINK}/revoke`]: () => ok({ revoked: true }),
+    });
+    openAt(`/persone/${GIULIA}`);
+    expect(await screen.findByText(/Telegram …123, dal/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Scollega' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Sì, scollega' }));
+    await waitFor(() =>
+      expect(posted(`/members/${GIULIA}/channels/${LINK}/revoke`)).toHaveLength(1),
     );
   });
 

@@ -2,6 +2,7 @@
 
 import type { OrganizationType } from './organization';
 import type { PracticeState } from './practices';
+import type { UsageKind } from './usage';
 
 export type MembershipStatus = 'PENDING' | 'ACTIVE' | 'ENDED';
 
@@ -42,6 +43,9 @@ export type NetworkStats = {
   organic: { valid: Protected; total: number | null };
   documents: { uploaded: Protected; readWithoutCheckPercent: Protected };
   channels: { chatRequests: Protected; dashboardLogins: Protected };
+  /** AGX-07: usage of the companies, under the same threshold, and the network's own work. */
+  usage: Array<{ kind: UsageKind; value: Protected }>;
+  delegatedWork: Array<{ kind: UsageKind; quantity: number }>;
 };
 
 export const PERIODS: Array<{ kind: StatsPeriodKind; previous: boolean; label: string }> = [

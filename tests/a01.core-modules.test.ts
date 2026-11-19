@@ -197,7 +197,6 @@ describe('A03: functions turned off for an organization', () => {
       {
         name: 'telegram',
         identity: {
-          link: () => Promise.resolve(null),
           resolve: () =>
             Promise.resolve({ tenant, userId: 'u-1', role: 'ADMIN', customPermissions: null }),
         },
@@ -275,7 +274,7 @@ describe.runIf(Boolean(DATABASE_URL))('A03 with PostgreSQL', () => {
     ).id;
     await prisma.tenant.update({
       where: { id },
-      data: { disabledFeatures: ['exports', 'delegations'] },
+      data: { disabledFeatures: ['exports', 'delegations', 'documents'] },
     });
     const ran: string[] = [];
     const handler = (type: SchedulerTaskHandler['type']): SchedulerTaskHandler => ({
@@ -293,11 +292,12 @@ describe.runIf(Boolean(DATABASE_URL))('A03 with PostgreSQL', () => {
           handler('EXPORT_PRACTICES'),
           handler('CHECK_COMPLIANCE_DEADLINES'),
           handler('CHECK_GRANT_EXPIRY'),
+          handler('CHECK_DOCUMENT_REQUESTS_DUE'),
         ],
       },
     );
     const result = await scheduler.tick(new Date('2031-01-15T10:00:00Z'), id);
     expect(ran).toEqual(['CHECK_COMPLIANCE_DEADLINES']);
-    expect(result).toEqual({ triggeredCount: 1, skippedCount: 2 });
+    expect(result).toEqual({ triggeredCount: 1, skippedCount: 3 });
   });
 });

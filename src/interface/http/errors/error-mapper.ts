@@ -20,21 +20,30 @@ import { CustomRoleError } from '../../../core/authz/custom-roles.service.js';
 import { PlatformAccessError } from '../../../core/authz/platform.js';
 import { DelegationError } from '../../../core/delegation/delegation.service.js';
 import { FeatureDisabledError } from '../../../core/features/features.js';
+import { ChannelLinkError } from '../../../core/identity/channel-link.service.js';
+import { ChatInviteError } from '../../../core/identity/chat-invite.service.js';
 import { InvitationError, LoginError } from '../../../core/identity/login.service.js';
 import { MemberAccessError } from '../../../core/identity/member-access.service.js';
 import { LastAdminError } from '../../../core/identity/revocation.service.js';
+import { TelegramWebAppError } from '../../../core/identity/telegram-webapp.js';
 import {
   AttachmentRejectedError,
   ComplianceValidationError,
   ConcurrencyError,
+  DuplicateAttachmentError,
   InvalidStateTransitionError,
 } from '../../../core/index.js';
 import { NetworkError } from '../../../core/network/network.service.js';
+import { CompanyIdentifiersError } from '../../../core/organization/company-identifiers.js';
 import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
 import { PlatformActionError } from '../../../core/platform/platform.service.js';
 import { AttachmentValidationError } from '../../../core/practice/attachment-validation.js';
+import { RejectionError } from '../../../core/practice/document-checklist.js';
+import { DocumentRequestError } from '../../../core/practice/document-request.js';
 import { AssignmentError } from '../../../core/practice/practice-assignment.js';
+import { HolderError } from '../../../core/practice/practice-holder.js';
 import { PracticeModuleError } from '../../../core/practice/practice-module.js';
+import { UsageReversalError } from '../../../core/usage/usage.service.js';
 import { NotFoundError, UnauthorizedTenantAccessError } from '../../../data/errors/errors.js';
 import { AuthError } from '../auth/auth.errors.js';
 
@@ -59,13 +68,21 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof CustomRoleError ||
     err instanceof MemberAccessError ||
     err instanceof LoginError ||
+    err instanceof ChannelLinkError ||
+    err instanceof ChatInviteError ||
+    err instanceof TelegramWebAppError ||
     err instanceof InvitationError ||
     err instanceof OrganizationSettingsError ||
+    err instanceof CompanyIdentifiersError ||
     err instanceof PlatformAccessError ||
     err instanceof PlatformActionError ||
     err instanceof AttachmentValidationError ||
     err instanceof AssistanceError ||
     err instanceof AssignmentError ||
+    err instanceof HolderError ||
+    err instanceof RejectionError ||
+    err instanceof DocumentRequestError ||
+    err instanceof UsageReversalError ||
     err instanceof PracticeModuleError ||
     err instanceof NetworkError ||
     err instanceof DelegationError
@@ -75,7 +92,7 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
   if (err instanceof ComplianceValidationError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
-  if (err instanceof AttachmentRejectedError) {
+  if (err instanceof AttachmentRejectedError || err instanceof DuplicateAttachmentError) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }
   if (err instanceof LLMDisabledError) {

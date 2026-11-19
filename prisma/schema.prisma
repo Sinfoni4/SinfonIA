@@ -30,6 +30,10 @@ model Tenant {
   /// MF9: minimal profile a network sees of its member companies (D4, I1).
   municipality        String?
   sector              String?
+  /// AGX-02: codice fiscale (also the CUAA of a farm), partita IVA and codes in other systems.
+  taxCode             String?            @map("tax_code")
+  vatNumber           String?            @map("vat_number")
+  externalRefs        Json?              @map("external_refs")
   deactivatedAt       DateTime?          @map("deactivated_at")
   deletionScheduledAt DateTime?          @map("deletion_scheduled_at")
   createdAt           DateTime           @default(now()) @map("created_at")
@@ -56,6 +60,8 @@ model Tenant {
   grantsGiven         AccessGrant[]          @relation("GrantGrantor")
   grantsReceived      AccessGrant[]          @relation("GrantGranteeOrg")
   assistanceRequests  AssistanceRequest[]
+  documentRequests    DocumentRequest[]
+  usageEvents         UsageEvent[]
 
   @@map("tenant")
 }
@@ -117,6 +123,7 @@ model User {
   beneficiaryOf       AccessGrantBeneficiary[]
   assistanceRequests  AssistanceRequest[]
   assignedPractices   Practice[]               @relation("PracticeAssignee")
+  heldPractices       Practice[]               @relation("PracticeHolder")
 
   @@map("user")
 }
@@ -130,25 +137,30 @@ enum PracticeStatus {
 }
 
 model Practice {
-  id         String         @id @default(uuid()) @db.Uuid
-  tenantId   String         @map("tenant_id") @db.Uuid
-  userId     String         @map("user_id") @db.Uuid
-  status     PracticeStatus @default(CREATED)
-  version    Int            @default(1)
-  payload    Json
-  createdAt  DateTime       @default(now()) @map("created_at")
-  updatedAt  DateTime       @updatedAt @map("updated_at")
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  status       PracticeStatus @default(CREATED)
+  version      Int            @default(1)
+  payload      Json
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
   /// A4: the administrator or operator who follows the practice; null = nobody yet.
-  assignedTo String?        @map("assigned_to") @db.Uuid
-  assignedAt DateTime?      @map("assigned_at")
+  assignedTo   String?        @map("assigned_to") @db.Uuid
+  assignedAt   DateTime?      @map("assigned_at")
+  /// AGX-03: the person the practice was opened for; null = the creator.
+  holderUserId String?        @map("holder_user_id") @db.Uuid
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
-  assignee    User?                @relation("PracticeAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
-  attachments PracticeAttachment[]
+  tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignee         User?                @relation("PracticeAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  holder           User?                @relation("PracticeHolder", fields: [holderUserId], references: [id], onDelete: SetNull)
+  attachments      PracticeAttachment[]
+  documentRequests DocumentRequest[]
 
   @@index([tenantId])
   @@index([tenantId, assignedTo])
+  @@index([tenantId, holderUserId])
   @@index([tenantId, userId])
   @@index([tenantId, status])
   @@index([tenantId, id, version])
@@ -265,21 +277,29 @@ enum OcrStatus {
 }
 
 model PracticeAttachment {
-  id            String    @id @default(uuid()) @db.Uuid
-  tenantId      String    @map("tenant_id") @db.Uuid
-  practiceId    String    @map("practice_id") @db.Uuid
-  fileName      String    @map("file_name")
-  mimeType      String    @map("mime_type")
-  fileSize      Int       @map("file_size")
-  storagePath   String    @map("storage_path")
-  ocrStatus     OcrStatus @default(PENDING) @map("ocr_status")
-  ocrResult     Json?     @map("ocr_result")
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  practiceId      String    @map("practice_id") @db.Uuid
+  fileName        String    @map("file_name")
+  mimeType        String    @map("mime_type")
+  fileSize        Int       @map("file_size")
+  storagePath     String    @map("storage_path")
+  ocrStatus       OcrStatus @default(PENDING) @map("ocr_status")
+  ocrResult       Json?     @map("ocr_result")
   /// A1: the values confirmed or corrected by a person; ocrResult stays as read.
-  validatedData Json?     @map("validated_data")
-  validatedAt   DateTime? @map("validated_at")
-  validatedBy   String?   @map("validated_by") @db.Uuid
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  validatedData   Json?     @map("validated_data")
+  validatedAt     DateTime? @map("validated_at")
+  validatedBy     String?   @map("validated_by") @db.Uuid
+  /// AGX-01: SHA-256 of the content, to flag a file already sent; null for older attachments.
+  contentHash     String?   @map("content_hash")
+  /// AGX-05: the expected document of the practice's type this file is (a key of the module).
+  expectedKey     String?   @map("expected_key")
+  /// AGX-05: rejected by a person, with the reason; a later confirmation of its data clears it.
+  rejectedAt      DateTime? @map("rejected_at")
+  rejectedBy      String?   @map("rejected_by") @db.Uuid
+  rejectionReason String?   @map("rejection_reason")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
@@ -288,6 +308,8 @@ model PracticeAttachment {
   @@index([practiceId])
   @@index([tenantId, ocrStatus])
   @@index([tenantId, validatedAt])
+  @@index([tenantId, contentHash])
+  @@index([practiceId, expectedKey])
   @@map("practice_attachment")
 }
 
@@ -393,6 +415,8 @@ model ConversationState {
   tenantId       String    @map("tenant_id") @db.Uuid
   lastPracticeId String?   @map("last_practice_id") @db.Uuid
   onboardedAt    DateTime? @map("onboarded_at")
+  /// AGX-01: a file received in chat still waiting for the person to choose its practice.
+  pendingFile    Json?     @map("pending_file")
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -756,4 +780,87 @@ model AssistanceRequest {
   @@index([tenantId, status, createdAt])
   @@index([tenantId, userId, status])
   @@map("assistance_request")
+}
+
+/// AGX-06: a request for a document on a practice, answered by the holder with a file.
+enum DocumentRequestStatus {
+  OPEN
+  FULFILLED
+  CANCELLED
+}
+
+model DocumentRequest {
+  id                    String                @id @default(uuid()) @db.Uuid
+  tenantId              String                @map("tenant_id") @db.Uuid
+  practiceId            String                @map("practice_id") @db.Uuid
+  /// An expected document of the practice's type (AGX-05), or null for anything else.
+  expectedKey           String?               @map("expected_key")
+  message               String
+  dueDate               DateTime?             @map("due_date") @db.Date
+  status                DocumentRequestStatus @default(OPEN)
+  requestedBy           String?               @map("requested_by") @db.Uuid
+  /// Where who asked hears the answer: their organization (another one through a delegation).
+  requesterOrgId        String?               @map("requester_org_id") @db.Uuid
+  grantId               String?               @map("grant_id") @db.Uuid
+  fulfilledAttachmentId String?               @map("fulfilled_attachment_id") @db.Uuid
+  fulfilledBy           String?               @map("fulfilled_by") @db.Uuid
+  fulfilledAt           DateTime?             @map("fulfilled_at")
+  cancelledBy           String?               @map("cancelled_by") @db.Uuid
+  cancelledAt           DateTime?             @map("cancelled_at")
+  /// Reminders of the date: two days before, and on the day (one each per request).
+  remindedBeforeAt      DateTime?             @map("reminded_before_at") @db.Timestamptz
+  remindedDueAt         DateTime?             @map("reminded_due_at") @db.Timestamptz
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, status, dueDate])
+  @@index([practiceId, status])
+  @@map("document_request")
+}
+
+/// AGX-07: the kinds of work recorded as usage.
+enum UsageKind {
+  DOCUMENT_RECEIVED
+  OCR_PAGES
+  AI_CALL
+  AI_TOKENS
+  PRACTICE_OPENED
+  PRACTICE_COMPLETED
+  DOCUMENT_REQUESTED
+  ASSISTANCE_CLOSED
+}
+
+/// AGX-07: one unit of work done for an organization. Append-only (a database trigger refuses
+/// updates); a wrong event is reversed by a new one with `correctionOf`. The cost is computed when
+/// reading, from the rates in the configuration, never stored.
+model UsageEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  /// Unique: the same work recorded twice (a retry) is counted once.
+  idempotencyKey String    @unique @map("idempotency_key")
+  /// The organization the work was done for.
+  tenantId       String    @map("tenant_id") @db.Uuid
+  /// The organization that did it, when not the same one (a network through a delegation).
+  actorOrgId     String?   @map("actor_org_id") @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  kind           UsageKind
+  quantity       Int
+  unit           String
+  practiceId     String?   @map("practice_id") @db.Uuid
+  correctionOf   String?   @unique @map("correction_of") @db.Uuid
+  reason         String?
+  occurredAt     DateTime  @default(now()) @map("occurred_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  corrected  UsageEvent? @relation("UsageCorrection", fields: [correctionOf], references: [id], onDelete: Cascade)
+  correction UsageEvent? @relation("UsageCorrection")
+
+  @@index([tenantId, occurredAt])
+  @@index([actorOrgId, occurredAt])
+  @@index([occurredAt])
+  @@map("usage_event")
 }

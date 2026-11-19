@@ -68,7 +68,6 @@ describe.runIf(Boolean(DATABASE_URL))('export rules D5 and D5b', () => {
       {
         name: 'telegram',
         identity: {
-          link: () => Promise.resolve(null),
           resolve: async () => ({
             tenant: await getTenantById(prisma, tenantId),
             userId: users[who],

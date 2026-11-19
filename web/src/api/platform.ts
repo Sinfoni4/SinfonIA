@@ -52,6 +52,12 @@ export type OrganizationDetail = OrganizationRow & {
   deactivatedAt: string | null;
   administrators: Array<{ email: string | null; since: string }>;
   pendingInvitations: number;
+  /** AGX-02: missing from a server older than the identifiers. */
+  identifiers?: {
+    taxCode: string | null;
+    vatNumber: string | null;
+    externalRefs: Record<string, string>;
+  };
 };
 
 export type PlatformAuditRow = {
@@ -169,6 +175,10 @@ export function describePlatformAction(row: PlatformAuditRow): string {
         off ? `; spente: ${off}` : '; tutte le funzioni attive'
       }`;
     }
+    case 'ORGANIZATION_IDENTIFIERS_CHANGED':
+      return `Dati identificativi di ${org} aggiornati`;
+    case 'USAGE_EVENT_REVERSED':
+      return `Stornato un consumo di ${org}${row.details.reason ? `: ${row.details.reason}` : ''}`;
     case 'NETWORK_INVITATION_SENT':
       return `Invitata ${row.details.organization ? `«${row.details.organization}»` : "un'organizzazione"} ad aderire alla rete ${org}`;
     case 'PLATFORM_ADMIN_GRANTED':

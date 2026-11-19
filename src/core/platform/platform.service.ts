@@ -1,12 +1,23 @@
+import { Prisma } from '@prisma/client';
+
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { FEATURES, type Feature } from '../features/features.js';
 import { inviteMemberInTx, NETWORK_TYPES } from '../network/network.service.js';
+import {
+  changeMark,
+  normalizeExternalRefs,
+  normalizeTaxCode,
+  normalizeVatNumber,
+  readExternalRefs,
+  sameRefs,
+  type ExternalRefs,
+} from '../organization/company-identifiers.js';
 
 import type { LoginService } from '../identity/login.service.js';
 import type { ModuleId } from '../modules/module.contract.js';
-import type { OrganizationStatus, OrganizationType, Prisma, PrismaClient } from '@prisma/client';
+import type { OrganizationStatus, OrganizationType, PrismaClient } from '@prisma/client';
 
 /**
  * The platform console (docs/PROGETTO_FRONTEND_V2.md §5, A1-A3 and A6; G3, G9): organizations
@@ -141,6 +152,14 @@ export type OrganizationDetail = OrganizationRow & {
   /** G3: the contact of the active administrators, never other members. */
   administrators: Array<{ email: string | null; since: Date }>;
   pendingInvitations: number;
+  /** AGX-02: codice fiscale / CUAA, partita IVA and codes in other systems. */
+  identifiers: CompanyIdentifiers;
+};
+
+export type CompanyIdentifiers = {
+  taxCode: string | null;
+  vatNumber: string | null;
+  externalRefs: ExternalRefs;
 };
 
 export async function getOrganization(
@@ -161,6 +180,9 @@ export async function getOrganization(
       schedulerEnabled: true,
       integrationType: true,
       deactivatedAt: true,
+      taxCode: true,
+      vatNumber: true,
+      externalRefs: true,
     },
   });
   if (!org) throw new NotFoundError('Organization not found');
@@ -196,7 +218,68 @@ export async function getOrganization(
       since: a.createdAt,
     })),
     pendingInvitations,
+    identifiers: {
+      taxCode: org.taxCode,
+      vatNumber: org.vatNumber,
+      externalRefs: readExternalRefs(org.externalRefs),
+    },
   };
+}
+
+/**
+ * AGX-02: the console sets the identifiers of a company, the codes in other systems included.
+ * Both audit logs record which ones changed, never their values.
+ */
+export async function setOrganizationIdentifiers(
+  prisma: PrismaClient,
+  orgId: string,
+  input: {
+    taxCode?: string | null;
+    vatNumber?: string | null;
+    externalRefs?: Record<string, string> | null;
+  },
+  actor: PlatformActor,
+): Promise<CompanyIdentifiers> {
+  const taxCode = normalizeTaxCode(input.taxCode);
+  const vatNumber = normalizeVatNumber(input.vatNumber);
+  const externalRefs = normalizeExternalRefs(input.externalRefs);
+  return withTransaction(prisma, async (tx) => {
+    const org = await tx.tenant.findUnique({
+      where: { id: orgId },
+      select: { taxCode: true, vatNumber: true, externalRefs: true },
+    });
+    if (!org) throw new NotFoundError('Organization not found');
+    const data: Prisma.TenantUpdateInput = {};
+    const changed: Record<string, string | string[]> = {};
+    if (taxCode !== undefined && taxCode !== org.taxCode) {
+      data.taxCode = taxCode;
+      changed.taxCode = changeMark(taxCode);
+    }
+    if (vatNumber !== undefined && vatNumber !== org.vatNumber) {
+      data.vatNumber = vatNumber;
+      changed.vatNumber = changeMark(vatNumber);
+    }
+    if (externalRefs !== undefined && !sameRefs(org.externalRefs, externalRefs)) {
+      data.externalRefs = externalRefs ?? Prisma.DbNull;
+      changed.externalRefs = Object.keys(externalRefs ?? {});
+    }
+    const result = {
+      taxCode: taxCode === undefined ? org.taxCode : taxCode,
+      vatNumber: vatNumber === undefined ? org.vatNumber : vatNumber,
+      externalRefs:
+        externalRefs === undefined ? readExternalRefs(org.externalRefs) : (externalRefs ?? {}),
+    };
+    if (Object.keys(changed).length === 0) return result;
+    await tx.tenant.update({ where: { id: orgId }, data });
+    await logPlatform(tx, {
+      actor,
+      action: 'ORGANIZATION_IDENTIFIERS_CHANGED',
+      orgId,
+      payload: changed,
+    });
+    await logInOrganization(tx, orgId, 'ORGANIZATION_IDENTIFIERS_CHANGED');
+    return result;
+  });
 }
 
 // --- A2: new organization -----------------------------------------------------------------------

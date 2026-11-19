@@ -18,6 +18,8 @@ import { NETWORK_TYPES, ORGANIZATION_TYPE_LABELS } from '../api/organization';
 import { formatDate, STATE_LABELS } from '../api/practices';
 import { useSession } from '../session/session';
 
+import { NetworkUsageCards } from './UsagePages';
+
 function isNetwork(me: Me): boolean {
   const type = me.organizations.find((o) => o.orgId === me.current.orgId)?.type;
   return type !== undefined && NETWORK_TYPES.includes(type);
@@ -348,6 +350,7 @@ export function NetworkStatsPage({ me }: { me: Me }) {
                 ['Accessi alla dashboard', showProtected(s.channels.dashboardLogins)],
               ]}
             />
+            <NetworkUsageCards stats={s} />
           </div>
           <p className="muted">
             Ogni valore è calcolato su almeno {s.members.threshold} aziende; i conteggi di 1 o 2

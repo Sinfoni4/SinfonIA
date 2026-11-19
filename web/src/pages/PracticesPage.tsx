@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { describeError, type Me } from '../api/client';
 import {
   formatDate,
+  isMine,
   kindLabel,
   practicesQuery,
   STATE_LABELS,
@@ -110,8 +111,9 @@ export function PracticesPage({ me }: { me: Me }) {
                 <tr key={p.id}>
                   <td>
                     <Link to={`/pratiche/${p.id}`}>{p.name}</Link>
-                    {seesOrganization && p.userId === me.userId && (
-                      <span className="badge">mia</span>
+                    {seesOrganization && isMine(p, me.userId) && <span className="badge">mia</span>}
+                    {p.holderUserId && p.holderUserId !== me.userId && (
+                      <span className="badge">aperta per un'altra persona</span>
                     )}
                   </td>
                   <td>{kindLabel(p)}</td>

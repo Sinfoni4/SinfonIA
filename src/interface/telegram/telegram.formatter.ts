@@ -39,10 +39,9 @@ export function formatTelegramResponse(data: {
   }
 
   if (command.action === 'create_practice') {
-    const artistName =
-      typeof command.data.artistName === 'string' ? command.data.artistName : 'artista';
+    const name = typeof command.data.artistName === 'string' ? command.data.artistName.trim() : '';
     return formatMessage('success', [
-      `Ho creato la pratica per ${artistName}`,
+      name ? `Ho creato la pratica per ${name}` : 'Ho creato la pratica',
       'Stato attuale: CREATED',
     ]);
   }

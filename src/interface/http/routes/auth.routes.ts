@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import { SESSION_TTL_MS } from '../../../core/identity/login.service.js';
 import { LoginError } from '../../../core/identity/login.service.js';
+import {
+  signWebAppInitData,
+  TelegramWebAppError,
+  verifyWebAppInitData,
+} from '../../../core/identity/telegram-webapp.js';
 import { requireAuthContext, requirePrincipal } from '../auth/guards.js';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from '../auth/refresh-cookie.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
@@ -25,7 +30,19 @@ export type AuthRoutesDeps = {
   issuePlatformToken: (grant: { userId: string; sessionId: string; authVersion: number }) => string;
   /** Requests per address and minute on each login route. */
   perMinute: number;
+  /** Telegram Mini App: the bot token that signs the data of an opening; absent: no Mini App. */
+  telegramBotToken?: string;
+  /** Development only: signs an opening for a Telegram id, to preview the Mini App in a browser. */
+  devTelegramWebApp?: boolean;
+  /**
+   * Email login (AUTH_EMAIL_LOGIN): the code routes, invitations and the platform console token.
+   * Off, only sessions opened otherwise (the Telegram Mini App) exist. Default on.
+   */
+  emailLogin?: boolean;
 };
+
+const WebAppSchema = z.object({ initData: z.string().min(10).max(4096) });
+const DevWebAppSchema = z.object({ telegramId: z.string().regex(/^\d{3,15}$/) });
 
 const StartSchema = z.object({ email: z.string().trim().min(3).max(254) });
 const VerifySchema = z.object({
@@ -79,18 +96,43 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
     };
   };
 
+  const email = deps.emailLogin !== false;
+  if (email)
+    app.post(
+      '/auth/login/start',
+      { config: LIMIT },
+      handle(StartSchema, (b) => deps.login.startLogin(b.email), 202),
+    );
+  if (email)
+    app.post(
+      '/auth/login/verify',
+      { config: LIMIT },
+      handle(VerifySchema, async (b, _req, reply) =>
+        openSession(await deps.login.verifyLogin(b.challengeId, b.code), reply),
+      ),
+    );
+  // Telegram Mini App: the signed data of the opening logs in the person whose Telegram account
+  // is linked (AGX-10); the session is the dashboard's, in the same cookie.
   app.post(
-    '/auth/login/start',
+    '/auth/telegram-webapp',
     { config: LIMIT },
-    handle(StartSchema, (b) => deps.login.startLogin(b.email), 202),
+    handle(WebAppSchema, async (b, _req, reply) => {
+      if (!deps.telegramBotToken) throw new TelegramWebAppError();
+      const { telegramId } = verifyWebAppInitData(b.initData, deps.telegramBotToken);
+      return openSession(await deps.login.openChatSession('TELEGRAM', telegramId), reply);
+    }),
   );
-  app.post(
-    '/auth/login/verify',
-    { config: LIMIT },
-    handle(VerifySchema, async (b, _req, reply) =>
-      openSession(await deps.login.verifyLogin(b.challengeId, b.code), reply),
-    ),
-  );
+  if (deps.devTelegramWebApp && deps.telegramBotToken) {
+    const botToken = deps.telegramBotToken;
+    app.post(
+      '/auth/telegram-webapp/dev',
+      { config: LIMIT },
+      handle(DevWebAppSchema, (b) =>
+        Promise.resolve({ initData: signWebAppInitData(botToken, b.telegramId) }),
+      ),
+    );
+  }
+
   app.post(
     '/auth/token',
     { config: LIMIT },
@@ -115,20 +157,22 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
   );
   // The platform console (G1, G2): same session, a token of its own, only for a platform
   // administrator with a recent login code.
-  app.post(
-    '/auth/platform-token',
-    { config: LIMIT },
-    handle(z.object({}).passthrough(), async (_b, req, reply) => {
-      const refreshToken = readRefreshCookie(req);
-      if (!refreshToken) throw new LoginError();
-      const grant = await deps.login.refreshPlatform(refreshToken);
-      setRefreshCookie(reply, grant.refreshToken, SESSION_TTL_SECONDS);
-      return {
-        accessToken: deps.issuePlatformToken(grant),
-        expiresIn: deps.accessTokenTtlSeconds,
-      };
-    }),
-  );
+  // The console needs a recent login code (G2): never from a Mini App session.
+  if (email)
+    app.post(
+      '/auth/platform-token',
+      { config: LIMIT },
+      handle(z.object({}).passthrough(), async (_b, req, reply) => {
+        const refreshToken = readRefreshCookie(req);
+        if (!refreshToken) throw new LoginError();
+        const grant = await deps.login.refreshPlatform(refreshToken);
+        setRefreshCookie(reply, grant.refreshToken, SESSION_TTL_SECONDS);
+        return {
+          accessToken: deps.issuePlatformToken(grant),
+          expiresIn: deps.accessTokenTtlSeconds,
+        };
+      }),
+    );
   app.post(
     '/auth/logout',
     { config: LIMIT },
@@ -171,18 +215,20 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
       return undefined;
     }),
   );
-  app.post(
-    '/auth/invitations/start',
-    { config: LIMIT },
-    handle(InvitationStartSchema, (b) => deps.login.startInvitation(b.token)),
-  );
-  app.post(
-    '/auth/invitations/accept',
-    { config: LIMIT },
-    handle(InvitationAcceptSchema, async (b, _req, reply) =>
-      openSession(await deps.login.acceptInvitation(b.token, b.challengeId, b.code), reply),
-    ),
-  );
+  if (email)
+    app.post(
+      '/auth/invitations/start',
+      { config: LIMIT },
+      handle(InvitationStartSchema, (b) => deps.login.startInvitation(b.token)),
+    );
+  if (email)
+    app.post(
+      '/auth/invitations/accept',
+      { config: LIMIT },
+      handle(InvitationAcceptSchema, async (b, _req, reply) =>
+        openSession(await deps.login.acceptInvitation(b.token, b.challengeId, b.code), reply),
+      ),
+    );
 
   done();
 };

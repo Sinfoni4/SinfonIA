@@ -119,6 +119,7 @@ export function Layout({ me }: { me: Me }) {
               {staff && <Section to="/bacheca">Bacheca</Section>}
               {on('deadlines') && <Section to="/scadenze">Scadenze</Section>}
               {on('documents') && <Section to="/verifica">Da verificare</Section>}
+              {staff && on('documents') && <Section to="/richieste">Richieste</Section>}
               {staff && on('assistance') && <Section to="/assistenza">Assistenza</Section>}
               {on('exports') && <Section to="/export">Export</Section>}
               {on('delegations') && <Section to="/deleghe">Deleghe</Section>}

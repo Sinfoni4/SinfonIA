@@ -72,6 +72,8 @@ Rispetto alla pagina A4 del piano frontend mancano:
 
 ### 1.5 FE5 — Rifinitura e pubblicazione della dashboard (3–4 gg)
 
+*Fatto (ramo `feat/fe5-e2e-a11y`)*: i test end-to-end (`npm run web:e2e`) girano anche nella CI, su computer e telefono, contro la dashboard appena compilata e con il ruolo del database a privilegi minimi. Coprono login, pratiche, bacheca, assistenza (presa in carico e chiusura), deleghe e console di piattaforma (sezioni e pagina di un'organizzazione). Ogni pagina principale, comprese Richieste, Consumi, Assistente, dettaglio della pratica, scheda della persona e console, viene controllata: niente scorrimento orizzontale sul telefono, campi e comandi con un nome, testo alternativo, contrasti WCAG AA. Su computer si controlla anche la tastiera: «Vai al contenuto» c'è anche nella console, e ogni elemento raggiunto con Tab mostra dove si trova (anche aree di testo e riquadri apribili). Lo staging ricompila la dashboard a ogni avvio (`npm run staging:start`). Resta da fare a mano una prova con un lettore di schermo vero (NVDA o VoiceOver); il percorso «verifica di un documento letto» non è nei test end-to-end, perché sul server di test la lettura dei documenti è spenta. Il controllo del service worker dell'app installabile (`web/e2e/installable.spec.ts`) gira solo in locale con Chrome: nella CI, con il Chromium di Playwright su Linux, il worker non risulta mai registrato (il file arriva corretto, la cache funziona); la causa è da indagare. Il manifest invece è controllato anche nella CI.
+
 31. Test end-to-end nel browser dei percorsi principali (login, pratiche, verifica documenti, bacheca, assistenza, console).
 32. Verifica di accessibilità (tastiera, lettori di schermo, contrasti) e correzioni.
 33. Rifinitura per telefono di tutte le pagine (bacheca compresa).
@@ -79,7 +81,7 @@ Rispetto alla pagina A4 del piano frontend mancano:
 
 ### 1.6 B2 — Ruoli personalizzati (4–5 gg, H6)
 
-*Fatto sul ramo `feat/b2-custom-roles` (migrazione `20261107090000_b2_custom_roles`, solo sul database dei test)*: un ruolo personalizzato parte da un ruolo di base e ne tiene solo alcuni permessi o li limita alle proprie pratiche, mai di più; vale su API, chat e assistente IA; resta sempre almeno un amministratore che gestisce le persone; un ruolo non passa tra organizzazioni (controllo anche nel database). Il perimetro «pratiche assegnate» è rinviato: richiede di cambiare tutte le query delle pratiche.
+*Fatto sul ramo `feat/b2-custom-roles` (migrazione `20261107090000_b2_custom_roles`, solo sul database dei test)*: un ruolo personalizzato parte da un ruolo di base e ne tiene solo alcuni permessi o li limita alle proprie pratiche, mai di più; vale su API, chat e assistente IA; resta sempre almeno un amministratore che gestisce le persone; un ruolo non passa tra organizzazioni (controllo anche nel database). Perimetro «proprie e assegnate» aggiunto dopo (ramo `feat/c2-c3-ready-items`): vale per vedere le pratiche e i loro documenti; ovunque altro conta come «solo le proprie», così un punto non aggiornato dà meno accesso, mai di più.
 
 35. Tabella dei ruoli dell'organizzazione come insiemi di permessi del catalogo esistente, con perimetro (proprie, assegnate, organizzazione); migrazione.
 36. Servizio di autorizzazione che li applica; mai permessi inventati dall'interfaccia.

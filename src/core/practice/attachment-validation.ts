@@ -1,4 +1,6 @@
+import { italianOcrWarning } from '../../ai/ocr/ocr-warnings.js';
 import { NotFoundError } from '../../data/errors/errors.js';
+import { personPracticesWhere } from '../../data/repositories/practice.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 
@@ -224,7 +226,7 @@ export async function validateAttachment(
         id: input.attachmentId,
         tenantId: input.tenantId,
         practiceId: input.practiceId,
-        ...(input.ownerUserId ? { practice: { userId: input.ownerUserId } } : {}),
+        ...(input.ownerUserId ? { practice: personPracticesWhere(input.ownerUserId) } : {}),
       },
       select: { ocrResult: true },
     });
@@ -242,6 +244,10 @@ export async function validateAttachment(
         validatedData: data,
         validatedAt,
         validatedBy: input.actorUserId,
+        // AGX-05: a person confirmed the data after a rejection: the file counts again.
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null,
       },
     });
     await new AuditService(tx).logEvent({
@@ -286,6 +292,8 @@ const PLACEHOLDER_EMAIL = /@local\.invalid$/i;
 export function reviewQueueWhere(): Prisma.PracticeAttachmentWhereInput {
   return {
     validatedAt: null,
+    // AGX-05: a rejected file waits for a new one, not for a check.
+    rejectedAt: null,
     OR: [
       { ocrStatus: 'FAILED' },
       { ocrStatus: 'COMPLETED', ocrResult: { path: ['reviewRequired'], equals: true } },
@@ -305,7 +313,7 @@ export async function listReviewQueue(
 ): Promise<{ items: ReviewItem[]; total: number; page: number; totalPages: number }> {
   const where: Prisma.PracticeAttachmentWhereInput = {
     tenantId: input.tenantId,
-    ...(input.ownerUserId ? { practice: { userId: input.ownerUserId } } : {}),
+    ...(input.ownerUserId ? { practice: personPracticesWhere(input.ownerUserId) } : {}),
     ...(input.status === 'to_review'
       ? reviewQueueWhere()
       : input.status === 'validated'
@@ -362,7 +370,7 @@ export async function listReviewQueue(
         ocrStatus: r.ocrStatus,
         reviewRequired: result.reviewRequired === true,
         missingFields: strings(result.missingFields),
-        warnings: strings(result.warnings),
+        warnings: strings(result.warnings).map(italianOcrWarning),
         read: readValues(r.ocrResult),
         validated:
           r.validatedAt && r.validatedData
@@ -393,7 +401,7 @@ export async function confirmReadDocument(
       id: input.attachmentId,
       tenantId: input.tenantId,
       practiceId: input.practiceId,
-      practice: { userId: input.userId },
+      practice: personPracticesWhere(input.userId),
     },
     select: { ocrResult: true },
   });

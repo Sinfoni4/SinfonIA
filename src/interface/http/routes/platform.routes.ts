@@ -10,12 +10,23 @@ import {
   listOrganizationLinks,
   listOrganizations,
   listPlatformAudit,
+  setOrganizationIdentifiers,
   setOrganizationModules,
   setOrganizationSuspended,
 } from '../../../core/platform/platform.service.js';
+import {
+  platformUsage,
+  reverseUsageEvent,
+  usageExport,
+  type UsageRates,
+} from '../../../core/usage/usage.service.js';
+import { AuditService } from '../../../data/services/audit.service.js';
 import { requirePlatform } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
+
+import { StatsQuerySchema } from './network.routes.js';
+import { sendTableFile, TABLE_FILE_BODY_LIMIT } from './organization.routes.js';
 
 import type { LoginService } from '../../../core/identity/login.service.js';
 import type { ConfiguredServices } from '../../../core/platform/platform-health.service.js';
@@ -30,6 +41,8 @@ export type PlatformRoutesDeps = {
   services?: ConfiguredServices;
   /** Attachment folder and backup folder, for the system health (never shown). */
   locations?: HealthLocations;
+  /** AGX-07: euro per unit of usage (USAGE_RATES), for the internal cost. */
+  usageRates?: UsageRates;
 };
 
 const NO_SERVICES: ConfiguredServices = {
@@ -86,6 +99,8 @@ const CreateBodySchema = z
 
 const IdParamsSchema = z.object({ id: z.string().uuid() });
 
+const ReverseBodySchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
+
 const SuspendBodySchema = z
   .object({
     reason: z.string().trim().min(3).max(500),
@@ -100,6 +115,15 @@ const ModulesBodySchema = z
   .object({
     module: z.enum(MODULE_IDS),
     disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
+  })
+  .strict();
+
+/** AGX-02: identifiers of a company; null removes one, a missing field leaves it as it is. */
+const IdentifiersBodySchema = z
+  .object({
+    taxCode: z.string().max(40).nullable().optional(),
+    vatNumber: z.string().max(40).nullable().optional(),
+    externalRefs: z.record(z.string().max(32), z.string().max(200)).nullable().optional(),
   })
   .strict();
 
@@ -226,6 +250,18 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
     }
   });
 
+  // AGX-02: codice fiscale / CUAA, partita IVA and codes in other systems.
+  app.patch('/platform/organizations/:id/identifiers', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = IdentifiersBodySchema.parse(req.body ?? {});
+      return reply.send(ok(await setOrganizationIdentifiers(deps.prisma, id, body, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
   // Voce 17: memberships of an organization, and invitations of companies into a network.
   app.get('/platform/organizations/:id/links', { config }, async (req, reply) => {
     try {
@@ -268,6 +304,91 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       requirePlatform(req);
       const { days } = UsageQuerySchema.parse(req.query);
       return reply.send(ok(await aiUsage(deps.prisma, days)));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-07: usage of every organization in a fixed period, with the internal cost.
+  app.get('/platform/usage', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await platformUsage(deps.prisma, {
+            kind: query.period,
+            previous: query.previous,
+            rates: deps.usageRates ?? {},
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // The exports of the console as Excel or PDF (the CSV it already received, converted).
+  app.post(
+    '/platform/exports/file',
+    { config, bodyLimit: TABLE_FILE_BODY_LIMIT },
+    async (req, reply) => {
+      try {
+        requirePlatform(req);
+        return reply.send(ok(await sendTableFile(req.body)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // Every usage event of the period as a CSV file, with the internal cost.
+  app.get('/platform/usage/export', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      const query = StatsQuerySchema.parse(req.query);
+      return reply.send(
+        ok(
+          await usageExport(deps.prisma, {
+            tenantId: null,
+            kind: query.period,
+            previous: query.previous,
+            rates: deps.usageRates ?? {},
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // AGX-07: a wrong event is reversed by a new one, with the reason; both logs record it.
+  app.post('/platform/usage/:id/reverse', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id } = IdParamsSchema.parse(req.params);
+      const body = ReverseBodySchema.parse(req.body);
+      const reversal = await reverseUsageEvent(
+        deps.prisma,
+        { eventId: id, reason: body.reason, actorUserId: userId },
+        async (tx, event) => {
+          await tx.platformAuditLog.create({
+            data: {
+              actorUserId: userId,
+              action: 'USAGE_EVENT_REVERSED',
+              orgId: event.tenantId,
+              payload: { eventId: id, reversalId: event.reversalId, reason: body.reason },
+            },
+          });
+          await new AuditService(tx).logEvent({
+            tenantId: event.tenantId,
+            userId: null,
+            eventType: 'USAGE_EVENT_REVERSED',
+            payload: { byPlatform: true, eventId: id, reversalId: event.reversalId },
+          });
+        },
+      );
+      return reply.status(201).send(ok(reversal));
     } catch (err: unknown) {
       return sendError(reply, err);
     }

@@ -2,19 +2,33 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 
-import { describeError } from '../api/client';
+import { describeError, type Me } from '../api/client';
 import { FALLBACK_MODULE, fieldValues, type CurrentModule } from '../api/modules';
-import { type Practice } from '../api/practices';
+import { holderLabel, type HolderCandidate, type Practice } from '../api/practices';
+import { missingRequired, PracticeFieldInputs } from '../components/PracticeFieldInputs';
 import { useSession } from '../session/session';
 
-/** P5: a new practice, owned by whoever creates it; kinds and fields come from the module (A02). */
-export function NewPracticePage() {
+/**
+ * P5: a new practice; kinds and fields come from the module (A02). AGX-03: administrators and
+ * operators may open it for another person of the organization, its holder.
+ */
+export function NewPracticePage({ me }: { me: Me }) {
   const { api } = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [chosenKind, setKind] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [holder, setHolder] = useState('');
+  const staff = me.current.role !== 'MEMBER';
+  // Refused for a custom role without `practice.assign`: then the choice is simply not shown.
+  const holders = useQuery({
+    queryKey: ['holders', me.current.orgId],
+    queryFn: () => api<HolderCandidate[]>('/practices/holders'),
+    enabled: staff,
+    retry: false,
+  });
+  const others = (holders.data ?? []).filter((c) => c.userId !== me.userId);
 
   const moduleQuery = useQuery({
     queryKey: ['module'],
@@ -34,6 +48,7 @@ export function NewPracticePage() {
           name: name.trim(),
           kind: type.kind,
           ...(Object.keys(fields).length > 0 ? { fields } : {}),
+          ...(holder ? { holderUserId: holder } : {}),
         },
       });
     },
@@ -47,7 +62,7 @@ export function NewPracticePage() {
     event.preventDefault();
     create.mutate();
   };
-  const missing = type.fields.some((f) => f.required && !values[f.key]?.trim());
+  const missing = missingRequired(type, values);
 
   return (
     <>
@@ -65,6 +80,24 @@ export function NewPracticePage() {
           onChange={(e) => setName(e.target.value)}
           placeholder="Es. Mario Rossi"
         />
+        {others.length > 0 && (
+          <>
+            <label htmlFor="holder">Aperta per</label>
+            <select id="holder" value={holder} onChange={(e) => setHolder(e.target.value)}>
+              <option value="">Me stesso</option>
+              {others.map((c) => (
+                <option key={c.userId} value={c.userId}>
+                  {holderLabel(c)}
+                </option>
+              ))}
+            </select>
+            {holder && (
+              <p className="muted">
+                La persona vedrà la pratica, potrà inviare i documenti e riceverà gli avvisi.
+              </p>
+            )}
+          </>
+        )}
         <label htmlFor="kind">Tipo</label>
         <select
           id="kind"
@@ -80,42 +113,11 @@ export function NewPracticePage() {
             </option>
           ))}
         </select>
-        {type.fields.map((field) => {
-          const id = `field-${field.key}`;
-          const set = (value: string) => setValues((v) => ({ ...v, [field.key]: value }));
-          return (
-            <div key={field.key} className="form">
-              <label htmlFor={id}>
-                {field.label}
-                {field.required ? '' : ' (facoltativo)'}
-              </label>
-              {field.type === 'choice' ? (
-                <select
-                  id={id}
-                  value={values[field.key] ?? ''}
-                  onChange={(e) => set(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {field.options?.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id={id}
-                  type={field.type === 'text' ? 'text' : field.type}
-                  maxLength={field.type === 'text' ? (field.maxLength ?? 200) : undefined}
-                  min={field.min}
-                  max={field.max}
-                  value={values[field.key] ?? ''}
-                  onChange={(e) => set(e.target.value)}
-                />
-              )}
-            </div>
-          );
-        })}
+        <PracticeFieldInputs
+          type={type}
+          values={values}
+          onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
+        />
         {type.expectedDocuments.length > 0 && (
           <p className="muted">
             Documenti di solito necessari:{' '}

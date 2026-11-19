@@ -97,6 +97,8 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
     await mkdir(path.join(webDir, 'assets'));
     await writeFile(path.join(webDir, 'index.html'), '<!doctype html><title>SinfonIA</title>');
     await writeFile(path.join(webDir, 'assets', 'app-abc123.js'), 'console.log(1);');
+    await writeFile(path.join(webDir, 'manifest.webmanifest'), '{"name":"SinfonIA"}');
+    await writeFile(path.join(webDir, 'sw.js'), 'self.addEventListener("fetch", () => {});');
 
     const practices = new PracticeApplicationService(prisma);
     const cfg = config({ AUTH_EMAIL_LOGIN: 'true', WEB_DIST_DIR: webDir });
@@ -296,6 +298,12 @@ describe.runIf(Boolean(DATABASE_URL))('backend for the dashboard (FE0)', () => {
     expect(asset.headers['content-type']).toContain('text/javascript');
     expect(asset.headers['cache-control']).toContain('immutable');
     expect((await get('/app/assets/missing.js')).statusCode).toBe(404);
+    // Installable (item 45): the manifest with its type, the worker never cached by the browser.
+    const manifest = await get('/app/manifest.webmanifest');
+    expect(manifest.headers['content-type']).toContain('application/manifest+json');
+    const worker = await get('/app/sw.js');
+    expect(worker.headers['content-type']).toContain('text/javascript');
+    expect(worker.headers['cache-control']).toBe('no-cache');
     // Never a file outside the dashboard folder.
     for (const url of ['/app/../package.json', '/app/%2e%2e/%2e%2e/package.json']) {
       expect((await get(url)).body).not.toContain('"name"');

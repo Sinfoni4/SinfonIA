@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   listAssistanceRequests,
+  requestAssistance,
   updateAssistanceRequest,
 } from '../../../core/assistance/assistance.service.js';
 import { requirePermission } from '../auth/guards.js';
@@ -20,6 +21,9 @@ const ListQuerySchema = z.object({
 });
 
 const ParamsSchema = z.object({ id: z.string().uuid() });
+const RequestBodySchema = z
+  .object({ topic: z.enum(['PRACTICE', 'DOCUMENT', 'DEADLINE', 'OTHER']).default('OTHER') })
+  .strict();
 
 function sendError(reply: FastifyReply, err: unknown) {
   const mapped = mapErrorToHttp(err);
@@ -31,6 +35,27 @@ function sendError(reply: FastifyReply, err: unknown) {
  * ADMINs and OPERATORs of the organization.
  */
 export const assistanceRoutes: FastifyPluginCallback<AssistanceRoutesDeps> = (app, deps, done) => {
+  // Telegram Mini App: «Parla con un operatore», as from the chat (one open request at a time).
+  app.post(
+    '/assistance/requests',
+    { config: { permission: 'assistance.request' } },
+    async (req, reply) => {
+      try {
+        const grant = requirePermission(req, 'assistance.request');
+        const body = RequestBodySchema.parse(req.body ?? {});
+        const result = await requestAssistance(deps.prisma, {
+          tenantId: grant.principal.tenantId,
+          userId: grant.principal.userId,
+          topic: body.topic,
+          channel: 'TELEGRAM',
+        });
+        return reply.status(result.created ? 201 : 200).send(ok(result));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
   app.get('/assistance', { config: { permission: 'assistance.manage' } }, async (req, reply) => {
     try {
       const grant = requirePermission(req, 'assistance.manage');

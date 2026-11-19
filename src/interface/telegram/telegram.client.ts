@@ -62,7 +62,11 @@ type TelegramUpdate = {
 
 /** Buttons under a message (inline) or the menu at the bottom of the chat (reply keyboard). */
 export type ReplyMarkup =
-  | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+  | {
+      inline_keyboard: Array<
+        Array<{ text: string; callback_data: string } | { text: string; web_app: { url: string } }>
+      >;
+    }
   | {
       keyboard: Array<Array<{ text: string }>>;
       resize_keyboard?: boolean;
@@ -220,6 +224,14 @@ export class TelegramClient {
       );
     }
     return payload.result;
+  }
+
+  /** The bot itself: its username makes the t.me links of the personal invitations. */
+  async getMe(): Promise<{ id: number; username?: string }> {
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${this.token}/getMe`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    return this.parseResult<{ id: number; username?: string }>('getMe', response);
   }
 
   async getFile(

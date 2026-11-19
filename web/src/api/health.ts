@@ -30,12 +30,19 @@ export type SystemHealth = {
     configured: boolean;
     reachable: boolean;
     last: { at: string; tables: number | null; attachments: number | null } | null;
+    /** The last restore check (npm run db:verify-backup); missing on an older backend. */
+    restoreCheck?: { at: string; ok: boolean; backupAt: string } | null;
+    /** B4: the nightly backup made by the server; null when off, missing on an older backend. */
+    nightly?: { at: string; keep: number; lastRun: { at: string; ok: boolean } | null } | null;
   };
   services: { telegram: boolean; whatsapp: boolean; webhook: boolean; ai: string | null };
 };
 
 /** A backup older than this is reported in the warnings. */
 export const BACKUP_MAX_AGE_DAYS = 7;
+
+/** A restore check older than this is reported in the warnings. */
+export const RESTORE_CHECK_MAX_AGE_DAYS = 30;
 
 export type AiUsage = {
   days: number;
@@ -102,6 +109,11 @@ export function healthWarnings(h: SystemHealth, now = new Date()): string[] {
     warnings.push(`${h.storage.disk.missingFiles} allegati non hanno più il file sul disco.`);
   }
   const backup = h.backup;
+  if (backup?.nightly?.lastRun && !backup.nightly.lastRun.ok) {
+    warnings.push(
+      "L'ultimo backup notturno non è riuscito: il server riprova tra un'ora (vedi i log).",
+    );
+  }
   if (backup?.configured) {
     if (!backup.reachable) {
       warnings.push('La cartella dei backup non è raggiungibile: il disco è collegato?');
@@ -110,6 +122,18 @@ export function healthWarnings(h: SystemHealth, now = new Date()): string[] {
     } else {
       const days = Math.floor((now.getTime() - new Date(backup.last.at).getTime()) / 86_400_000);
       if (days >= BACKUP_MAX_AGE_DAYS) warnings.push(`L'ultimo backup è di ${days} giorni fa.`);
+      const check = backup.restoreCheck;
+      if (check && !check.ok) {
+        warnings.push("L'ultima verifica del ripristino non è riuscita.");
+      } else if (
+        !check ||
+        Math.floor((now.getTime() - new Date(check.at).getTime()) / 86_400_000) >=
+          RESTORE_CHECK_MAX_AGE_DAYS
+      ) {
+        warnings.push(
+          `Nessuna verifica del ripristino negli ultimi ${RESTORE_CHECK_MAX_AGE_DAYS} giorni (npm run db:verify-backup).`,
+        );
+      }
     }
   }
   return warnings;

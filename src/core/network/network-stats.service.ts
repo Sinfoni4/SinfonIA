@@ -4,7 +4,7 @@ import { AuditService } from '../../data/services/audit.service.js';
 
 import { NETWORK_TYPES, NetworkError } from './network.service.js';
 
-import type { ComplianceCategory, PracticeStatus, PrismaClient } from '@prisma/client';
+import type { ComplianceCategory, PracticeStatus, PrismaClient, UsageKind } from '@prisma/client';
 
 /**
  * MF9 statistics of a network (decision D4, docs/PROPOSTA_DECISIONI_D3_D4.md): only the closed
@@ -42,6 +42,16 @@ export type NetworkStats = {
   documents: { uploaded: Protected; readWithoutCheckPercent: Protected };
   /** I7: requests to the assistant in chat and accesses to the dashboard in the period. */
   channels: { chatRequests: Protected; dashboardLogins: Protected };
+  /**
+   * AGX-07: usage of the member companies in the period, by kind, under the same rules (D4.1):
+   * a total is shown only when at least MIN_COMPANIES companies contribute to it.
+   */
+  usage: Array<{ kind: UsageKind; value: Protected }>;
+  /**
+   * AGX-07: the work the network itself did for its companies through delegations, by kind. It is
+   * the network's own activity, so it is always shown, but never company by company.
+   */
+  delegatedWork: Array<{ kind: UsageKind; quantity: number }>;
 };
 
 const STATES: PracticeStatus[] = ['CREATED', 'VALIDATED', 'SUBMITTED', 'COMPLETED', 'FAILED'];
@@ -54,6 +64,16 @@ const CATEGORIES: ComplianceCategory[] = [
   'ALTRO',
 ];
 const DAY_MS = 24 * 60 * 60_000;
+/** AGX-07: the usage a network sees; AI tokens stay a technical detail of the platform. */
+const NETWORK_USAGE_KINDS: UsageKind[] = [
+  'DOCUMENT_RECEIVED',
+  'OCR_PAGES',
+  'AI_CALL',
+  'PRACTICE_OPENED',
+  'PRACTICE_COMPLETED',
+  'DOCUMENT_REQUESTED',
+  'ASSISTANCE_CLOSED',
+];
 
 /** Start and end (exclusive) of a fixed period, in calendar terms of Europe/Rome (UTC dates). */
 export function periodBounds(
@@ -165,11 +185,23 @@ export async function networkStats(
     organic: { valid: null, total: null },
     documents: { uploaded: null, readWithoutCheckPercent: null },
     channels: { chatRequests: null, dashboardLogins: null },
+    usage: NETWORK_USAGE_KINDS.map((kind) => ({ kind, value: null })),
+    delegatedWork: [],
   };
+
+  const delegated = await prisma.usageEvent.groupBy({
+    by: ['kind'],
+    where: { actorOrgId: input.networkId, occurredAt: { gte: from, lt: to } },
+    _sum: { quantity: true },
+  });
+  result.delegatedWork = NETWORK_USAGE_KINDS.map((kind) => ({
+    kind,
+    quantity: delegated.find((d) => d.kind === kind)?._sum.quantity ?? 0,
+  })).filter((d) => d.quantity !== 0);
 
   if (sufficient) {
     const ids = Prisma.join(inPeriod.map((id) => Prisma.sql`${id}::uuid`));
-    const [byStatus, byKind, completion, docs, chat, logins] = await Promise.all([
+    const [byStatus, byKind, completion, docs, chat, logins, usage] = await Promise.all([
       prisma.$queryRaw<Row[]>`
         SELECT "tenant_id", "status"::text AS "key", count(*)::int AS "amount"
         FROM "practice"
@@ -211,6 +243,11 @@ export async function networkStats(
           createdAt: { gte: from, lt: to },
         },
         _count: { _all: true },
+      }),
+      prisma.usageEvent.groupBy({
+        by: ['tenantId', 'kind'],
+        where: { tenantId: { in: inPeriod }, occurredAt: { gte: from, lt: to } },
+        _sum: { quantity: true },
       }),
     ]);
 
@@ -257,6 +294,13 @@ export async function networkStats(
         logins.length,
       ),
     };
+    const usageSums = byKey(
+      usage.map((u) => ({ tenant_id: u.tenantId, key: u.kind, amount: u._sum.quantity ?? 0 })),
+    );
+    result.usage = NETWORK_USAGE_KINDS.map((kind) => {
+      const u = usageSums.get(kind);
+      return { kind, value: u ? protectAmount(u.amount, u.companies.size) : 0 };
+    });
   }
 
   // I4 and I5 describe the situation today, so they use the companies that are members now.

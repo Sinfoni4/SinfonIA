@@ -6,11 +6,22 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { CONSULTANT, login, openSection, unique } from './helpers';
+import {
+  accessibilityProblems,
+  CONSULTANT,
+  focusPageStart,
+  keyboardFocusProblems,
+  login,
+  openSection,
+  unique,
+} from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
+
+/** Pages added after the first checks: requests, usage, assistant activity. */
+const MORE_PAGES = ['richieste', 'attivita/consumi', 'attivita/assistente'];
 
 test.beforeAll(async ({ browser }, testInfo) => {
   const context = await browser.newContext(testInfo.project.use);
@@ -72,6 +83,7 @@ test('reaches the content from the keyboard with «Vai al contenuto»', async ({
   test.skip(isMobile, 'keyboard path');
   await page.goto('./');
   await expect(page.getByRole('list', { name: 'Indicatori' })).toBeVisible();
+  await focusPageStart(page);
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Vai al contenuto' })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -87,6 +99,13 @@ test('fits the screen without horizontal scrolling on every main page', async ()
     'verifica',
     'deleghe',
     'impostazioni',
+    'persone',
+    'attivita',
+    'assistenza',
+    'export',
+    'profilo',
+    'pratiche/nuova',
+    ...MORE_PAGES,
   ]) {
     await page.goto(`./${path}`);
     await expect(page.locator('main h1')).toBeVisible();
@@ -95,6 +114,107 @@ test('fits the screen without horizontal scrolling on every main page', async ()
     );
     expect(overflow, path || 'home').toBeLessThanOrEqual(0);
   }
+  // Space for the scrollbar is always kept, so header and content keep their place between short
+  // and long sections (the test browser's scrollbars take no space, so it is checked directly).
+  expect(
+    await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarGutter),
+  ).toBe('stable');
+});
+
+test('meets the basic accessibility checks on every main page', async () => {
+  const found: Record<string, string[]> = {};
+  for (const path of [
+    '',
+    'pratiche',
+    'pratiche/nuova',
+    'bacheca',
+    'scadenze',
+    'verifica',
+    'deleghe',
+    'persone',
+    'attivita',
+    'assistenza',
+    'export',
+    'impostazioni',
+    'profilo',
+    ...MORE_PAGES,
+  ]) {
+    await page.goto(`./${path}`);
+    await expect(page.locator('main h1')).toBeVisible();
+    const problems = await accessibilityProblems(page);
+    if (problems.length > 0) found[path || 'home'] = problems;
+  }
+  expect(found).toEqual({});
+});
+
+test('the pages of a practice and of a person fit the screen and pass the checks', async () => {
+  const name = unique('Semina');
+  await createPractice(name);
+  const practicePage = page.url();
+  await openSection(page, 'Persone');
+  await page.getByRole('link', { name: 'e2e.operatore@sinfonia.test' }).click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'e2e.operatore@sinfonia.test' }),
+  ).toBeVisible();
+  const memberPage = page.url();
+
+  const found: Record<string, string[]> = {};
+  for (const [label, url] of [
+    ['pratica', practicePage],
+    ['persona', memberPage],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.locator('main h1')).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, label).toBeLessThanOrEqual(0);
+    const problems = await accessibilityProblems(page);
+    if (problems.length > 0) found[label] = problems;
+  }
+  expect(found).toEqual({});
+});
+
+test('shows where the keyboard is on every main page', async ({ isMobile }) => {
+  test.skip(isMobile, 'keyboard path');
+  const found: Record<string, string[]> = {};
+  for (const path of [
+    '',
+    'pratiche',
+    'pratiche/nuova',
+    'bacheca',
+    'deleghe',
+    'persone',
+    'export',
+  ]) {
+    await page.goto(`./${path}`);
+    await expect(page.locator('main h1')).toBeVisible();
+    const problems = await keyboardFocusProblems(page);
+    if (problems.length > 0) found[path || 'home'] = problems;
+  }
+  expect(found).toEqual({});
+});
+
+test('takes a request for assistance and closes it', async () => {
+  await openSection(page, 'Assistenza');
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Richieste di assistenza' }),
+  ).toBeVisible();
+  const card = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('button', { name: 'Prendi in carico' }) })
+    .first();
+  await card.getByRole('button', { name: 'Prendi in carico' }).click();
+  await expect(page.getByRole('status')).toHaveText(/presa in carico/);
+  const taken = page
+    .getByRole('listitem')
+    .filter({ hasText: 'In carico dal' })
+    .filter({ has: page.getByRole('button', { name: 'Chiudi' }) })
+    .first();
+  await taken.getByRole('button', { name: 'Chiudi' }).click();
+  await expect(page.getByRole('status')).toHaveText(/Richiesta chiusa/);
+  await page.getByRole('button', { name: 'Chiuse' }).click();
+  await expect(page.getByText(/^Chiusa il /).first()).toBeVisible();
 });
 
 test('gives a delegation to a consultant and revokes it', async () => {

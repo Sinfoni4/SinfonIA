@@ -24,8 +24,17 @@ import type {
  * proposed by that organization and approved by the grantor; a new member gets nothing.
  */
 
-/** Operations available in this version; the others are refused until their rules exist. */
-export const AVAILABLE_OPERATIONS: readonly GrantOperation[] = ['READ', 'UPDATE', 'EXPORT'];
+/**
+ * Operations available in this version; the others are refused until their rules exist.
+ * AGX-04: READ also covers listing and downloading documents; UPDATE covers the state, the step
+ * (sub-state), uploading documents and confirming the data read from them; CREATE opens practices.
+ */
+export const AVAILABLE_OPERATIONS: readonly GrantOperation[] = [
+  'READ',
+  'CREATE',
+  'UPDATE',
+  'EXPORT',
+];
 /** Operations that shorten the maximum duration to 3 months (D3.7). */
 const SENSITIVE: readonly GrantOperation[] = ['DELETE', 'EXPORT'];
 const MAX_MONTHS = 12;
@@ -55,11 +64,22 @@ function addMonths(date: Date, months: number): Date {
  */
 export function maxValidUntil(operations: readonly GrantOperation[], now = new Date()): Date {
   const sensitive = operations.some((o) => SENSITIVE.includes(o));
-  const last = addMonths(now, sensitive ? MAX_MONTHS_SENSITIVE : MAX_MONTHS);
-  return new Date(
-    Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate(), 23, 59, 59, 999),
+  // «Today» is the Italian calendar day, as for the dashboard and the end date it sends
+  // (`<date>T23:59:59+01:00`): just after midnight in Italy it is still yesterday in UTC.
+  const [y, m, d] = ITALIAN_DAY.format(now).split('-').map(Number) as [number, number, number];
+  const last = addMonths(
+    new Date(Date.UTC(y, m - 1, d, 12)),
+    sensitive ? MAX_MONTHS_SENSITIVE : MAX_MONTHS,
   );
+  return new Date(`${last.toISOString().slice(0, 10)}T23:59:59.999+01:00`);
 }
+
+const ITALIAN_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Rome',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 /** Checks operations and end date against D3; returns the operations without duplicates. */
 export function checkDelegation(
@@ -566,6 +586,48 @@ export async function resolveDelegatedAccess(
     operations: grant.operations,
     validUntil: grant.validUntil,
   };
+}
+
+/**
+ * AGX-04: whose practice a practice created through a delegation is. The person who acts is not a
+ * member of the grantor, so the practice belongs to whoever issued the delegation while they are
+ * still an active member, otherwise to the oldest active administrator of the grantor. The
+ * company can then choose a holder (AGX-03). The list of its members is never shown to the
+ * delegated person.
+ */
+export async function delegatedPracticeOwner(
+  prisma: PrismaLike,
+  access: Pick<DelegatedAccess, 'grantId' | 'grantorOrgId'>,
+): Promise<string> {
+  const grant = await prisma.accessGrant.findUnique({
+    where: { id: access.grantId },
+    select: { createdBy: true },
+  });
+  const active = {
+    orgId: access.grantorOrgId,
+    status: 'ACTIVE' as const,
+    user: { status: 'ACTIVE' as const },
+  };
+  if (grant?.createdBy) {
+    const issuer = await prisma.membership.findFirst({
+      where: { ...active, userId: grant.createdBy },
+      select: { userId: true },
+    });
+    if (issuer) return issuer.userId;
+  }
+  const admin = await prisma.membership.findFirst({
+    where: { ...active, role: 'ADMIN' },
+    orderBy: { createdAt: 'asc' },
+    select: { userId: true },
+  });
+  if (!admin) {
+    throw new DelegationError(
+      'L’organizzazione che ha dato la delega non ha un amministratore attivo a cui intestare la pratica',
+      409,
+      'NO_PRACTICE_OWNER',
+    );
+  }
+  return admin.userId;
 }
 
 /** Records a use of a delegation in the log of the organization that gave it. */

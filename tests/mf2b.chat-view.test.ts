@@ -72,7 +72,6 @@ describe.runIf(Boolean(DATABASE_URL))('chat default view and explicit requests (
       {
         name: 'telegram',
         identity: {
-          link: () => Promise.resolve(null),
           resolve: async () => ({
             tenant: await getTenantById(prisma, tenantId),
             userId: users[who],

@@ -72,7 +72,11 @@ export type AuditEvent = {
       | 'operations'
       | 'action'
       | 'subState'
-      | 'cleared',
+      | 'cleared'
+      | 'taxCode'
+      | 'vatNumber'
+      | 'expectedKey'
+      | 'ref',
       string | number | boolean
     >
   >;
@@ -95,6 +99,8 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'INVITATION_CREATED',
       'INVITATION_ACCEPTED',
       'INVITATION_REVOKED',
+      'CHANNEL_LINKED',
+      'CHANNEL_UNLINKED',
       'MEMBER_ADDED',
       'MEMBER_ROLE_CHANGED',
       'MEMBERSHIP_REVOKED',
@@ -112,8 +118,16 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'PRACTICE_STATE_CHANGED',
       'PRACTICE_DELETED',
       'PRACTICE_ASSIGNED',
+      'PRACTICE_HOLDER_CHANGED',
       'PRACTICE_SUB_STATE_CHANGED',
       'ATTACHMENT_VALIDATED',
+      'ATTACHMENT_EXPECTED_SET',
+      'ATTACHMENT_REJECTED',
+      'ATTACHMENT_READ_RETRIED',
+      'ATTACHMENT_READ_FAILED',
+      'DOCUMENT_REQUESTED',
+      'DOCUMENT_REQUEST_FULFILLED',
+      'DOCUMENT_REQUEST_CANCELLED',
     ],
   },
   network: {
@@ -164,6 +178,9 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ORGANIZATION_SUSPENDED',
       'ORGANIZATION_REACTIVATED',
       'ORGANIZATION_MODULES_CHANGED',
+      'ORGANIZATION_IDENTIFIERS_CHANGED',
+      'COMPANY_IDENTIFIERS_VIEWED',
+      'USAGE_EVENT_REVERSED',
     ],
   },
 };
@@ -173,6 +190,8 @@ const CHANNEL_LABELS: Record<string, string> = {
   api: 'API',
   telegram: 'Telegram',
   whatsapp: 'WhatsApp',
+  TELEGRAM: 'Telegram',
+  WHATSAPP: 'WhatsApp',
 };
 
 const PERIOD_LABELS: Record<string, string> = {
@@ -204,6 +223,15 @@ const DELEGATED_ACTIONS: Record<string, string> = {
   read: 'dettaglio di una pratica',
   transition: 'cambio di stato',
   export: 'export',
+  create: 'nuova pratica',
+  download: 'download di un documento',
+  upload: 'caricamento di un documento',
+  validation: 'verifica dei dati di un documento',
+  sub_state: 'cambio di fase',
+  expected: 'collegamento di un documento previsto',
+  document_request: 'richiesta di un documento',
+  document_request_cancel: 'richiesta di un documento annullata',
+  document_request_fulfil: 'file collegato a una richiesta',
 };
 
 const TOPIC_LABELS: Record<string, string> = {
@@ -255,6 +283,14 @@ export function describeEvent(event: AuditEvent): string {
       return `Invito accettato come ${roleName(d.role)}`;
     case 'INVITATION_REVOKED':
       return 'Invito revocato';
+    case 'CHANNEL_LINKED':
+      return `Chat collegata con codice via email${channel}${typeof d.ref === 'string' ? ` ${d.ref}` : ''}`;
+    case 'CHANNEL_UNLINKED':
+      return d.by === 'admin'
+        ? `Chat di ${target} scollegata da un amministratore${channel}`
+        : d.by === 'replaced'
+          ? `Chat sostituita da un nuovo collegamento${channel}`
+          : `Chat scollegata${channel}`;
     case 'MEMBER_ADDED':
       return `${target} aggiunto come ${roleName(d.role)}`;
     case 'MEMBER_ROLE_CHANGED':
@@ -314,11 +350,33 @@ export function describeEvent(event: AuditEvent): string {
     case 'ASSISTANCE_CLOSED':
       return 'Richiesta di assistenza chiusa';
     case 'PRACTICE_CREATED':
-      return `Pratica ${practice} creata`;
+      return event.target
+        ? `Pratica ${practice} creata per ${target}`
+        : `Pratica ${practice} creata`;
     case 'PRACTICE_STATE_CHANGED':
       return `Pratica ${practice}: da ${stateName(d.from)} a ${stateName(d.to)}`;
     case 'PRACTICE_DELETED':
       return `Pratica ${practice} eliminata`;
+    case 'ATTACHMENT_EXPECTED_SET':
+      return d.cleared === true
+        ? `Pratica ${practice}: documento scollegato dai documenti previsti`
+        : `Pratica ${practice}: documento collegato a un documento previsto`;
+    case 'ATTACHMENT_READ_RETRIED':
+      return `Pratica ${practice}: documento letto al nuovo tentativo`;
+    case 'ATTACHMENT_READ_FAILED':
+      return `Pratica ${practice}: documento non leggibile, da controllare a mano`;
+    case 'ATTACHMENT_REJECTED':
+      return `Pratica ${practice}: documento respinto`;
+    case 'DOCUMENT_REQUESTED':
+      return `Pratica ${practice}: richiesto un documento${channel}`;
+    case 'DOCUMENT_REQUEST_FULFILLED':
+      return `Pratica ${practice}: ricevuto il documento richiesto`;
+    case 'DOCUMENT_REQUEST_CANCELLED':
+      return `Pratica ${practice}: richiesta di un documento annullata`;
+    case 'PRACTICE_HOLDER_CHANGED':
+      return event.target
+        ? `Pratica ${practice}: titolare ${target}`
+        : `Pratica ${practice}: tornata a chi l'ha aperta`;
     case 'PRACTICE_ASSIGNED':
       return d.unassigned === true
         ? `Pratica ${practice} non più assegnata`
@@ -342,6 +400,12 @@ export function describeEvent(event: AuditEvent): string {
       return 'Organizzazione riattivata dal gestore della piattaforma';
     case 'ORGANIZATION_MODULES_CHANGED':
       return 'Settore o funzioni cambiati dal gestore della piattaforma';
+    case 'ORGANIZATION_IDENTIFIERS_CHANGED':
+      return 'Dati identificativi cambiati dal gestore della piattaforma';
+    case 'USAGE_EVENT_REVERSED':
+      return 'Un consumo è stato stornato dal gestore della piattaforma';
+    case 'COMPANY_IDENTIFIERS_VIEWED':
+      return `Codice fiscale e partita IVA mostrati per intero${channel}`;
     case 'PRACTICE_SUB_STATE_CHANGED':
       return d.cleared === true
         ? `Pratica ${practice}: fase tolta`
@@ -353,6 +417,10 @@ export function describeEvent(event: AuditEvent): string {
         parts.push(`export pianificato ${d.scheduledExport ? 'attivato' : 'disattivato'}`);
       if (typeof d.frequency === 'string' && d.frequency in FREQUENCY_LABELS)
         parts.push(`frequenza ${FREQUENCY_LABELS[d.frequency as Frequency]}`);
+      if (typeof d.taxCode === 'string')
+        parts.push(`codice fiscale / CUAA ${d.taxCode === 'removed' ? 'tolto' : 'aggiornato'}`);
+      if (typeof d.vatNumber === 'string')
+        parts.push(`partita IVA ${d.vatNumber === 'removed' ? 'tolta' : 'aggiornata'}`);
       return `Impostazioni: ${parts.join(', ') || 'modificate'}`;
     }
     default:
@@ -457,6 +525,9 @@ export type Settings = {
   /** MF9: what a network sees of its members, with the name (I1). */
   municipality: string | null;
   sector: string | null;
+  /** AGX-02: codice fiscale / CUAA and partita IVA, never shown to networks. */
+  taxCode: string | null;
+  vatNumber: string | null;
   scheduledExport: { enabled: boolean; frequency: Frequency };
   reminderDays: number[];
 };

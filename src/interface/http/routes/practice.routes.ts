@@ -1,8 +1,27 @@
 import { z } from 'zod';
 
-import { can, scopedUserId } from '../../../core/authz/authorization.service.js';
-import { AttachmentRejectedError, DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
+import {
+  authorize,
+  can,
+  PermissionDeniedError,
+  practiceReach,
+  scopedUserId,
+} from '../../../core/authz/authorization.service.js';
+import { DEFAULT_MAX_ATTACHMENT_BYTES } from '../../../core/index.js';
+import {
+  practiceChecklist,
+  rejectAttachment,
+  setAttachmentExpectedKey,
+} from '../../../core/practice/document-checklist.js';
+import {
+  cancelDocumentRequest,
+  createDocumentRequest,
+  fulfilRequestManually,
+  listDocumentRequests,
+  listOpenDocumentRequests,
+} from '../../../core/practice/document-request.js';
 import { assignPractice, listAssignees } from '../../../core/practice/practice-assignment.js';
+import { listHolderCandidates, setPracticeHolder } from '../../../core/practice/practice-holder.js';
 import { moduleOfTenant, setPracticeSubState } from '../../../core/practice/practice-module.js';
 import { allowedNextStates } from '../../../core/workflow/state-machine.js';
 import { deadlineCategoriesOf } from '../../../modules/registry.js';
@@ -10,11 +29,17 @@ import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  AttachmentExpectedBodySchema,
+  AttachmentRejectionBodySchema,
+  DocumentRequestBodySchema,
+  DocumentRequestFulfilBodySchema,
+  DocumentRequestParamsSchema,
   PracticeAssignBodySchema,
-  PracticeAttachmentBodySchema,
   PracticeAttachmentParamsSchema,
+  PracticeAttachmentQuerySchema,
   PracticeCreateBodySchema,
   PracticeExportBodySchema,
+  PracticeHolderBodySchema,
   PracticeIdParamsSchema,
   PracticeListQuerySchema,
   PracticeSubStateBodySchema,
@@ -22,14 +47,17 @@ import {
   PracticeTransitionParamsSchema,
 } from '../validation/practice.validation.js';
 
+import { attachmentBodyLimit, readAttachmentUpload } from './attachment-upload.js';
+
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 
 const AttachmentDownloadParamsSchema = z.object({
   id: z.string().uuid(),
   attachmentId: z.string().uuid(),
 });
+const AttachmentIdParamsSchema = AttachmentDownloadParamsSchema;
 
 export type PracticeRoutesDeps = {
   practiceService: PracticeApplicationService;
@@ -37,48 +65,6 @@ export type PracticeRoutesDeps = {
   /** A4: assignment of practices; without a database the routes are not registered. */
   prisma?: PrismaClient;
 };
-
-type AttachmentUpload = { fileName: string; mimeType: string; content: Buffer; hint?: string };
-
-// Room for the JSON envelope around the base64 content (file name, MIME type, hint).
-const BASE64_ENVELOPE_BYTES = 64 * 1024;
-
-function readBase64Upload(body: unknown): AttachmentUpload {
-  const parsed = PracticeAttachmentBodySchema.parse(body);
-  return {
-    fileName: parsed.fileName,
-    mimeType: parsed.mimeType,
-    content: Buffer.from(parsed.contentBase64, 'base64'),
-    hint: parsed.hint,
-  };
-}
-
-// Reads every part, so the optional "hint" field is accepted before or after the file.
-async function readMultipartUpload(req: FastifyRequest): Promise<AttachmentUpload> {
-  let file: Omit<AttachmentUpload, 'hint'> | undefined;
-  let hint: string | undefined;
-  try {
-    for await (const part of req.parts()) {
-      if (part.type === 'file') {
-        const content = await part.toBuffer();
-        if (part.fieldname === 'file') {
-          file = { fileName: part.filename, mimeType: part.mimetype, content };
-        }
-      } else if (part.fieldname === 'hint') {
-        hint = String(part.value);
-      }
-    }
-  } catch (err: unknown) {
-    if ((err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
-      throw new AttachmentRejectedError('ATTACHMENT_TOO_LARGE', 'The attached file is too large');
-    }
-    throw err;
-  }
-  if (!file) {
-    throw new AttachmentRejectedError('EMPTY_ATTACHMENT', 'Multipart field "file" is required');
-  }
-  return { ...file, hint };
-}
 
 export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, deps, done) => {
   const maxAttachmentBytes = deps.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
@@ -88,6 +74,9 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
     try {
       const auth = requirePermission(req, 'practice.create').principal;
       const body = PracticeCreateBodySchema.parse(req.body);
+      // AGX-03: opening a practice for someone else is for who may assign practices.
+      const forOther = body.holderUserId && body.holderUserId !== auth.userId;
+      if (forOther) authorize(auth, 'practice.assign');
 
       const created = await deps.practiceService.createPractice({
         tenantId: auth.tenantId,
@@ -96,6 +85,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         kind: body.kind,
         fields: body.fields,
         metadata: body.metadata,
+        holderUserId: forOther ? body.holderUserId : null,
       });
 
       return reply.status(201).send(ok(created));
@@ -112,12 +102,11 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       const auth = grant.principal;
       const query = PracticeListQuerySchema.parse(req.query);
 
-      // Own-scoped callers see only their practices; tenant-scoped ones may filter by user.
-      const targetUserId = scopedUserId(grant, query.userId);
-
+      // Own-scoped callers see only their practices, `assigned` ones also those they follow;
+      // tenant-scoped ones may filter by user.
       const result = await deps.practiceService.listPracticesPaginated({
         tenantId: auth.tenantId,
-        userId: targetUserId,
+        ...practiceReach(grant, query.userId),
         assignedTo: query.assignedTo === 'me' ? auth.userId : query.assignedTo,
         status: query.status,
         search: query.search,
@@ -196,6 +185,244 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       },
     );
 
+    // AGX-06: the document requests of a practice, for whoever reaches it.
+    app.get(
+      '/practices/:id/document-requests',
+      { config: { permission: 'practice.read' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.read');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          await deps.practiceService.getPractice({
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            ...practiceReach(grant),
+          });
+          return reply.send(
+            ok(
+              await listDocumentRequests(prisma, {
+                tenantId: grant.principal.tenantId,
+                practiceId: id,
+              }),
+            ),
+          );
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-06: asking for, cancelling and linking documents is for who checks the documents of the
+    // whole organization (like a rejection).
+    const staffGrant = (req: Parameters<typeof requirePermission>[0]) => {
+      const grant = requirePermission(req, 'attachment.validate');
+      if (grant.scope !== 'tenant') throw new PermissionDeniedError('attachment.validate');
+      return grant;
+    };
+
+    app.get(
+      '/document-requests',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          return reply.send(ok(await listOpenDocumentRequests(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    app.post(
+      '/practices/:id/document-requests',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          const body = DocumentRequestBodySchema.parse(req.body);
+          const created = await createDocumentRequest(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            expectedKey: body.expectedKey ?? null,
+            message: body.message,
+            dueDate: body.dueDate ?? null,
+            actorUserId: grant.principal.userId,
+            requesterOrgId: grant.principal.tenantId,
+            channel: req.headers['x-sinfonia-client'] === 'web' ? 'web' : 'api',
+          });
+          return reply.status(201).send(ok(created));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    app.post(
+      '/practices/:id/document-requests/:requestId/cancel',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          const { id, requestId } = DocumentRequestParamsSchema.parse(req.params);
+          await cancelDocumentRequest(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            requestId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok({ cancelled: true }));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    app.post(
+      '/practices/:id/document-requests/:requestId/fulfil',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = staffGrant(req);
+          const { id, requestId } = DocumentRequestParamsSchema.parse(req.params);
+          const body = DocumentRequestFulfilBodySchema.parse(req.body);
+          const result = await fulfilRequestManually(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            requestId,
+            attachmentId: body.attachmentId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-05: the document checklist of a practice, for whoever reaches it.
+    app.get(
+      '/practices/:id/checklist',
+      { config: { permission: 'practice.read' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.read');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          await deps.practiceService.getPractice({
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            ...practiceReach(grant),
+          });
+          return reply.send(
+            ok(
+              await practiceChecklist(prisma, {
+                tenantId: grant.principal.tenantId,
+                practiceId: id,
+              }),
+            ),
+          );
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-05: which expected document a file is. Like the check of its data: own practices for
+    // a member, the organization's for administrators and operators.
+    app.post(
+      '/practices/:id/attachments/:attachmentId/expected',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'attachment.validate');
+          const { id, attachmentId } = AttachmentIdParamsSchema.parse(req.params);
+          const body = AttachmentExpectedBodySchema.parse(req.body);
+          const result = await setAttachmentExpectedKey(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            attachmentId,
+            expectedKey: body.expectedKey,
+            actorUserId: grant.principal.userId,
+            ownerUserId: scopedUserId(grant),
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-05: rejecting a file is for who checks the documents of the whole organization; a person
+    // never rejects their own.
+    app.post(
+      '/practices/:id/attachments/:attachmentId/rejection',
+      { config: { permission: 'attachment.validate' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'attachment.validate');
+          if (grant.scope !== 'tenant') throw new PermissionDeniedError('attachment.validate');
+          const { id, attachmentId } = AttachmentIdParamsSchema.parse(req.params);
+          const body = AttachmentRejectionBodySchema.parse(req.body);
+          const result = await rejectAttachment(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            attachmentId,
+            reason: body.reason,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-03: the people a practice can be opened for (active members of the organization).
+    app.get(
+      '/practices/holders',
+      { config: { permission: 'practice.assign' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.assign');
+          return reply.send(ok(await listHolderCandidates(prisma, grant.principal.tenantId)));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
+    // AGX-03: sets the holder of a practice, or gives it back to its creator (`userId: null`).
+    app.post(
+      '/practices/:id/holder',
+      { config: { permission: 'practice.assign' } },
+      async (req, reply) => {
+        try {
+          const grant = requirePermission(req, 'practice.assign');
+          const { id } = PracticeIdParamsSchema.parse(req.params);
+          const body = PracticeHolderBodySchema.parse(req.body);
+          const result = await setPracticeHolder(prisma, {
+            tenantId: grant.principal.tenantId,
+            practiceId: id,
+            holderUserId: body.userId,
+            actorUserId: grant.principal.userId,
+          });
+          return reply.send(ok(result));
+        } catch (err: unknown) {
+          const mapped = mapErrorToHttp(err);
+          return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+        }
+      },
+    );
+
     // A4: assigns a practice to an administrator or operator, or to nobody (`userId: null`).
     app.post(
       '/practices/:id/assign',
@@ -227,12 +454,10 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
       const auth = grant.principal;
       const params = PracticeIdParamsSchema.parse(req.params);
 
-      const targetUserId = scopedUserId(grant);
-
       const practice = await deps.practiceService.getPractice({
         tenantId: auth.tenantId,
         practiceId: params.id,
-        userId: targetUserId,
+        ...practiceReach(grant),
       });
 
       // The next states the caller may set (B6): the dashboard shows only valid actions, the
@@ -310,7 +535,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
   app.post(
     '/practices/:id/attachments',
     {
-      bodyLimit: Math.ceil((maxAttachmentBytes * 4) / 3) + BASE64_ENVELOPE_BYTES,
+      bodyLimit: attachmentBodyLimit(maxAttachmentBytes),
       config: { permission: 'attachment.create' },
     },
     async (req, reply) => {
@@ -318,15 +543,16 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         // Own practices only, whatever the role: the service filters by the uploader.
         const auth = requirePermission(req, 'attachment.create').principal;
         const params = PracticeAttachmentParamsSchema.parse(req.params);
-        const upload = req.isMultipart()
-          ? await readMultipartUpload(req)
-          : readBase64Upload(req.body);
+        const { allowDuplicate } = PracticeAttachmentQuerySchema.parse(req.query);
+        const upload = await readAttachmentUpload(req);
 
         const result = await deps.practiceService.addAttachment({
           tenantId: auth.tenantId,
           userId: auth.userId,
           practiceId: params.id,
           ...upload,
+          allowDuplicate,
+          channel: 'dashboard',
         });
 
         return reply.status(201).send(ok(result));
@@ -347,12 +573,10 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
         const auth = grant.principal;
         const params = PracticeAttachmentParamsSchema.parse(req.params);
 
-        const targetUserId = scopedUserId(grant);
-
         const attachments = await deps.practiceService.listAttachments({
           tenantId: auth.tenantId,
           practiceId: params.id,
-          userId: targetUserId,
+          ...practiceReach(grant),
         });
 
         return reply.status(200).send(ok(attachments));
@@ -375,7 +599,7 @@ export const practiceRoutes: FastifyPluginCallback<PracticeRoutesDeps> = (app, d
           tenantId: grant.principal.tenantId,
           practiceId: params.id,
           attachmentId: params.attachmentId,
-          userId: scopedUserId(grant),
+          ...practiceReach(grant),
         });
         // Never cached, always downloaded (no rendering of uploaded content in the browser).
         return reply

@@ -7,7 +7,9 @@ import { requireDatabase } from '../../runtime/runtime.guard.js';
 import { ConcurrencyError } from '../errors/concurrency.errors.js';
 import { InvalidStateTransitionError } from '../errors/workflow.errors.js';
 import { PRACTICE_STATUS_CHANGED } from '../outbox/practice-status.handler.js';
+import { notifyNewHolder, practiceRecipient, requireHolder } from '../practice/practice-holder.js';
 import { buildPracticePayload } from '../practice/practice.payload.js';
+import { recordUsage } from '../usage/usage.service.js';
 
 import { canTransition } from './state-machine.js';
 
@@ -42,19 +44,44 @@ export class PracticeWorkflow {
       const audit = new AuditService(tx);
 
       const kind = input.kind ?? 'generic';
+      // AGX-03: opened for someone else; for the creator themselves there is no holder.
+      const holderUserId =
+        input.holderUserId && input.holderUserId !== input.userId ? input.holderUserId : null;
+      if (holderUserId) await requireHolder(tx, input.tenantId, holderUserId);
       const created = await repo.createPractice(input.tenantId, {
         userId: input.userId,
+        holderUserId,
         payload: buildPracticePayload(kind, name, input.metadata),
       });
 
       await audit.logEvent({
         tenantId: input.tenantId,
-        userId: input.userId,
+        userId: input.actorUserId ?? input.userId,
         eventType: 'PRACTICE_CREATED',
         payload: {
           practiceId: created.id,
+          ...(holderUserId ? { targetUserId: holderUserId } : {}),
         },
       });
+      // AGX-07: one practice opened, in the same transaction.
+      await recordUsage(tx, [
+        {
+          key: `practice.opened:${created.id}`,
+          tenantId: input.tenantId,
+          kind: 'PRACTICE_OPENED',
+          actorOrgId: input.actorOrgId,
+          userId: input.actorUserId ?? input.userId,
+          practiceId: created.id,
+        },
+      ]);
+      if (holderUserId) {
+        await notifyNewHolder(tx, {
+          tenantId: input.tenantId,
+          practiceId: created.id,
+          holderUserId,
+          actorUserId: input.actorUserId ?? input.userId,
+        });
+      }
 
       return created;
     });
@@ -100,13 +127,28 @@ export class PracticeWorkflow {
         },
       });
 
+      // AGX-07: completion is final (no transition leaves COMPLETED), so it is counted once.
+      if (to === 'COMPLETED') {
+        await recordUsage(tx, [
+          {
+            key: `practice.completed:${input.practiceId}`,
+            tenantId: input.tenantId,
+            kind: 'PRACTICE_COMPLETED',
+            actorOrgId: input.actorOrgId,
+            userId: input.userId,
+            practiceId: input.practiceId,
+          },
+        ]);
+      }
+
       // A3: the owner hears in chat when someone else moves their practice, in the same
-      // transaction, so a rolled-back change sends nothing.
-      if (practice.userId !== input.userId) {
+      // transaction, so a rolled-back change sends nothing. AGX-03: the holder, when there is one.
+      const recipient = practiceRecipient(practice);
+      if (recipient !== input.userId) {
         await new OutboxRepository(tx).createMessage({
           tenantId: input.tenantId,
           eventType: PRACTICE_STATUS_CHANGED,
-          payload: { practiceId: input.practiceId, userId: practice.userId, from, to },
+          payload: { practiceId: input.practiceId, userId: recipient, from, to },
         });
       }
 

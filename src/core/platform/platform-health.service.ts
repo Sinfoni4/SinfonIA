@@ -1,5 +1,6 @@
 import { runtimeState } from '../../runtime/runtime.state.js';
 
+import { nightlyBackupStatus } from './nightly-backup.js';
 import {
   backupHealth,
   storageHealth,
@@ -163,7 +164,10 @@ export async function systemHealth(
     scheduler,
     documents,
     storage,
-    backup: await backupHealth(locations.backupDir, locations.databaseName),
+    backup: {
+      ...(await backupHealth(locations.backupDir, locations.databaseName)),
+      nightly: nightlyBackupStatus(),
+    },
     services,
   };
 }

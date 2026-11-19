@@ -20,14 +20,15 @@ import { useSession } from '../session/session';
 const OUTCOMES = Object.keys(OUTCOME_LABELS) as TraceOutcome[];
 const TRACE_PAGE = 50;
 
-/** Shared header of the two views: the activity log (P13) and the assistant usage (P14). */
-function Tabs() {
+/** Shared header of the views: activity log (P13), assistant (P14), usage (AGX-07). */
+export function ActivityTabs() {
   return (
     <nav className="tabs" aria-label="Viste dell'attività">
       <NavLink to="/attivita" end>
         Registro
       </NavLink>
       <NavLink to="/attivita/assistente">Assistente</NavLink>
+      <NavLink to="/attivita/consumi">Consumi</NavLink>
     </nav>
   );
 }
@@ -60,7 +61,7 @@ export function ActivityPage({ me }: { me: Me }) {
   return (
     <>
       <h1>Attività</h1>
-      <Tabs />
+      <ActivityTabs />
       <div className="filters">
         <label>
           Tipo
@@ -191,7 +192,7 @@ export function AssistantUsagePage({ me }: { me: Me }) {
   return (
     <>
       <h1>Attività</h1>
-      <Tabs />
+      <ActivityTabs />
       <div className="filters">
         <label>
           Esito

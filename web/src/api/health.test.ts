@@ -72,6 +72,27 @@ describe('state of the system (A5)', () => {
       '1 documenti non letti nelle ultime 24 ore.',
       '1 allegati non hanno più il file sul disco.',
       "L'ultimo backup è di 14 giorni fa.",
+      'Nessuna verifica del ripristino negli ultimi 30 giorni (npm run db:verify-backup).',
+    ]);
+    const backup = (restoreCheck: { at: string; ok: boolean } | null) => ({
+      configured: true,
+      reachable: true,
+      last: { at: '2026-11-19T22:00:00Z', tables: 26, attachments: 5 },
+      restoreCheck: restoreCheck && { ...restoreCheck, backupAt: '2026-11-19T22:00:00Z' },
+    });
+    expect(
+      healthWarnings({ ...HEALTHY, backup: backup({ at: '2026-11-20T01:00:00Z', ok: true }) }, now),
+    ).toEqual([]);
+    expect(
+      healthWarnings(
+        { ...HEALTHY, backup: backup({ at: '2026-11-20T01:00:00Z', ok: false }) },
+        now,
+      ),
+    ).toEqual(["L'ultima verifica del ripristino non è riuscita."]);
+    expect(
+      healthWarnings({ ...HEALTHY, backup: backup({ at: '2026-10-01T01:00:00Z', ok: true }) }, now),
+    ).toEqual([
+      'Nessuna verifica del ripristino negli ultimi 30 giorni (npm run db:verify-backup).',
     ]);
     expect(
       healthWarnings(
@@ -90,6 +111,20 @@ describe('state of the system (A5)', () => {
         now,
       ),
     ).toEqual([]);
+  });
+
+  it('names a nightly backup that failed (B4)', () => {
+    const now = new Date('2026-11-20T10:00:00Z');
+    const nightly = (ok: boolean) => ({
+      configured: false,
+      reachable: false,
+      last: null,
+      nightly: { at: '02:30', keep: 14, lastRun: { at: '2026-11-20T01:30:00Z', ok } },
+    });
+    expect(healthWarnings({ ...HEALTHY, backup: nightly(false) }, now)).toEqual([
+      "L'ultimo backup notturno non è riuscito: il server riprova tra un'ora (vedi i log).",
+    ]);
+    expect(healthWarnings({ ...HEALTHY, backup: nightly(true) }, now)).toEqual([]);
   });
 
   it('writes sizes in bytes, KB, MB or GB', () => {

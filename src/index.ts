@@ -1,8 +1,11 @@
+import path from 'node:path';
+
 import { ContextService } from './ai/context/context.service.js';
 import { DecisionEngine } from './ai/decision/decision.engine.js';
 import { ExecutorService } from './ai/execution/executor.service.js';
 import { InterpreterService } from './ai/interpreter/interpreter.service.js';
 import { NormalizerService } from './ai/normalization/normalizer.service.js';
+import { defaultDocumentOcrService } from './ai/ocr/document-ocr.service.js';
 import { createDisabledLLMClient } from './ai/providers/disabled.provider.js';
 import {
   createAzureOpenAIProvider,
@@ -16,30 +19,55 @@ import {
 } from './ai/validation/pre-execution.validator.js';
 import { loadConfig } from './config/config.js';
 import { requestAssistance } from './core/assistance/assistance.service.js';
-import { createPrismaPrincipalResolver } from './core/authz/authorization.service.js';
+import {
+  createPrismaPrincipalResolver,
+  type Principal,
+} from './core/authz/authorization.service.js';
 import { ComplianceService } from './core/compliance/compliance.service.js';
 import { GrantExpiringHandler } from './core/delegation/grant-reminders.js';
+import { expireDemoAccounts, startDemo } from './core/demo/demo-access.js';
 import { SimulatedEmailSender } from './core/email/email.sender.js';
+import { ChannelLinkService } from './core/identity/channel-link.service.js';
+import { ChatInviteService } from './core/identity/chat-invite.service.js';
 import { LoginService } from './core/identity/login.service.js';
 import { setScheduledExport } from './core/identity/member-access.service.js';
+import {
+  getCompanyCard,
+  revealCompanyIdentifiers,
+} from './core/organization/company-card.service.js';
 import {
   AssistanceRequestedHandler,
   AssistanceUpdatedHandler,
 } from './core/outbox/assistance.handler.js';
+import {
+  AttachmentOcrHandler,
+  AttachmentReadHandler,
+} from './core/outbox/attachment-ocr.handler.js';
 import { ComplianceReminderHandler } from './core/outbox/compliance-reminder.handler.js';
 import { OutboxDispatcher } from './core/outbox/outbox.dispatcher.js';
 import { PracticeExportHandler } from './core/outbox/practice-export.handler.js';
 import {
+  AttachmentRejectedHandler,
+  DocumentRequestedHandler,
+  DocumentRequestFulfilledHandler,
   PracticeAssignedHandler,
+  PracticeHolderSetHandler,
   PracticeStatusHandler,
 } from './core/outbox/practice-status.handler.js';
+import { NightlyBackup, registerNightlyBackup } from './core/platform/nightly-backup.js';
+import { ATTACHMENT_OCR } from './core/practice/attachment-ocr.js';
 import { confirmReadDocument } from './core/practice/attachment-validation.js';
+import { practicesWithOpenRequests } from './core/practice/document-request.js';
 import { moduleOfTenant } from './core/practice/practice-module.js';
 import { PracticeApplicationService } from './core/practice/practice.application.service.js';
+import { DocumentRequestDueHandler } from './core/practice/request-reminders.js';
 import { SchedulerService } from './core/scheduler/scheduler.service.js';
+import { parseBackupKey } from './data/backup/encrypted-backup.js';
+import { databaseName } from './data/backup/pg-tools.js';
 import { createPrismaClient } from './data/db/prisma.js';
 import { AiTraceRepository } from './data/repositories/ai-trace.repository.js';
 import { createStorageService } from './data/storage/storage.factory.js';
+import { createAppChat } from './interface/conversation/app-chat.js';
 import { PrismaConversationMemory } from './interface/conversation/conversation.memory.js';
 import { buildServer } from './interface/http/server.js';
 import { TelegramAdapter } from './interface/telegram/telegram.adapter.js';
@@ -62,7 +90,7 @@ import { runtimeState } from './runtime/runtime.state.js';
 import { startBackgroundWorkers } from './runtime/runtime.workers.js';
 import { errorLabel } from './shared/errors.js';
 import { log } from './shared/log.js';
-import { createLogger } from './shared/logger.js';
+import { createLogger, type AppLogger } from './shared/logger.js';
 import { assertProjectRoot } from './shared/project-root.js';
 
 import type { LLMClient } from './ai/interpreter/interpreter.service.js';
@@ -177,9 +205,10 @@ async function main() {
     llm,
     log: config.NODE_ENV === 'development' ? logger : undefined,
   });
+  const storageService = createStorageService(config);
   const practiceService = new PracticeApplicationService(prisma, {
     maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES,
-    storageService: createStorageService(config),
+    storageService,
   });
   const executorService = new ExecutorService({ practiceService });
   // A02: the AI gets the sector instructions of the organization's module.
@@ -212,10 +241,42 @@ async function main() {
     contextService,
     formatResponse: formatTelegramResponse,
   });
+  // MF6 and AGX-10: email login and the verified chat link share the (simulated) email sender;
+  // both exist only where email login is on, never in production until a provider exists (D11).
+  const emailSender = new SimulatedEmailSender();
+  const channelLinks = config.AUTH_EMAIL_LOGIN
+    ? new ChannelLinkService(prisma, emailSender, config.AUTH_SECRET, {
+        exposeCodes: config.AUTH_DEV_SHOW_CODE,
+        log: logger,
+      })
+    : undefined;
+  // Personal Telegram links (invitation by link, own link): no email needed. The bot's username
+  // makes the t.me link; asked to Telegram once when not configured.
+  const tgUsername =
+    process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, '') ||
+    (process.env.TELEGRAM_BOT_TOKEN?.trim()
+      ? await new TelegramClient(process.env.TELEGRAM_BOT_TOKEN.trim())
+          .getMe()
+          .then((me) => me.username)
+          .catch(() => undefined)
+      : undefined);
+  const chatInvites = new ChatInviteService(prisma, tgUsername);
+  // Demo (staging only): an account of one's own in «SinfonIA Demo» from «/start demo».
+  const demoAccess = config.DEMO_ACCESS
+    ? (telegramId: string) =>
+        startDemo({ prisma, practices: practiceService, compliance: complianceService }, telegramId)
+    : undefined;
   const conversationDeps = {
     prisma,
+    chatInvites,
+    ...(demoAccess ? { demoAccess } : {}),
+    ...(channelLinks ? { channelLinks } : {}),
     // A2: «Modifica» under a document points to the dashboard page of the documents to verify.
     ...(config.WEB_PUBLIC_URL ? { reviewUrl: `${config.WEB_PUBLIC_URL}/app/verifica` } : {}),
+    // Telegram Mini App: offered in chat only when on and reachable over https.
+    ...(config.TELEGRAM_MINIAPP && config.WEB_PUBLIC_URL?.startsWith('https://')
+      ? { miniAppUrl: `${config.WEB_PUBLIC_URL}/app/tg` }
+      : {}),
     scheduledExport: (orgId: string, userId: string, enabled: boolean) =>
       setScheduledExport(prisma, orgId, userId, enabled, { userId }),
     // A1: «conferma» in chat confirms the data of one's own document as read.
@@ -228,6 +289,12 @@ async function main() {
     // H10: «parla con un operatore» records a request for the dashboard and tells the operators.
     requestAssistance: (input: Parameters<typeof requestAssistance>[1]) =>
       requestAssistance(prisma, input),
+    // AGX-12a: «🏢 La mia azienda» in chat; the full codes only to who manages it, audited.
+    companyCard: (actor: Principal) => getCompanyCard(prisma, complianceService, actor),
+    practicesWithOpenRequests: (input: { tenantId: string; userId: string }) =>
+      practicesWithOpenRequests(prisma, input),
+    revealCompanyIdentifiers: (actor: Principal, channel: string) =>
+      revealCompanyIdentifiers(prisma, actor, channel),
     memory: conversationMemory,
     practiceService,
     complianceService,
@@ -256,15 +323,22 @@ async function main() {
     principals: createPrismaPrincipalResolver(prisma),
     prisma,
     // Email login (MF6): only where enabled, never in production until a provider exists (D11).
-    ...(config.AUTH_EMAIL_LOGIN
+    // Telegram Mini App: sessions without email login (no email routes, no console then).
+    emailLogin: config.AUTH_EMAIL_LOGIN,
+    ...(config.AUTH_EMAIL_LOGIN ||
+    (config.TELEGRAM_MINIAPP && process.env.TELEGRAM_BOT_TOKEN?.trim())
       ? {
-          login: new LoginService(prisma, new SimulatedEmailSender(), config.AUTH_SECRET, {
+          login: new LoginService(prisma, emailSender, config.AUTH_SECRET, {
             log: logger,
             exposeCodes: config.AUTH_DEV_SHOW_CODE,
             webUrl: config.WEB_PUBLIC_URL,
           }),
         }
       : {}),
+    ...(channelLinks ? { channelLinks } : {}),
+    chatInvites,
+    // The assistant of the Telegram Mini App: the same conversation as the bot.
+    ...(config.TELEGRAM_MINIAPP ? { appChat: createAppChat(prisma, conversationDeps) } : {}),
     practiceService,
     complianceService,
     tracer,
@@ -313,6 +387,7 @@ async function main() {
     logger.warn('OUTBOX_WEBHOOK_SECRET not set: tenant webhooks will be dead-lettered');
   }
   const schedulerService = new SchedulerService(prisma, practiceService, { complianceService });
+  const nightlyBackup = createNightlyBackup(config, logger);
   const outboxChannels = {
     ...(tgToken?.trim()
       ? { telegram: createTelegramNotifier(new TelegramClient(tgToken.trim())) }
@@ -328,9 +403,25 @@ async function main() {
       : {}),
     ...(whatsappClient ? { whatsapp: createWhatsAppNotifier(whatsappClient) } : {}),
   };
+  // AGX-08 follow-up: reading a document again is slow (OCR): its own dispatcher, so the notices
+  // in chat never wait behind it.
+  const ocrDispatcher = new OutboxDispatcher(prisma, {
+    maxAttempts: Math.min(config.OCR_MAX_ATTEMPTS, config.OUTBOX_MAX_ATTEMPTS),
+    log: logger,
+    only: true,
+    batchSize: 2,
+    handlers: [
+      new AttachmentOcrHandler(prisma, {
+        ocrService: defaultDocumentOcrService,
+        storageService,
+        maxAttempts: Math.min(config.OCR_MAX_ATTEMPTS, config.OUTBOX_MAX_ATTEMPTS),
+      }),
+    ],
+  });
   const dispatcher = new OutboxDispatcher(prisma, {
     maxAttempts: config.OUTBOX_MAX_ATTEMPTS,
     log: logger,
+    except: [ATTACHMENT_OCR],
     handlers: [
       new PracticeExportHandler(prisma, outboxChannels),
       new ComplianceReminderHandler(prisma, outboxChannels),
@@ -352,6 +443,21 @@ async function main() {
         outboxChannels,
         config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
       ),
+      new AttachmentRejectedHandler(prisma, outboxChannels),
+      // AGX-08: once a document is read again (by the OCR dispatcher), the sender is told.
+      new AttachmentReadHandler(prisma, outboxChannels),
+      new DocumentRequestedHandler(prisma, outboxChannels),
+      new DocumentRequestDueHandler(prisma, outboxChannels),
+      new DocumentRequestFulfilledHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
+      ),
+      new PracticeHolderSetHandler(
+        prisma,
+        outboxChannels,
+        config.WEB_PUBLIC_URL ? `${config.WEB_PUBLIC_URL}/app` : undefined,
+      ),
     ],
   });
   startBackgroundWorkers(
@@ -361,6 +467,15 @@ async function main() {
         intervalMs: config.SCHEDULER_INTERVAL_MS,
         run: () => schedulerService.tick(),
       },
+      ...(config.DEMO_ACCESS
+        ? [
+            {
+              name: 'demo-expiry',
+              intervalMs: 60 * 60_000,
+              run: async () => ({ deleted: await expireDemoAccounts(prisma, storageService) }),
+            },
+          ]
+        : []),
       {
         name: 'ai-trace-retention',
         intervalMs: 60 * 60_000,
@@ -375,9 +490,45 @@ async function main() {
         intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
         run: () => dispatcher.dispatchOnce(),
       },
+      {
+        name: 'outbox-ocr',
+        intervalMs: config.OUTBOX_DISPATCH_INTERVAL_MS,
+        run: () => ocrDispatcher.dispatchOnce(),
+      },
+      ...(nightlyBackup
+        ? [{ name: 'nightly-backup', intervalMs: 5 * 60_000, run: () => nightlyBackup.tick() }]
+        : []),
     ],
     logger,
   );
+}
+
+/** B4: the nightly encrypted backup, when BACKUP_NIGHTLY_AT is set (checked at start). */
+function createNightlyBackup(config: AppConfig, logger: AppLogger): NightlyBackup | null {
+  if (!config.BACKUP_NIGHTLY_AT || !config.BACKUP_DIR || !config.BACKUP_KEY) return null;
+  const sourceUrl = config.BACKUP_SOURCE_URL ?? config.DATABASE_URL;
+  const nightly = registerNightlyBackup(
+    new NightlyBackup({
+      at: config.BACKUP_NIGHTLY_AT,
+      keep: config.BACKUP_KEEP,
+      database: databaseName(sourceUrl),
+      backup: {
+        sourceUrl,
+        key: parseBackupKey(config.BACKUP_KEY),
+        backupDir: path.resolve(config.BACKUP_DIR),
+        storageDir:
+          config.STORAGE_DRIVER === 'local'
+            ? path.resolve(config.STORAGE_LOCAL_DIR ?? path.join('.runtime', 'storage'))
+            : null,
+      },
+      log: logger,
+    }),
+  );
+  logger.info(
+    { at: config.BACKUP_NIGHTLY_AT, keep: config.BACKUP_KEEP },
+    'Nightly backup scheduled',
+  );
+  return nightly;
 }
 
 main().catch((err: unknown) => {

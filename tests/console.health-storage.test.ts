@@ -97,6 +97,29 @@ describe('last encrypted backup', () => {
       configured: true,
       reachable: true,
       last: { at: new Date('2026-11-05T16:46:40Z'), tables: 26, attachments: 5 },
+      restoreCheck: null,
+    });
+    // The restore check written by npm run db:verify-backup, the most recent one.
+    write(
+      path.join(dir, 'sinfonia_staging_old', 'restore-check.json'),
+      JSON.stringify({
+        checkedAt: '2026-11-05T00:00:00Z',
+        ok: false,
+        backupCreatedAt: '2026-11-04T21:53:30Z',
+      }),
+    );
+    write(
+      path.join(dir, 'sinfonia_staging_new', 'restore-check.json'),
+      JSON.stringify({
+        checkedAt: '2026-11-06T00:14:06Z',
+        ok: true,
+        backupCreatedAt: '2026-11-05T16:46:40Z',
+      }),
+    );
+    expect((await backupHealth(dir, 'sinfonia_staging')).restoreCheck).toEqual({
+      at: new Date('2026-11-06T00:14:06Z'),
+      ok: true,
+      backupAt: new Date('2026-11-05T16:46:40Z'),
     });
   });
 
@@ -105,11 +128,13 @@ describe('last encrypted backup', () => {
       configured: false,
       reachable: false,
       last: null,
+      restoreCheck: null,
     });
     expect(await backupHealth(path.join(root, 'no-disk'), 'sinfonia_staging')).toEqual({
       configured: true,
       reachable: false,
       last: null,
+      restoreCheck: null,
     });
   });
 });

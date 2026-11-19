@@ -1,4 +1,3 @@
-import { UserRepository } from '../../data/repositories/user.repository.js';
 import { errorLabel } from '../../shared/errors.js';
 import { log } from '../../shared/log.js';
 import { createMembershipIdentityProvider } from '../conversation/channel.identity.js';
@@ -29,6 +28,8 @@ export type BotDeps = ConversationDeps & {
   identity?: ChannelIdentityProvider;
   /** Dashboard page of the documents to verify, offered by «Modifica» (A2). */
   reviewUrl?: string;
+  /** The Telegram Mini App (https), offered by «/app» and after «/start». */
+  miniAppUrl?: string;
 };
 
 /**
@@ -62,6 +63,12 @@ export class ButtonAnswers {
 
 /** Telegram markup for the reply options: buttons under the message, or the main menu. */
 export function replyMarkup(options: ReplyOptions | undefined): ReplyMarkup | undefined {
+  // Telegram accepts a Mini App button only with an https address.
+  if (options?.webApp && options.webApp.url.startsWith('https://')) {
+    return {
+      inline_keyboard: [[{ text: options.webApp.label, web_app: { url: options.webApp.url } }]],
+    };
+  }
   if (options?.buttons?.length) {
     // Short labels two per row, long ones alone.
     const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -123,19 +130,25 @@ process.once('beforeExit', () => {
 
 /** Telegram users are identified by their numeric Telegram user id (channel identity). */
 export function createTelegramIdentityProvider(prisma: PrismaClient): ChannelIdentityProvider {
-  return createMembershipIdentityProvider(prisma, 'TELEGRAM', async (tenantId, telegramId) => ({
-    userId: (await new UserRepository(prisma).ensureTelegramUser(tenantId, telegramId)).id,
-  }));
+  return createMembershipIdentityProvider(prisma, 'TELEGRAM');
 }
 
 // Exported for tests, which drive it with a fake client.
 export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
+  // A Telegram file_id stays valid: a file waiting for an answer is downloaded again from it.
+  const download = (fileId: string) => async () => {
+    const info = await bot.getFile(fileId);
+    if (!info.file_path) throw new Error('Telegram returned no file path');
+    return bot.downloadFile(info.file_path);
+  };
   const conversation = new ConversationService(deps, {
     name: 'telegram',
     identity: deps.identity ?? createTelegramIdentityProvider(deps.prisma),
     maxDownloadBytes: TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     compressedPhotoTip: TELEGRAM_COMPRESSED_PHOTO_TIP,
     reviewUrl: deps.reviewUrl,
+    miniAppUrl: deps.miniAppUrl,
+    downloadRef: download,
   });
   const buttons = new ButtonAnswers();
 
@@ -159,7 +172,12 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
 
   // A pressed button is the same as writing its answer, from the person who pressed it.
   bot.on('callback_query', async (query) => {
-    if (query.from.is_bot || !query.message || !query.data) {
+    if (
+      query.from.is_bot ||
+      !query.message ||
+      !query.data ||
+      query.message.chat.type !== 'private'
+    ) {
       await bot.answerCallbackQuery(query.id);
       return;
     }
@@ -175,7 +193,8 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
   });
 
   bot.on('message', async (msg) => {
-    if (!msg.from || msg.from.is_bot) return;
+    // AGX-10 / MF7: only private chats; in a group the bot stays silent (nobody is identified there).
+    if (!msg.from || msg.from.is_bot || msg.chat.type !== 'private') return;
     const chatId = msg.chat.id;
     const reply = replyIn(chatId);
     // Without a text, a voice message would otherwise get no answer at all.
@@ -183,12 +202,6 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
       await reply(VOICE_NOT_SUPPORTED);
       return;
     }
-    const download = (fileId: string) => async () => {
-      const info = await bot.getFile(fileId);
-      if (!info.file_path) throw new Error('Telegram returned no file path');
-      return bot.downloadFile(info.file_path);
-    };
-
     // Identity is the Telegram user, never the chat/group id. This prevents
     // every member of a group from sharing the same tenant identity.
     const inbound: InboundMessage = {
@@ -201,6 +214,7 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         mimeType: msg.document.mime_type ?? 'application/octet-stream',
         fileSize: msg.document.file_size,
         hint: inbound.text,
+        ref: msg.document.file_id,
         download: download(msg.document.file_id),
       };
     } else if (msg.photo) {
@@ -215,6 +229,7 @@ export function attachMessageHandler(bot: TelegramClient, deps: BotDeps): void {
         fileSize: largest.file_size,
         hint: inbound.text,
         compressedPhoto: true,
+        ref: largest.file_id,
         download: download(largest.file_id),
       };
     }
