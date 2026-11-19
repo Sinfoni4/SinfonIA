@@ -83,17 +83,15 @@ export function AssistantScreen() {
 
   return (
     <>
-      <div className="ma-panel">
-        <header className="ma-panel-head">
-          <Link to="/tg" className="ma-iconbtn" aria-label="Torna a Oggi">
-            <BackIcon />
-          </Link>
-          <h1>Assistente</h1>
-          <span className="ma-tile small" style={{ width: 40, height: 40 }}>
-            <ChatIcon size={20} />
-          </span>
-        </header>
-      </div>
+      <header className="ma-panel-head">
+        <Link to="/tg" className="ma-iconbtn" aria-label="Torna a Oggi">
+          <BackIcon />
+        </Link>
+        <h1>Assistente</h1>
+        <span className="ma-tile">
+          <ChatIcon size={20} />
+        </span>
+      </header>
 
       <section className="ma-chat" aria-label="Conversazione" aria-live="polite">
         {messages.length === 0 && (
@@ -107,7 +105,7 @@ export function AssistantScreen() {
                 <button
                   key={s}
                   type="button"
-                  className="ma-chip info"
+                  className="ma-chip"
                   onClick={() => send(s, SUGGESTION_ANSWERS[s])}
                 >
                   {s}
@@ -127,7 +125,7 @@ export function AssistantScreen() {
               <button
                 key={b.label}
                 type="button"
-                className="ma-chip info"
+                className="ma-chip"
                 onClick={() => send(b.label, b.answer)}
               >
                 {b.label}
@@ -151,7 +149,7 @@ export function AssistantScreen() {
           placeholder="Scrivi un messaggio…"
           onChange={(e) => setText(e.target.value)}
         />
-        <button type="submit" className="ma-primary green" disabled={!text.trim() || ask.isPending}>
+        <button type="submit" className="ma-primary" disabled={!text.trim() || ask.isPending}>
           Invia
         </button>
       </form>

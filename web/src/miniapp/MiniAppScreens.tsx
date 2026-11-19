@@ -7,7 +7,6 @@ import { logoSrc, type OrganizationLogo } from '../api/logo';
 import {
   deadlineWhen,
   describeFeed,
-  feedTone,
   KIND_LABELS,
   greeting,
   monthName,
@@ -334,29 +333,27 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
 
   return (
     <>
-      <div className="ma-panel">
-        <header className="ma-panel-head">
-          <Link to="/tg" className="ma-iconbtn" aria-label="Torna a Oggi">
-            <BackIcon />
-          </Link>
-          <h1>
-            {monthName(today)} <span className="ma-muted">{today.getFullYear()}</span>
-          </h1>
-          <Logo />
-        </header>
-        <Week summary={s} today={today} />
-      </div>
+      <header className="ma-panel-head">
+        <Link to="/tg" className="ma-iconbtn" aria-label="Torna a Oggi">
+          <BackIcon />
+        </Link>
+        <h1>
+          {monthName(today)} <span className="ma-muted">{today.getFullYear()}</span>
+        </h1>
+        <span className="ma-head-spacer" aria-hidden="true" />
+      </header>
+      <Week summary={s} today={today} />
 
       {query.isError && <Problem error={query.error} />}
 
       {s && (
         <>
           <div className="ma-bar">
-            <span style={{ fontSize: 15, color: '#cbd3dc' }}>Documenti</span>
+            <span className="ma-bar-label">Documenti</span>
             <span className="ma-bar-track" aria-hidden="true">
               <span style={{ width: `${percent ?? 0}%` }} />
             </span>
-            <strong style={{ fontSize: 20 }}>{percent === null ? '—' : `${percent}%`}</strong>
+            <strong className="ma-bar-value">{percent === null ? '—' : `${percent}%`}</strong>
           </div>
 
           <section className="ma-week-summary">
@@ -381,7 +378,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
               </Link>
             )}
             {s.practices[0] && (
-              <Link to={`/tg/pratiche/${s.practices[0].id}`} className="ma-outline green">
+              <Link to={`/tg/pratiche/${s.practices[0].id}`} className="ma-outline">
                 <ArrowIcon size={16} />
                 {s.practices[0].name}
                 <span className="ma-muted">
@@ -407,7 +404,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
                   openSheet({ kind: 'upload', practiceId: r.practiceId, requestId: r.id })
                 }
               >
-                <span className="ma-tile small ask">
+                <span className="ma-tile small">
                   <UploadIcon size={17} />
                 </span>
                 <span className="ma-row-title">Manda: {r.label ?? r.message}</span>
@@ -418,7 +415,7 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
             ))}
             {s.toConfirm.map((a) => (
               <Link key={a.attachmentId} to={`/tg/pratiche/${a.practiceId}`} className="ma-row">
-                <span className="ma-tile small info">
+                <span className="ma-tile small">
                   <DocIcon size={17} />
                 </span>
                 <span className="ma-row-title">Controlla {a.fileName}</span>
@@ -474,8 +471,6 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
   );
 }
 
-const STEP_DOT = { ok: '#4ade80', ask: '#fbbf24', bad: '#f87171', info: '#93c5fd' } as const;
-
 const DOC_STATES: Record<DocumentChecklist['items'][number]['state'], string> = {
   valid: 'confermato',
   to_verify: 'da verificare',
@@ -510,17 +505,17 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
   return (
     <>
       <header className="ma-head">
-        <Link to="/tg/agenda" className="ma-iconbtn" aria-label="Indietro">
+        <Link to="/tg/pratiche" className="ma-iconbtn" aria-label="Indietro">
           <BackIcon />
         </Link>
-        <span className="ma-muted" style={{ fontSize: 15 }}>
+        <span className="ma-muted ma-kind">
           {p ? (KIND_LABELS[p.kind] ?? 'Pratica') : 'Pratica'}
         </span>
       </header>
       {practice.isError && <Problem error={practice.error} />}
       {p && (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <h1 style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.15 }}>{p.name}</h1>
+        <section className="ma-title">
+          <h1>{p.name}</h1>
           <div className="ma-tags">
             <span className="ma-tag">{STATE_LABELS[p.status]}</span>
           </div>
@@ -532,7 +527,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
           <div className="ma-list-head">
             <h2 id="ma-docs">Documenti</h2>
             <span className="ma-muted">
-              <strong style={{ color: '#f3f5f7' }}>{done}</strong> su {items.length}
+              <strong className="ma-strong">{done}</strong> su {items.length}
             </span>
           </div>
           <div className="ma-segments" aria-hidden="true">
@@ -544,7 +539,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
             {items.map((i) => (
               <li key={i.key}>
                 <span className={`ma-check ${i.state}`} aria-hidden="true">
-                  {i.state === 'valid' && <CheckIcon size={14} color="#1F1F1F" />}
+                  {i.state === 'valid' && <CheckIcon size={14} color="#1f1f1f" />}
                 </span>
                 <span>{i.label}</span>
                 <span className={`ma-state ${i.state}`}>{DOC_STATES[i.state]}</span>
@@ -576,7 +571,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
       {p && !closed && open.length === 0 && (
         <button
           type="button"
-          className="ma-primary green"
+          className="ma-primary"
           onClick={() => openSheet({ kind: 'upload', practiceId: id })}
         >
           <UploadIcon size={18} />
@@ -585,38 +580,19 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
       )}
 
       {steps.length > 0 && (
-        <section
-          style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
-          aria-labelledby="ma-steps"
-        >
-          <h2 id="ma-steps" className="ma-muted" style={{ fontSize: 15, fontWeight: 500 }}>
-            Ultimi passi
-          </h2>
-          {steps.map((f, i) => {
-            const line = describeFeed(f);
-            return (
-              <p
-                key={`${f.at}-${i}`}
-                style={{ display: 'flex', gap: 10, fontSize: 15, color: '#b8c2cc' }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 8,
-                    height: 8,
-                    marginTop: 6,
-                    flex: 'none',
-                    borderRadius: 4,
-                    background: STEP_DOT[feedTone(f.type)],
-                  }}
-                />
-                <span>
-                  <span style={{ color: '#f3f5f7' }}>{line.title}</span> {line.text} ·{' '}
-                  {shortDate(f.at.slice(0, 10))}
-                </span>
-              </p>
-            );
-          })}
+        <section className="ma-steps" aria-labelledby="ma-steps">
+          <h2 id="ma-steps">Ultimi passi</h2>
+          <ol>
+            {steps.map((f, i) => {
+              const line = describeFeed(f);
+              return (
+                <li key={`${f.at}-${i}`}>
+                  <span className="ma-strong">{line.title}</span> {line.text}
+                  <time dateTime={f.at}>{shortDate(f.at.slice(0, 10))}</time>
+                </li>
+              );
+            })}
+          </ol>
         </section>
       )}
     </>
