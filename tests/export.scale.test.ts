@@ -41,6 +41,7 @@ describe('export date ranges', () => {
 describeWithDb('export of 10,000 practices (Step 8)', () => {
   let prisma: PrismaClient;
   let tenantId: string;
+  let userId: string;
 
   beforeAll(async () => {
     prisma = createPrismaClient(DATABASE_URL!);
@@ -52,6 +53,7 @@ describeWithDb('export of 10,000 practices (Step 8)', () => {
       email: `export-${randomUUID()}@scale.local`,
       role: 'ADMIN',
     });
+    userId = user.id;
     const thisYear = new Date().getFullYear();
     for (let start = 0; start < PRACTICES; start += 1000) {
       await prisma.practice.createMany({
@@ -73,6 +75,8 @@ describeWithDb('export of 10,000 practices (Step 8)', () => {
   afterAll(async () => {
     await prisma.practice.deleteMany({ where: { tenantId } });
     await prisma.tenant.delete({ where: { id: tenantId } });
+    // The person too: since MF12 deleting the organization removes only the membership.
+    await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
   });
 

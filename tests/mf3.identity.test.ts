@@ -48,7 +48,7 @@ describe.runIf(Boolean(DATABASE_URL))('MF3 identity model (expand step)', () => 
     await prisma?.$disconnect();
   });
 
-  it('gives every new user a membership with the same role, and follows role changes', async () => {
+  it('gives every new user a membership with its role', async () => {
     const user = await new UserRepository(prisma).createUser(tenantA, {
       email: `mf3-${run}@test.local`,
       role: 'OPERATOR',
@@ -57,14 +57,6 @@ describe.runIf(Boolean(DATABASE_URL))('MF3 identity model (expand step)', () => 
       where: { userId_orgId: { userId: user.id, orgId: tenantA } },
     });
     expect(membership).toMatchObject({ role: 'OPERATOR', status: 'ACTIVE' });
-    await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } });
-    expect(
-      (
-        await prisma.membership.findUniqueOrThrow({
-          where: { userId_orgId: { userId: user.id, orgId: tenantA } },
-        })
-      ).role,
-    ).toBe('ADMIN');
   });
 
   it('links a Telegram account once; the most recent user wins, as in the legacy resolver', async () => {

@@ -25,11 +25,12 @@ export async function bindUserToTenant(
   userId: string,
   tenantId: string,
 ): Promise<void> {
-  const user = await prisma.user.findFirst({
-    where: { id: userId, tenantId },
+  // MF12: belonging to the organization is the membership, not a column of the user.
+  const membership = await prisma.membership.findFirst({
+    where: { userId, orgId: tenantId },
     select: { id: true },
   });
-  if (!user) {
+  if (!membership) {
     throw new NotFoundError('User not found in tenant');
   }
 

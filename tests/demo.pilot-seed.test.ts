@@ -72,9 +72,9 @@ describe.runIf(Boolean(DATABASE_URL))('demo data of the pilot scenario', () => {
 
     const consultant = await prisma.user.findFirstOrThrow({
       where: { email: PILOT_ACCOUNTS.consultant.replace('@', `.${tag}@`) },
-      select: { id: true, tenantId: true },
+      select: { id: true, memberships: { select: { orgId: true } } },
     });
-    expect(consultant.tenantId).toBe(first.consultantOrgId);
+    expect(consultant.memberships).toEqual([{ orgId: first.consultantOrgId }]);
     const grants = await prisma.accessGrant.findMany({
       where: { granteeUserId: consultant.id },
       select: { grantorOrgId: true, operations: true },

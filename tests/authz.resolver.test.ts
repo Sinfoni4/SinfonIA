@@ -41,7 +41,10 @@ describe.runIf(Boolean(DATABASE_URL))('principal resolver (C1)', () => {
       expect(await ask(a.id, randomUUID())).toBeNull();
 
       // No cache: a role change applies to the very next request.
-      await prisma.user.update({ where: { id: user.id }, data: { role: 'MEMBER' } });
+      await prisma.membership.update({
+        where: { userId_orgId: { userId: user.id, orgId: a.id } },
+        data: { role: 'MEMBER' },
+      });
       expect((await ask(a.id))?.role).toBe('MEMBER');
       await prisma.user.delete({ where: { id: user.id } });
       expect(await ask(a.id)).toBeNull();

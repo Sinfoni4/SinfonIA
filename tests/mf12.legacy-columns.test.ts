@@ -32,7 +32,8 @@ function callArgument(source: string, open: number): string {
 
 const USER_CALL =
   /\.user\.(?:findFirst|findFirstOrThrow|findMany|findUnique|findUniqueOrThrow|count|update|updateMany|create|createMany|upsert|groupBy|aggregate)\(/g;
-const LEGACY_KEY = /\b(tenantId|role|telegramId)\s*:/g;
+// `key:` and the shorthand `key,` / `key }`.
+const LEGACY_KEY = /\b(tenantId|role|telegramId)\b(?=\s*[:,}])/g;
 
 /** Every use of a legacy column in a Prisma call on `user`, as `file: column`. */
 function legacyUses(): string[] {
@@ -50,21 +51,12 @@ function legacyUses(): string[] {
 }
 
 describe('MF12: columns of the old model on user', () => {
-  it('are used only where listed, until the contraction migration', () => {
-    expect(legacyUses()).toEqual([
-      // UserRepository.createUser, the only place a person is created: it still fills the
-      // NOT NULL column (and the role), and writes the membership that everything reads.
-      'src/data/repositories/user.repository.ts: tenantId',
-    ]);
+  it('are not used any more (contraction, step 5)', () => {
+    expect(legacyUses()).toEqual([]);
   });
 
   it('never touches the Telegram column in SQL: chat links live in channel_identity', () => {
-    const allowed = new Set([
-      // The backup substitution lists every column of personal data, this one included.
-      'scripts/backup/lib/substitution.ts',
-      // The check that compares the old and the new model (MF12 step 4).
-      'scripts/db/mf3-verify.ts',
-    ]);
+    const allowed = new Set<string>();
     for (const dir of ['src', 'scripts']) {
       for (const file of filesUnder(path.join(ROOT, dir))) {
         if (allowed.has(relative(file))) continue;
