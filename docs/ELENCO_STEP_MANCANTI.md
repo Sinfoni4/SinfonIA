@@ -133,11 +133,11 @@ Rispetto alla pagina A4 del piano frontend mancano:
 
 ## 3. Verifiche e qualità ancora da fare
 
-67. Prova sul bot vero di A2, A3 e A4 (pulsanti, menu, avvisi, assistenza, assegnazione) sullo staging.
-68. Prova dello scadenzario e dei promemoria con il bot reale (fase 3C).
-69. Misura dell'accuratezza della lettura su documenti reali (fase 3B, `docs/PROTOCOLLO_PROVA_OCR.md`), in particolare documenti agricoli del pilota.
+67. Prova sul bot vero di A2, A3 e A4 (pulsanti, menu, avvisi, assistenza, assegnazione) sullo staging. *Lista pronta*: `docs/PROVA_BOT_REALE.md` (collegamento, menu, pratiche, documenti, richieste, scadenze, assistenza, console, Mini App, scollegamento), da eseguire sul telefono.
+68. Prova dello scadenzario e dei promemoria con il bot reale (fase 3C). *Nella stessa lista*, sezioni 5 e 6.
+69. Misura dell'accuratezza della lettura su documenti reali (fase 3B, `docs/PROTOCOLLO_PROVA_OCR.md`), in particolare documenti agricoli del pilota. *19/11/2026*: sui 24 PDF sintetici tutto corretto (126 campi su 126, 1,7 s a documento); l'unico documento reale disponibile (foto di uno scontrino) ha 3 campi su 4, l'errore era marcato «da verificare», 13 s. Servono i circa 40 documenti reali del protocollo (§1) per una misura valida.
 70. Prova delle pagine «Salute» e «Consumi IA» sullo staging con un gestore della piattaforma (`npm run platform:admin`).
-71. Prova di carico con la Fase 1 e le nuove funzioni sul database di test.
+71. Prova di carico con la Fase 1 e le nuove funzioni sul database di test. *Fatto*: `npm run load:test` (solo database dei test). Il 19/11/2026 su questo PC, 20 client per 30 s su un'organizzazione con 50 soci e 5.000 pratiche: 3.999 richieste (133 al secondo), nessun errore, 95° percentile delle letture 248 ms (soglia 500), creazione di una pratica 455 ms.
 72. **MF12** Pulizia delle colonne del modello precedente (`user.tenant_id`, `user.role`, `user.telegram_id`) dopo il periodo di verifica.
 73. RLS limitata (`practice`, `practice_attachment`, `audit_log`) solo se decisa in futuro, alle condizioni del piano (§6).
 
