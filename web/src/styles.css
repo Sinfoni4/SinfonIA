@@ -1,14 +1,17 @@
-/* Neutral base, to be customised with the SinfonIA visual identity (F6). */
+/*
+ * The palette of the dashboard-01 block of shadcn/ui (neutral): white panels on a light grey page,
+ * near-black for the main actions. The grey of secondary text stays at 5:1 on every background.
+ */
 :root {
-  --bg: #f5f6f8;
+  --bg: #fafafa;
   --surface: #ffffff;
-  --text: #1c2430;
-  --muted: #5b6676;
-  --border: #d8dde4;
-  --accent: #2f5aa8;
-  --accent-text: #ffffff;
+  --text: #0a0a0a;
+  --muted: #666666;
+  --border: #e5e5e5;
+  --accent: #171717;
+  --accent-text: #fafafa;
   --danger: #b42318;
-  --notice-bg: #eef3fb;
+  --notice-bg: #f5f5f5;
   --dev-bg: #fff6db;
   --radius: 10px;
   font-family:

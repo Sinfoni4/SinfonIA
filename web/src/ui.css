@@ -12,7 +12,7 @@
 
 /* The colours of SinfonIA as shadcn/ui tokens (one place to change the identity, F6). */
 @theme inline {
-  --color-background: var(--bg);
+  --color-background: var(--surface);
   --color-foreground: var(--text);
   --color-card: var(--surface);
   --color-card-foreground: var(--text);
@@ -22,7 +22,7 @@
   --color-primary-foreground: var(--accent-text);
   --color-secondary: var(--notice-bg);
   --color-secondary-foreground: var(--accent);
-  --color-muted: var(--bg);
+  --color-muted: var(--notice-bg);
   --color-muted-foreground: var(--muted);
   --color-accent: var(--notice-bg);
   --color-accent-foreground: var(--text);
@@ -32,8 +32,44 @@
   --color-border: var(--border);
   --color-input: var(--border);
   --color-ring: var(--accent);
+  --color-sidebar: var(--bg);
+  --color-sidebar-foreground: var(--text);
+  --color-sidebar-primary: var(--accent);
+  --color-sidebar-primary-foreground: var(--accent-text);
+  --color-sidebar-accent: #efefef;
+  --color-sidebar-accent-foreground: var(--accent);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--accent);
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: var(--radius);
   --radius-xl: 14px;
+}
+
+/*
+ * The sidebar, its phone panel, the menus and the bar on top are built only from components: the
+ * look the original stylesheet gives every button, link and list (margins, colours, bullets) is
+ * taken away there, and the component classes (utilities, a later layer) style them.
+ */
+@layer components {
+  :where(
+      [data-sidebar],
+      [data-slot='sheet-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='site-header']
+    )
+    :where(button) {
+    margin: 0;
+    padding: 0;
+    border: 0 solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+
+  :where([data-sidebar], [data-slot='dropdown-menu-content'], [data-slot='site-header']) :where(a) {
+    color: inherit;
+    text-decoration: none;
+  }
 }

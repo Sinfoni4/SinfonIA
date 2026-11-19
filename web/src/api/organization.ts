@@ -29,6 +29,8 @@ export type Summary = {
     }>;
   };
   recentPractices: Array<{ id: string; name: string; status: PracticeState; updatedAt: string }>;
+  /** Practices opened and documents received per day (Italy), the last 90 days, oldest first. */
+  activity?: Array<{ date: string; practices: number; documents: number }>;
 };
 
 /** Practices still in progress: neither completed nor failed. */

@@ -229,6 +229,28 @@ describe('home (P11)', () => {
     expect(requested('/audit')[0]?.query.get('limit')).toBe('10');
   });
 
+  it('compares the last 30 days with the 30 before and draws the chart by period', async () => {
+    // 90 days: one practice a day in the last 30, one a day in 15 of the 30 before.
+    const activity = Array.from({ length: 90 }, (_, i) => ({
+      date: new Date(Date.UTC(2026, 7, 22) + i * 86_400_000).toISOString().slice(0, 10),
+      practices: i >= 60 || (i >= 30 && i < 45) ? 1 : 0,
+      documents: 2,
+    }));
+    api('ADMIN', { 'GET /dashboard/summary': () => ok({ ...SUMMARY, activity }) });
+    openAt('/');
+    const kpis = await screen.findByRole('list', { name: 'Indicatori' });
+    expect(
+      within(kpis).getByRole('link', { name: '30 pratiche aperte in 30 giorni' }),
+    ).toBeTruthy();
+    expect(within(kpis).getByText('+100%')).toBeTruthy();
+    expect(screen.getByText(/ultimi 3 mesi: 45 pratiche aperte e 180 documenti/)).toBeTruthy();
+    const period = screen.getByRole('group', { name: 'Periodo del grafico' });
+    const week = within(period).getByRole('button', { name: /Ultimi 7 giorni/ });
+    await userEvent.click(week);
+    expect(week.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/ultimi 7 giorni: 7 pratiche aperte e 14 documenti/)).toBeTruthy();
+  });
+
   it('does not ask a member for the activity log', async () => {
     api('MEMBER', {});
     openAt('/');
@@ -263,7 +285,9 @@ describe('settings (P12)', () => {
       }),
     );
     expect(await screen.findByRole('status')).toBeTruthy();
-    expect(await screen.findByText('Cooperativa Nuova', { selector: 'header span' })).toBeTruthy();
+    // The sidebar shows the organization under the name of SinfonIA.
+    const sidebar = screen.getByRole('complementary', { name: 'Menu della dashboard' });
+    expect(await within(sidebar).findByText('Cooperativa Nuova')).toBeTruthy();
     expect(screen.getByText(/30, 15, 7, 1 giorni prima/)).toBeTruthy();
   });
 

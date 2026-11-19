@@ -1,5 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CalendarClock, FileSearch, FolderOpen } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarClock,
+  FileSearch,
+  FolderOpen,
+  FolderPlus,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import { Link } from 'react-router';
 
 import { describeError, ROLE_LABELS, type Me } from '../api/client';
@@ -14,19 +22,27 @@ import {
   type Summary,
 } from '../api/organization';
 import { formatDate, STATE_LABELS } from '../api/practices';
+import { ActivityChart } from '../components/ActivityChart';
 import { useSession } from '../session/session';
 
 import type * as React from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 /**
- * P11: the numbers of the organization (G7): practices in progress, overdue and upcoming
- * deadlines, documents to check, latest practices; for administrators also the latest activity.
- * A MEMBER sees only their own.
+ * P11: the numbers of the organization (G7), in the layout of the dashboard-01 block: four
+ * indicators, the chart of the last months, then deadlines, documents to check, latest practices
+ * and, for administrators, the latest activity. A MEMBER sees only their own.
  */
 export function HomePage({ me }: { me: Me }) {
   const { api } = useSession();
@@ -46,11 +62,12 @@ export function HomePage({ me }: { me: Me }) {
   const s = summary.data;
 
   const toCheck = s ? s.documents.toReview + s.documents.unreadable : 0;
+  const trend = s?.activity ? practiceTrend(s.activity) : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="@container/main flex flex-col gap-4 md:gap-6">
       <div>
-        <h1 className="m-0">{current?.name}</h1>
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">{current?.name}</h1>
         <p className="m-0 text-sm text-muted-foreground">
           Accesso come {ROLE_LABELS[me.current.role]}
           {own ? ': qui vedi le tue pratiche e le tue scadenze.' : '.'}
@@ -64,12 +81,17 @@ export function HomePage({ me }: { me: Me }) {
       {summary.isPending && <p className="m-0 text-muted-foreground">Caricamento…</p>}
       {s && (
         <>
-          <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-3" aria-label="Indicatori">
+          <ul
+            className="m-0 grid list-none grid-cols-1 gap-4 p-0 @xl/main:grid-cols-2 @5xl/main:grid-cols-4"
+            aria-label="Indicatori"
+          >
             <Kpi
               to="/pratiche"
               icon={<FolderOpen aria-hidden />}
               value={openPractices(s)}
               label="pratiche in corso"
+              badge={`${s.practices.total} in tutto`}
+              note="Create, validate o inviate"
               detail={`${s.practices.byStatus.COMPLETED} completate · ${s.practices.byStatus.FAILED} non riuscite`}
             />
             <Kpi
@@ -77,6 +99,8 @@ export function HomePage({ me }: { me: Me }) {
               icon={<CalendarClock aria-hidden />}
               value={s.deadlines.overdue}
               label={s.deadlines.overdue === 1 ? 'scadenza scaduta' : 'scadenze scadute'}
+              badge={`${s.deadlines.dueSoon} in arrivo`}
+              note={s.deadlines.overdue > 0 ? 'Da sistemare subito' : 'Nessun ritardo'}
               detail={`${s.deadlines.dueSoon} nei prossimi 30 giorni`}
               tone={s.deadlines.overdue > 0 ? 'alert' : undefined}
             />
@@ -85,12 +109,36 @@ export function HomePage({ me }: { me: Me }) {
               icon={<FileSearch aria-hidden />}
               value={toCheck}
               label="documenti da controllare"
+              badge={`${s.documents.unreadable} non letti`}
+              note={toCheck > 0 ? 'Aspettano una conferma' : 'Tutto confermato'}
               detail={`${s.documents.toReview} da verificare · ${s.documents.unreadable} non letti`}
               tone={toCheck > 0 ? 'warn' : undefined}
             />
+            {trend && (
+              <Kpi
+                to="/pratiche"
+                icon={<FolderPlus aria-hidden />}
+                value={trend.last}
+                label={
+                  trend.last === 1 ? 'pratica aperta in 30 giorni' : 'pratiche aperte in 30 giorni'
+                }
+                badge={trend.change}
+                trend={trend.direction}
+                note={
+                  trend.direction === 'down'
+                    ? 'Meno dei 30 giorni prima'
+                    : trend.direction === 'up'
+                      ? 'Più dei 30 giorni prima'
+                      : 'Come i 30 giorni prima'
+                }
+                detail={`${trend.previous} nei 30 giorni precedenti`}
+              />
+            )}
           </ul>
 
-          <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {s.activity && <ActivityChart activity={s.activity} />}
+
+          <div className="grid items-start gap-4 md:grid-cols-2 @6xl/main:grid-cols-4">
             <Panel
               id="home-deadlines"
               title="Prossime scadenze"
@@ -197,47 +245,93 @@ export function HomePage({ me }: { me: Me }) {
   );
 }
 
-/** An indicator of the home: icon, number and what it counts, the whole card a link. */
+/** Practices opened in the last 30 days against the 30 before (the trend badge of dashboard-01). */
+function practiceTrend(activity: NonNullable<Summary['activity']>) {
+  const sum = (days: typeof activity) => days.reduce((n, d) => n + d.practices, 0);
+  const last = sum(activity.slice(-30));
+  const previous = sum(activity.slice(-60, -30));
+  const direction: 'up' | 'down' | 'flat' =
+    last > previous ? 'up' : last < previous ? 'down' : 'flat';
+  const percent = previous === 0 ? 0 : Math.round((Math.abs(last - previous) / previous) * 100);
+  const change =
+    previous === 0
+      ? last === 0
+        ? 'stabile'
+        : 'in crescita'
+      : direction === 'flat'
+        ? 'stabile'
+        : `${direction === 'up' ? '+' : '−'}${percent}%`;
+  return { last, previous, direction, change };
+}
+
+/**
+ * An indicator of the home, as the section cards of dashboard-01: what it counts, the number, a
+ * badge on the right and two lines below; the whole card is a link.
+ */
 function Kpi({
   to,
   icon,
   value,
   label,
+  badge,
+  note,
   detail,
   tone,
+  trend,
 }: {
   to: string;
   icon: React.ReactNode;
   value: number;
   label: string;
+  badge: string;
+  note: string;
   detail: string;
   tone?: 'alert' | 'warn';
+  trend?: 'up' | 'down' | 'flat';
 }) {
+  const TrendIcon = trend === 'down' ? TrendingDown : TrendingUp;
   return (
-    <li>
+    <li className="flex">
       <Card
         className={cn(
-          'h-full gap-2 transition-colors hover:border-primary',
-          tone === 'warn' && 'border-warning/30 bg-warning-background',
-          tone === 'alert' && 'border-destructive/30 bg-destructive/5',
+          '@container/card relative w-full gap-3 bg-linear-to-t from-primary/5 to-card transition-colors hover:border-primary/40',
+          tone === 'warn' && 'from-warning-background',
+          tone === 'alert' && 'from-destructive/10',
         )}
       >
-        <Link to={to} className="flex items-center gap-3 text-foreground no-underline">
+        <CardHeader>
+          <CardDescription className="first-letter:uppercase">{label}</CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+            <Link
+              to={to}
+              aria-label={`${value} ${label}`}
+              className="text-foreground no-underline after:absolute after:inset-0 after:rounded-xl"
+            >
+              {value}
+            </Link>
+          </CardTitle>
+          <CardAction>
+            <Badge
+              variant={tone ? 'warning' : 'outline'}
+              className={cn(tone === 'alert' && 'bg-destructive/10 text-destructive')}
+            >
+              {trend && trend !== 'flat' && <TrendIcon aria-hidden />}
+              {badge}
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardFooter className="flex-col items-start gap-1 text-sm">
           <span
             className={cn(
-              'flex size-10 items-center justify-center rounded-md bg-secondary text-primary [&_svg]:size-5',
-              tone === 'warn' && 'bg-card text-warning',
-              tone === 'alert' && 'bg-card text-destructive',
+              'flex items-center gap-2 font-medium [&_svg]:size-4',
+              tone === 'alert' && 'text-destructive',
             )}
           >
+            {note}
             {icon}
           </span>
-          <span className="flex flex-col">
-            <strong className="text-2xl leading-none">{value}</strong>{' '}
-            <span className="text-sm font-medium">{label}</span>
-          </span>
-        </Link>
-        <span className="text-sm text-muted-foreground">{detail}</span>
+          <span className="text-muted-foreground">{detail}</span>
+        </CardFooter>
       </Card>
     </li>
   );
