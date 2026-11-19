@@ -42,6 +42,8 @@ body {
 h1 {
   font-size: 1.5rem;
   margin: 0 0 0.5rem;
+  /* FE5: a long title without spaces (an email address) wraps instead of widening the phone page. */
+  overflow-wrap: anywhere;
 }
 
 h2 {
@@ -92,6 +94,8 @@ select {
 
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 3px solid var(--accent);

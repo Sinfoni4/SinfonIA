@@ -2,9 +2,16 @@ import { expect, type Page } from '@playwright/test';
 
 export const ADMIN = 'e2e.admin@sinfonia.test';
 export const CONSULTANT = 'e2e.consulente@sinfonia.test';
+export const PLATFORM_ADMIN = 'e2e.piattaforma@sinfonia.test';
 
 /** Logs in with the development code shown on screen (the e2e server never sends emails). */
 export async function login(page: Page, email = ADMIN): Promise<void> {
+  await enterCode(page, email);
+  await expect(page.getByRole('list', { name: 'Indicatori' })).toBeVisible();
+}
+
+/** Asks for the code and enters it; where the login leads is up to the caller. */
+export async function enterCode(page: Page, email: string): Promise<void> {
   await page.goto('./');
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Ricevi il codice di accesso' }).click();
@@ -14,7 +21,6 @@ export async function login(page: Page, email = ADMIN): Promise<void> {
   if (!code) throw new Error('No development code on screen');
   await page.getByLabel('Codice').fill(code);
   await page.getByRole('button', { name: 'Accedi' }).click();
-  await expect(page.getByRole('list', { name: 'Indicatori' })).toBeVisible();
 }
 
 /** Opens a section of the header; on a phone through «Menu». */
@@ -120,5 +126,41 @@ export async function accessibilityProblems(page: Page): Promise<string[]> {
       }
     }
     return [...problems];
+  });
+}
+
+/**
+ * FE5 (item 32): moves through the page with Tab, as a keyboard user does, and lists the elements
+ * that take the focus without showing it (no outline and no ring), or that are hidden.
+ */
+export async function keyboardFocusProblems(page: Page, steps = 40): Promise<string[]> {
+  const problems = new Set<string>();
+  await focusPageStart(page);
+  for (let i = 0; i < steps; i += 1) {
+    await page.keyboard.press('Tab');
+    const problem = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || el === document.body) return null;
+      const text = (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      const name = `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${text ? ` «${text}»` : ''}`;
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return `focus su un elemento invisibile: ${name}`;
+      const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0;
+      const ring = style.boxShadow !== 'none';
+      return outline || ring ? null : `focus non visibile: ${name}`;
+    });
+    if (problem) problems.add(problem);
+  }
+  return [...problems];
+}
+
+/** Puts the keyboard at the start of the page, as after loading it: the next Tab goes to the first
+ * element (blurring alone would leave the starting point where the focus was). */
+export async function focusPageStart(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute('tabindex');
   });
 }
