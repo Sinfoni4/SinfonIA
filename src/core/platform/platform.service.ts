@@ -73,7 +73,7 @@ export type OrganizationRow = {
   name: string;
   type: OrganizationType;
   status: OrganizationStatus;
-  /** A02: the sector module (generic, music, agri). */
+  /** A02: the sector module (one of MODULE_IDS). */
   module: string;
   createdAt: Date;
   members: number;
