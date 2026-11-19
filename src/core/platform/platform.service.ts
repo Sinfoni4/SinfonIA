@@ -14,7 +14,9 @@ import {
   sameRefs,
   type ExternalRefs,
 } from '../organization/company-identifiers.js';
+import { checkLogo, logoFileName } from '../organization/organization-logo.js';
 
+import type { StorageService } from '../../data/storage/storage.service.js';
 import type { LoginService } from '../identity/login.service.js';
 import type { ModuleId } from '../modules/module.contract.js';
 import type { OrganizationStatus, OrganizationType, PrismaClient } from '@prisma/client';
@@ -158,6 +160,8 @@ export type OrganizationDetail = OrganizationRow & {
   pendingInvitations: number;
   /** AGX-02: codice fiscale / CUAA, partita IVA and codes in other systems. */
   identifiers: CompanyIdentifiers;
+  /** When the logo shown in the Mini App last changed; null without a logo. */
+  logoUpdatedAt: Date | null;
 };
 
 export type CompanyIdentifiers = {
@@ -187,6 +191,8 @@ export async function getOrganization(
       taxCode: true,
       vatNumber: true,
       externalRefs: true,
+      logoPath: true,
+      logoUpdatedAt: true,
     },
   });
   if (!org) throw new NotFoundError('Organization not found');
@@ -227,7 +233,60 @@ export async function getOrganization(
       vatNumber: org.vatNumber,
       externalRefs: readExternalRefs(org.externalRefs),
     },
+    logoUpdatedAt: org.logoPath ? org.logoUpdatedAt : null,
   };
+}
+
+// --- The logo shown in the Telegram Mini App ---------------------------------------------------
+
+/**
+ * Sets (or, with null, removes) the logo of an organization. The new file is saved before the
+ * row changes and the old one removed after, so a failure never leaves the row without its file.
+ */
+export async function setOrganizationLogo(
+  prisma: PrismaClient,
+  storage: StorageService,
+  orgId: string,
+  logo: { contentType: string; data: Buffer } | null,
+  actor: PlatformActor,
+): Promise<{ logoUpdatedAt: Date | null }> {
+  const current = await prisma.tenant.findUnique({
+    where: { id: orgId },
+    select: { logoPath: true },
+  });
+  if (!current) throw new NotFoundError('Organization not found');
+  if (!logo && !current.logoPath) return { logoUpdatedAt: null };
+
+  let saved: { path: string; type: string; size: number } | null = null;
+  if (logo) {
+    const type = checkLogo(logo.contentType, logo.data);
+    const file = await storage.save(orgId, logoFileName(type), logo.data, type);
+    saved = { path: file.storagePath, type, size: file.fileSize };
+  }
+  const now = new Date();
+  try {
+    await withTransaction(prisma, async (tx) => {
+      await tx.tenant.update({
+        where: { id: orgId },
+        data: saved
+          ? { logoPath: saved.path, logoType: saved.type, logoUpdatedAt: now }
+          : { logoPath: null, logoType: null, logoUpdatedAt: now },
+      });
+      const action = saved ? 'ORGANIZATION_LOGO_CHANGED' : 'ORGANIZATION_LOGO_REMOVED';
+      await logPlatform(tx, {
+        actor,
+        action,
+        orgId,
+        payload: saved ? { type: saved.type, bytes: saved.size } : {},
+      });
+      await logInOrganization(tx, orgId, action);
+    });
+  } catch (err: unknown) {
+    if (saved) await storage.delete(orgId, saved.path).catch(() => undefined);
+    throw err;
+  }
+  if (current.logoPath) await storage.delete(orgId, current.logoPath).catch(() => undefined);
+  return { logoUpdatedAt: saved ? now : null };
 }
 
 /**

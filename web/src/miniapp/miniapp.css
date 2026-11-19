@@ -1116,3 +1116,13 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* The logo of the organization, set from the platform console: as it is, on the grey. */
+.ma-org-logo {
+  display: block;
+  height: 40px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  flex: none;
+}

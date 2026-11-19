@@ -43,6 +43,7 @@ import type { ChannelLinkService } from '../../core/identity/channel-link.servic
 import type { ChatInviteService } from '../../core/identity/chat-invite.service.js';
 import type { LoginService } from '../../core/identity/login.service.js';
 import type { PracticeApplicationService } from '../../core/practice/practice.application.service.js';
+import type { StorageService } from '../../data/storage/storage.service.js';
 import type { AppLogger } from '../../shared/logger.js';
 import type { AppChat } from '../conversation/app-chat.js';
 import type { PrismaClient } from '@prisma/client';
@@ -88,6 +89,8 @@ export type ServerDeps = {
   chatInvites?: ChatInviteService;
   /** The assistant of the Telegram Mini App. */
   appChat?: AppChat;
+  /** The attachment storage, for the logos of the organizations; the logo routes need it. */
+  storage?: StorageService;
 };
 
 /** Access tokens issued by a login session last 10 minutes (§5, D7). */
@@ -96,6 +99,7 @@ export const SESSION_ACCESS_TOKEN_TTL_SECONDS = 600;
 export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDeps) {
   // Interface Layer: HTTP transport only.
   // No business logic here. No direct DB access. No AI calls.
+  const storage = deps.storage;
   const app = Fastify({
     loggerInstance: logger,
   });
@@ -223,6 +227,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
       prisma: deps.prisma,
       complianceService: deps.complianceService,
       ...(deps.appChat ? { appChat: deps.appChat } : {}),
+      storage,
     });
   }
   if (deps.login) {
@@ -264,6 +269,7 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
           databaseName: databaseNameOf(config.DATABASE_URL),
         },
         usageRates: parseUsageRates(config.USAGE_RATES),
+        storage,
       });
     }
   }

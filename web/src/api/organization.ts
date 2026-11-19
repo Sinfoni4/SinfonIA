@@ -181,6 +181,8 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
       'ORGANIZATION_REACTIVATED',
       'ORGANIZATION_MODULES_CHANGED',
       'ORGANIZATION_IDENTIFIERS_CHANGED',
+      'ORGANIZATION_LOGO_CHANGED',
+      'ORGANIZATION_LOGO_REMOVED',
       'COMPANY_IDENTIFIERS_VIEWED',
       'USAGE_EVENT_REVERSED',
     ],
@@ -404,6 +406,10 @@ export function describeEvent(event: AuditEvent): string {
       return 'Settore o funzioni cambiati dal gestore della piattaforma';
     case 'ORGANIZATION_IDENTIFIERS_CHANGED':
       return 'Dati identificativi cambiati dal gestore della piattaforma';
+    case 'ORGANIZATION_LOGO_CHANGED':
+      return 'Logo caricato dal gestore della piattaforma';
+    case 'ORGANIZATION_LOGO_REMOVED':
+      return 'Logo tolto dal gestore della piattaforma';
     case 'USAGE_EVENT_REVERSED':
       return 'Un consumo è stato stornato dal gestore della piattaforma';
     case 'COMPANY_IDENTIFIERS_VIEWED':

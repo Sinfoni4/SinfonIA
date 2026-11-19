@@ -322,6 +322,7 @@ async function main() {
   const app = buildServer(config, logger, {
     principals: createPrismaPrincipalResolver(prisma),
     prisma,
+    storage: storageService,
     // Email login (MF6): only where enabled, never in production until a provider exists (D11).
     // Telegram Mini App: sessions without email login (no email routes, no console then).
     emailLogin: config.AUTH_EMAIL_LOGIN,

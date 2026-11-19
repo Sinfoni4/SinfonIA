@@ -59,6 +59,8 @@ export type OrganizationDetail = OrganizationRow & {
     vatNumber: string | null;
     externalRefs: Record<string, string>;
   };
+  /** When the logo of the Mini App last changed; null without one (absent: older server). */
+  logoUpdatedAt?: string | null;
 };
 
 export type PlatformAuditRow = {
@@ -186,6 +188,10 @@ export function describePlatformAction(row: PlatformAuditRow): string {
     }
     case 'ORGANIZATION_IDENTIFIERS_CHANGED':
       return `Dati identificativi di ${org} aggiornati`;
+    case 'ORGANIZATION_LOGO_CHANGED':
+      return `Logo di ${org} caricato`;
+    case 'ORGANIZATION_LOGO_REMOVED':
+      return `Logo di ${org} tolto`;
     case 'USAGE_EVENT_REVERSED':
       return `Stornato un consumo di ${org}${row.details.reason ? `: ${row.details.reason}` : ''}`;
     case 'NETWORK_INVITATION_SENT':

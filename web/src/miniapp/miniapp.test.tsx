@@ -192,6 +192,20 @@ describe('Telegram Mini App', () => {
     expect(screen.getByText('SinfonIA')).toBeTruthy();
   });
 
+  it('shows the logo of the organization when it has one, the initials otherwise', async () => {
+    api({
+      'GET /organization/logo': () =>
+        ok({ contentType: 'image/png', data: 'iVBORw0KGgo=', updatedAt: '2026-11-19T18:00:00Z' }),
+    });
+    const { container } = openFromTelegram();
+    await waitFor(() =>
+      expect(container.querySelector('.ma-org-logo')?.getAttribute('src')).toBe(
+        'data:image/png;base64,iVBORw0KGgo=',
+      ),
+    );
+    expect(container.querySelector('.ma-org-mark')).toBeNull();
+  });
+
   it('lists the practices from «Le mie pratiche»', async () => {
     api();
     openFromTelegram();
