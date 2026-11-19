@@ -12,10 +12,7 @@
   --ma-text: #ffffff;
   --ma-soft: #d4d4d4;
   --ma-muted: #a3a3a3;
-  --ma-green: #4ade80;
-  --ma-amber: #fbbf24;
   --ma-red: #f87171;
-  --ma-blue: #93c5fd;
   min-height: 100vh;
   box-sizing: border-box;
   position: relative;
@@ -62,6 +59,11 @@
   margin: 0;
 }
 
+/* Same for `section + section` (2.5rem): here the gap of each column spaces the parts. */
+.ma :where(section + section) {
+  margin-top: 0;
+}
+
 .ma h1,
 .ma h2,
 .ma p {
@@ -94,7 +96,7 @@
 .ma-weekday {
   font-size: 26px;
   font-weight: 600;
-  color: #aab4bf;
+  color: var(--ma-muted);
 }
 
 .ma-iconbtn {
@@ -153,34 +155,32 @@
 
 .ma-week div small {
   font-size: 13px;
-  color: #b8c2cc;
+  color: var(--ma-muted);
 }
 
+/* Today in white; a day with a deadline gets a small mark under its number. */
 .ma-week div.today {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--ma-text);
-  font-weight: 700;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-weight: 600;
 }
 
 .ma-week div.today small {
-  color: var(--ma-text);
-  font-weight: 700;
+  color: #1f1f1f;
+  font-weight: 600;
 }
 
 .ma-week i {
   position: absolute;
-  bottom: 2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--ma-green);
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ma-soft);
 }
 
 .ma-week div.today i {
-  background: var(--ma-red);
-  bottom: -3px;
-  width: 7px;
-  height: 7px;
+  background: #1f1f1f;
 }
 
 .ma-org {
@@ -188,7 +188,7 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #b8c2cc;
+  color: var(--ma-muted);
 }
 
 .ma-org strong {
@@ -228,28 +228,7 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.08);
   font-size: 14px;
-  color: #e6eaef;
-}
-
-/* The meaning of a chip, also in its color: done, to do, late, information. */
-.ma-chip.ok {
-  background: rgba(74, 222, 128, 0.12);
-  color: #bbf7d0;
-}
-
-.ma-chip.warn {
-  background: rgba(251, 191, 36, 0.14);
-  color: #fde68a;
-}
-
-.ma-chip.late {
-  background: rgba(248, 113, 113, 0.16);
-  color: #fecaca;
-}
-
-.ma-chip.info {
-  background: rgba(147, 197, 253, 0.14);
-  color: #dbeafe;
+  color: var(--ma-soft);
 }
 
 .ma-feed {
@@ -277,10 +256,7 @@
 }
 
 /* Icon squares: one neutral grey, the white icon carries the meaning. */
-.ma-tile,
-.ma-tile.ask,
-.ma-tile.bad,
-.ma-tile.info {
+.ma-tile {
   width: 44px;
   height: 44px;
   flex: none;
@@ -333,30 +309,23 @@
   border-radius: 28px;
 }
 
-.ma-panel {
-  margin: -20px -18px 0;
-  padding: 20px 18px 14px;
-  border-radius: 0 0 28px 28px;
-  background: var(--ma-panel);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.ma-panel .ma-week {
-  background: transparent;
-  padding: 0;
-}
-
+/* The head of a page: back on the left, the title in the middle, something small on the right. */
 .ma-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .ma-panel-head h1 {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.ma-head-spacer {
+  width: 44px;
+  flex: none;
 }
 
 .ma-bar {
@@ -366,6 +335,17 @@
   padding: 14px 16px;
   border-radius: 16px;
   background: var(--ma-card);
+  border: 1px solid var(--ma-line);
+}
+
+.ma-bar-label {
+  font-size: 15px;
+  color: var(--ma-soft);
+}
+
+.ma-bar-value {
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .ma-bar-track {
@@ -380,7 +360,7 @@
   display: block;
   height: 100%;
   border-radius: 4px;
-  background: var(--ma-green);
+  background: #ffffff;
 }
 
 .ma-week-summary {
@@ -393,15 +373,15 @@
 .ma-week-summary h2 {
   font-size: 16px;
   font-weight: 500;
-  color: #aab4bf;
+  color: var(--ma-muted);
 }
 
 .ma-big {
   display: flex;
   align-items: center;
   gap: 16px;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -417,13 +397,10 @@
   gap: 8px;
   padding: 8px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(251, 191, 36, 0.35);
+  border: 1px solid var(--ma-line);
+  background: var(--ma-card);
   font-size: 15px;
   max-width: 100%;
-}
-
-.ma-outline.green {
-  border-color: rgba(74, 222, 128, 0.3);
 }
 
 .ma-list {
@@ -451,7 +428,7 @@
   padding: 13px 14px;
   border-radius: 16px;
   background: var(--ma-card);
-  border: 0;
+  border: 1px solid var(--ma-line);
   text-align: left;
   width: 100%;
 }
@@ -464,7 +441,7 @@
 
 .ma-row-when {
   font-size: 14px;
-  color: #b8c2cc;
+  color: var(--ma-muted);
   white-space: nowrap;
 }
 
@@ -472,6 +449,7 @@
   padding: 16px;
   border-radius: 18px;
   background: var(--ma-card);
+  border: 1px solid var(--ma-line);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -479,7 +457,7 @@
 
 .ma-card h2 {
   font-size: 17px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ma-segments {
@@ -494,16 +472,18 @@
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* Documents in white and greys only; the words next to each one say its state. */
 .ma-segments span.valid {
-  background: var(--ma-green);
+  background: #ffffff;
 }
 
 .ma-segments span.to_verify {
-  background: var(--ma-blue);
+  background: rgba(255, 255, 255, 0.45);
 }
 
 .ma-segments span.rejected {
-  background: var(--ma-red);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 .ma-docs {
@@ -534,45 +514,38 @@
 }
 
 .ma-check.valid {
-  border-color: var(--ma-green);
-  background: var(--ma-green);
+  border-color: #ffffff;
+  background: #ffffff;
 }
 
 .ma-check.to_verify {
-  border-color: var(--ma-blue);
-  background: rgba(147, 197, 253, 0.18);
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .ma-check.rejected {
-  border-color: var(--ma-red);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
+/* What waits for the person (missing, to redo) in white; the rest in grey. */
 .ma-state {
   margin-left: auto;
   font-size: 14px;
+  color: var(--ma-muted);
+  white-space: nowrap;
 }
 
-.ma-state.valid {
-  color: #86efac;
-}
-
-.ma-state.to_verify {
-  color: #bfdbfe;
-}
-
-.ma-state.missing {
-  color: #fcd34d;
-}
-
+.ma-state.missing,
 .ma-state.rejected {
-  color: #fca5a5;
+  color: var(--ma-text);
+  font-weight: 500;
 }
 
 .ma-request {
   padding: 16px;
   border-radius: 18px;
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.07);
+  border: 1px solid var(--ma-line);
+  background: var(--ma-card);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -583,8 +556,8 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #fcd34d;
-  font-weight: 600;
+  color: var(--ma-soft);
+  font-weight: 500;
 }
 
 .ma-request p {
@@ -600,15 +573,10 @@
   padding: 11px 16px;
   border-radius: 14px;
   border: 0;
-  background: #fbbf24;
-  color: #1f1600 !important;
+  background: #ffffff;
+  color: #1f1f1f !important;
   font-size: 15px;
-  font-weight: 600;
-}
-
-.ma-primary.green {
-  background: var(--ma-green);
-  color: #052e16 !important;
+  font-weight: 500;
 }
 
 .ma-primary:disabled {
@@ -624,8 +592,9 @@
 .ma-tag {
   padding: 6px 11px;
   border-radius: 10px;
-  background: rgba(147, 197, 253, 0.14);
-  color: #bfdbfe;
+  background: var(--ma-card);
+  border: 1px solid var(--ma-line);
+  color: var(--ma-soft);
   font-size: 14px;
   font-weight: 500;
 }
@@ -633,7 +602,7 @@
 .ma-sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(6, 8, 12, 0.74);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -681,15 +650,20 @@
   gap: 14px;
   padding: 12px 14px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 0;
+  background: var(--ma-card);
+  border: 1px solid var(--ma-line);
   text-align: left;
   width: 100%;
 }
 
-.ma-action.main {
-  background: rgba(74, 222, 128, 0.12);
-  border: 1px solid rgba(74, 222, 128, 0.35);
+/* The dashboard centers a button's content: a short entry would drift to the middle. */
+.ma-action {
+  justify-content: flex-start;
+}
+
+.ma-action .ma-tile {
+  width: 40px;
+  height: 40px;
 }
 
 .ma-action span:last-child {
@@ -700,12 +674,12 @@
 
 .ma-action strong {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ma-action small {
   font-size: 14px;
-  color: #b8c2cc;
+  color: var(--ma-muted);
 }
 
 .ma-form {
@@ -754,13 +728,15 @@
 .ma-message {
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(74, 222, 128, 0.12);
+  background: var(--ma-card-strong);
   font-size: 15px;
   line-height: 1.4;
 }
 
+/* Errors keep a hint of red: the one color left, so they are not missed. */
 .ma-message.error {
-  background: rgba(248, 113, 113, 0.14);
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.3);
 }
 
 .ma-close {
@@ -827,7 +803,8 @@
 
 .ma-bubble.me {
   align-self: flex-end;
-  background: rgba(74, 222, 128, 0.18);
+  background: #ffffff;
+  color: #1f1f1f;
   border-bottom-right-radius: 4px;
 }
 
@@ -851,7 +828,7 @@
   gap: 8px;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   background: var(--ma-bg);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--ma-line);
 }
 
 .ma-chat-input input {
@@ -886,15 +863,6 @@
   background: var(--ma-card);
   color: var(--ma-soft);
   border: 1px solid var(--ma-line);
-}
-
-.ma-bubble.me {
-  background: var(--ma-card-strong);
-}
-
-.ma-primary.green {
-  background: #ffffff;
-  color: #1f1f1f !important;
 }
 
 /* «Oggi»: brand, organization and greeting on top, the commands and the assistant at the bottom. */
@@ -1125,4 +1093,72 @@
   max-width: 140px;
   object-fit: contain;
   flex: none;
+}
+
+/* --- The other pages (2026-11-19): the same plain look as «Oggi» ------------------------------ */
+
+.ma-lead {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ma-soft);
+}
+
+.ma-kind {
+  font-size: 15px;
+}
+
+.ma-strong {
+  color: var(--ma-text);
+  font-weight: 500;
+}
+
+/* «Pratica»: its name and state. */
+.ma-title {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ma-title h1 {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+/* «Ultimi passi»: a plain list, newest first, with the date on the right. */
+.ma-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ma-steps h2 {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ma-muted);
+}
+
+.ma-steps ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ma-steps li {
+  display: flex;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ma-line);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ma-muted);
+}
+
+.ma-steps time {
+  margin-left: auto;
+  font-size: 13px;
+  white-space: nowrap;
 }

@@ -172,7 +172,7 @@ function Outside({ state }: { state: Exclude<SessionState, { status: 'loading' |
               placeholder="es. 123456789"
             />
           </label>
-          <button type="submit" className="ma-primary green" style={{ alignSelf: 'center' }}>
+          <button type="submit" className="ma-primary" style={{ alignSelf: 'center' }}>
             Entra in anteprima
           </button>
         </form>
@@ -297,7 +297,7 @@ function Sheet({
             <h2 id="ma-sheet-title">Cosa vuoi fare?</h2>
             <button
               type="button"
-              className="ma-action main"
+              className="ma-action"
               onClick={() => onIntent({ kind: 'upload' })}
             >
               <span className="ma-tile">
@@ -313,7 +313,7 @@ function Sheet({
               className="ma-action"
               onClick={() => onIntent({ kind: 'practice' })}
             >
-              <span className="ma-tile small info" style={{ width: 40, height: 40 }}>
+              <span className="ma-tile">
                 <FolderPlusIcon size={20} />
               </span>
               <span>
@@ -327,7 +327,7 @@ function Sheet({
                 className="ma-action"
                 onClick={() => onIntent({ kind: 'deadline' })}
               >
-                <span className="ma-tile small ask" style={{ width: 40, height: 40 }}>
+                <span className="ma-tile">
                   <CalendarIcon size={20} />
                 </span>
                 <span>
@@ -344,7 +344,7 @@ function Sheet({
                 void navigate('/tg/assistente');
               }}
             >
-              <span className="ma-tile small" style={{ width: 40, height: 40 }}>
+              <span className="ma-tile">
                 <ChatIcon size={20} />
               </span>
               <span>
@@ -357,7 +357,7 @@ function Sheet({
               className="ma-action"
               onClick={() => onIntent({ kind: 'operator' })}
             >
-              <span className="ma-tile small bad" style={{ width: 40, height: 40 }}>
+              <span className="ma-tile">
                 <PersonIcon size={20} />
               </span>
               <span>
@@ -371,7 +371,7 @@ function Sheet({
                 className="ma-action"
                 onClick={() => onIntent({ kind: 'invite' })}
               >
-                <span className="ma-tile small info" style={{ width: 40, height: 40 }}>
+                <span className="ma-tile">
                   <PersonIcon size={20} />
                 </span>
                 <span>
@@ -397,12 +397,12 @@ function Sheet({
         ) : (
           <>
             <h2 id="ma-sheet-title">Parla con un operatore</h2>
-            <p style={{ fontSize: 16, lineHeight: 1.5, color: '#cbd3dc' }}>
+            <p className="ma-lead">
               Chiedo a una persona della tua organizzazione di ricontattarti.
             </p>
             <button
               type="button"
-              className="ma-primary green"
+              className="ma-primary"
               disabled={operator.isPending}
               onClick={() => operator.mutate()}
             >
@@ -486,7 +486,7 @@ function UploadForm({
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
       </label>
-      <button type="submit" className="ma-primary green" disabled={!file || !practiceId || pending}>
+      <button type="submit" className="ma-primary" disabled={!file || !practiceId || pending}>
         {pending ? 'Invio…' : 'Manda'}
       </button>
     </form>
@@ -518,7 +518,7 @@ function InviteForm() {
           <p style={{ wordBreak: 'break-all', fontSize: 15 }}>{text}</p>
           <button
             type="button"
-            className="ma-primary green"
+            className="ma-primary"
             onClick={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true))}
           >
             {copied ? 'Copiato' : 'Copia il link'}
@@ -539,7 +539,7 @@ function InviteForm() {
           </label>
           <button
             type="button"
-            className="ma-primary green"
+            className="ma-primary"
             disabled={create.isPending}
             onClick={() => create.mutate()}
           >
@@ -576,7 +576,7 @@ function PracticeForm({ pending, onSend }: { pending: boolean; onSend: (name: st
           placeholder="es. Domanda PAC 2026"
         />
       </label>
-      <button type="submit" className="ma-primary green" disabled={!name.trim() || pending}>
+      <button type="submit" className="ma-primary" disabled={!name.trim() || pending}>
         Apri la pratica
       </button>
     </form>
@@ -620,11 +620,7 @@ function DeadlineForm({
         Data
         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </label>
-      <button
-        type="submit"
-        className="ma-primary green"
-        disabled={!title.trim() || !dueDate || pending}
-      >
+      <button type="submit" className="ma-primary" disabled={!title.trim() || !dueDate || pending}>
         Registra la scadenza
       </button>
     </form>
