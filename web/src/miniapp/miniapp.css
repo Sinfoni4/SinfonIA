@@ -53,6 +53,15 @@
   cursor: pointer;
 }
 
+/*
+ * The dashboard's stylesheet gives every button a margin (it pushed the button cards of «Oggi»
+ * 16px below the link cards): none here. Low specificity, so a class like .ma-close still sets
+ * its own.
+ */
+.ma :where(button) {
+  margin: 0;
+}
+
 .ma h1,
 .ma h2,
 .ma p {
