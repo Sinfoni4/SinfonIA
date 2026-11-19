@@ -3,7 +3,7 @@
  * the «Oggi» summary, the «Agenda» and an action of the «+» sheet.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -174,8 +174,44 @@ describe('Telegram Mini App', () => {
     expect(text).toContain('1 scadenza');
     expect(text).toContain('1 documento');
     expect(text).toContain('1 pratica');
-    expect(screen.getByRole('img', { name: 'Documenti confermati: 75%' })).toBeTruthy();
     expect(screen.getByText('Richiesto «Certificato biologico»')).toBeTruthy();
+    // Six commands; a member sends the documents asked for instead of adding deadlines.
+    const commands = within(screen.getByRole('navigation', { name: 'Comandi' }));
+    expect(
+      [...commands.getAllByRole('link'), ...commands.getAllByRole('button')].map(
+        (c) => c.querySelector('.ma-cmd-label')?.textContent,
+      ),
+    ).toEqual([
+      'Le mie pratiche',
+      'Agenda',
+      'Documenti richiesti',
+      'Manda documento',
+      'Nuova pratica',
+      'Parla con un operatore',
+    ]);
+    expect(screen.getByText('SinfonIA')).toBeTruthy();
+  });
+
+  it('lists the practices from «Le mie pratiche»', async () => {
+    api();
+    openFromTelegram();
+    await userEvent.click(await screen.findByRole('link', { name: /Le mie pratiche/ }));
+    expect(await screen.findByRole('link', { name: /Bando PSR/ })).toBeTruthy();
+    expect(screen.getByText('3/4 doc.')).toBeTruthy();
+  });
+
+  it('sends the question of the line under the commands to the assistant', async () => {
+    api({ 'POST /miniapp/chat': () => ok({ replies: [{ text: 'Hai 1 pratica.', buttons: [] }] }) });
+    openFromTelegram();
+    await userEvent.type(
+      await screen.findByLabelText('Domanda per l’assistente'),
+      'le mie pratiche',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Invia all’assistente' }));
+    expect(await screen.findByText('Hai 1 pratica.')).toBeTruthy();
+    expect(calls.filter((c) => c.path === '/miniapp/chat').map((c) => c.body)).toEqual([
+      { text: 'le mie pratiche' },
+    ]);
   });
 
   it('shows the agenda and asks an operator from the + sheet', async () => {
@@ -186,7 +222,7 @@ describe('Telegram Mini App', () => {
       }),
     });
     openFromTelegram();
-    await userEvent.click(await screen.findByRole('link', { name: 'Agenda' }));
+    await userEvent.click(await screen.findByRole('link', { name: /^\d*Agenda$/ }));
     expect(await screen.findByText('Questa settimana')).toBeTruthy();
     expect(screen.getByText('Manda: Certificato biologico')).toBeTruthy();
     expect(screen.getByText('Visita medica')).toBeTruthy();
@@ -219,7 +255,7 @@ describe('Telegram Mini App', () => {
       },
     });
     openFromTelegram();
-    await userEvent.click(await screen.findByRole('button', { name: 'Nuova azione' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Altre azioni' }));
     await userEvent.click(screen.getByRole('button', { name: /Chiedi all’assistente/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'I miei documenti' }));
     expect(await screen.findByText(/Certificato biologico — manca/)).toBeTruthy();

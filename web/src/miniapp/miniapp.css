@@ -1,13 +1,17 @@
-/* Telegram Mini App: dark, with a green glow, as in the approved mockup. Everything under .ma. */
+/*
+ * Telegram Mini App: minimal, on a plain dark grey (#1F1F1F), white icons, IBM Plex Sans.
+ * Everything under .ma.
+ */
 
 .ma {
-  --ma-bg: #16191d;
-  --ma-panel: #20242a;
-  --ma-card: rgba(255, 255, 255, 0.07);
-  --ma-card-strong: rgba(255, 255, 255, 0.1);
-  --ma-text: #f3f5f7;
-  --ma-soft: #cbd3dc;
-  --ma-muted: #a3adb8;
+  --ma-bg: #1f1f1f;
+  --ma-panel: #262626;
+  --ma-card: #2a2a2a;
+  --ma-card-strong: #333333;
+  --ma-line: rgba(255, 255, 255, 0.08);
+  --ma-text: #ffffff;
+  --ma-soft: #d4d4d4;
+  --ma-muted: #a3a3a3;
   --ma-green: #4ade80;
   --ma-amber: #fbbf24;
   --ma-red: #f87171;
@@ -16,18 +20,10 @@
   box-sizing: border-box;
   position: relative;
   overflow-x: hidden;
-  background:
-    radial-gradient(
-      120% 60% at 105% 0%,
-      rgba(74, 222, 128, 0.2) 0%,
-      rgba(56, 189, 248, 0.1) 32%,
-      rgba(22, 25, 29, 0) 62%
-    ),
-    radial-gradient(90% 50% at 40% 25%, rgba(74, 222, 128, 0.07) 0%, rgba(22, 25, 29, 0) 70%),
-    var(--ma-bg);
+  background: var(--ma-bg);
   color: var(--ma-text);
   font-family:
-    Inter,
+    'IBM Plex Sans',
     system-ui,
     -apple-system,
     'Segoe UI',
@@ -271,7 +267,11 @@
   font-weight: 500;
 }
 
-.ma-tile {
+/* Icon squares: one neutral grey, the white icon carries the meaning. */
+.ma-tile,
+.ma-tile.ask,
+.ma-tile.bad,
+.ma-tile.info {
   width: 44px;
   height: 44px;
   flex: none;
@@ -279,25 +279,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #15803d;
+  background: var(--ma-card-strong);
+  color: var(--ma-text);
 }
 
 .ma-tile.small {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-}
-
-.ma-tile.ask {
-  background: #b45309;
-}
-
-.ma-tile.bad {
-  background: #b91c1c;
-}
-
-.ma-tile.info {
-  background: #1d4ed8;
 }
 
 .ma-pill {
@@ -318,9 +307,9 @@
   width: 96px;
   height: 50px;
   border-radius: 26px;
-  background: #1c2026;
-  border: 1.5px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 10px 34px rgba(74, 222, 128, 0.3);
+  background: var(--ma-card-strong);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -652,7 +641,7 @@
   margin: 0 10px 12px;
   padding: 12px 16px 22px;
   border-radius: 32px;
-  background: #1f232a;
+  background: var(--ma-panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.5);
   display: flex;
@@ -771,7 +760,7 @@
   width: 50px;
   height: 50px;
   border-radius: 25px;
-  background: #1c2026;
+  background: var(--ma-card-strong);
   border: 1.5px solid rgba(255, 255, 255, 0.28);
   display: flex;
   align-items: center;
@@ -875,4 +864,246 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* --- Minimal look (2026-11-19): plain grey, white icons, no colored glow --------------------- */
+
+/* Chips keep their words but lose the colors: one neutral grey. */
+.ma-chip,
+.ma-chip.ok,
+.ma-chip.warn,
+.ma-chip.late,
+.ma-chip.info {
+  background: var(--ma-card);
+  color: var(--ma-soft);
+  border: 1px solid var(--ma-line);
+}
+
+.ma-bubble.me {
+  background: var(--ma-card-strong);
+}
+
+.ma-primary.green {
+  background: #ffffff;
+  color: #1f1f1f !important;
+}
+
+/* «Oggi»: brand, organization and greeting on top, the commands and the assistant at the bottom. */
+.ma-home {
+  /* The screen less the padding of .ma above and below: the commands end at the bottom. */
+  min-height: calc(100vh - 36px - env(safe-area-inset-bottom));
+  min-height: calc(100dvh - 36px - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ma:has(.ma-home) {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.ma-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ma-top .ma-brand {
+  gap: 10px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ma-home .ma-org {
+  gap: 12px;
+  font-size: 15px;
+  color: var(--ma-muted);
+}
+
+.ma-home .ma-org > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ma-home .ma-org strong {
+  font-size: 16px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ma-home .ma-org small {
+  font-size: 13px;
+}
+
+/* The organization until it has its own logo: its initials in a white rounded square. */
+.ma-org-mark {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1f1f1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ma-hello {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ma-hello h1 {
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.ma-hello p {
+  font-size: 20px;
+  line-height: 1.35;
+  color: var(--ma-muted);
+}
+
+.ma-stamp {
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--ma-card);
+  font-size: 13px;
+  color: var(--ma-soft);
+}
+
+.ma-home .ma-feed {
+  gap: 8px;
+}
+
+.ma-home .ma-feed-item {
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ma-line);
+}
+
+.ma-home .ma-feed-item p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Six commands, two rows of three, pushed to the bottom of the screen. */
+.ma-grid {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 8px;
+}
+
+.ma-cmd {
+  /* Buttons do not stretch in the grid row like links: the full height keeps the six equal. */
+  height: 100%;
+  min-height: 100px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--ma-line);
+  background: var(--ma-card);
+  color: var(--ma-text);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+  text-align: left;
+  font: inherit;
+  transition: background 0.15s;
+}
+
+.ma-cmd:hover,
+.ma-cmd:focus-visible {
+  background: var(--ma-card-strong);
+}
+
+.ma-cmd:active {
+  transform: scale(0.98);
+}
+
+.ma-cmd-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.ma-cmd-label {
+  font-size: 14px;
+  line-height: 1.25;
+  font-weight: 500;
+}
+
+.ma-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The line for the assistant, under the commands. */
+.ma-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 16px;
+  background: var(--ma-card);
+  border: 1px solid var(--ma-line);
+}
+
+.ma-ask input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ma-text);
+  font: inherit;
+  font-size: 16px;
+  padding: 8px 0;
+}
+
+.ma-ask input::placeholder {
+  color: var(--ma-muted);
+}
+
+.ma-ask button {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border: 0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1f1f1f !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ma-ask button:disabled {
+  background: var(--ma-card-strong);
+  color: #ffffff !important;
+  opacity: 0.5;
+  cursor: default;
 }

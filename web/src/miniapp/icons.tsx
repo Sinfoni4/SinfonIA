@@ -1,5 +1,7 @@
 /** Stroke icons of the Mini App (decorative: the text next to them says the same). */
 
+import { MARK_PATH } from './mark';
+
 type IconProps = { size?: number; color?: string };
 
 function Svg({
@@ -112,6 +114,23 @@ export const ChatIcon = (p: IconProps) => (
     <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
   </Svg>
 );
+export const SendIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Svg>
+);
+export const CalendarPlusIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="5" width="16" height="15" rx="3" />
+    <path d="M4 10h16M9 3v4M15 3v4M12 13v5M9.5 15.5h5" />
+  </Svg>
+);
+export const InboxIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 13l2.5-7h11L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+    <path d="M4 13h4.5l1 2h5l1-2H20" />
+  </Svg>
+);
 export const PersonIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="8" r="4" />
@@ -119,22 +138,17 @@ export const PersonIcon = (p: IconProps) => (
   </Svg>
 );
 
-/** The SinfonIA mark: three sound bars in a green ring. */
+/** The SinfonIA mark, white (the color of the text); `size` is its height. */
 export function Logo({ size = 34, label = true }: { size?: number; label?: boolean }) {
   return (
     <svg
-      width={size}
       height={size}
-      viewBox="0 0 34 34"
+      width={Math.round((size * 590) / 733)}
+      viewBox="75 75 590 733"
+      fill="currentColor"
       {...(label ? { role: 'img', 'aria-label': 'SinfonIA' } : { 'aria-hidden': true })}
     >
-      <circle cx="17" cy="17" r="14.5" fill="none" stroke="#4ade80" strokeWidth="2.4" />
-      <path
-        d="M11.5 20.5v-7M17 24v-14M22.5 21v-8"
-        stroke="#f3f5f7"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-      />
+      <path d={MARK_PATH} />
     </svg>
   );
 }
@@ -165,7 +179,7 @@ export function Ring({ percent }: { percent: number | null }) {
           cy="24"
           r="20"
           fill="none"
-          stroke="#4ade80"
+          stroke="#ffffff"
           strokeWidth="4"
           strokeLinecap="round"
           strokeDasharray={`${filled} ${length}`}

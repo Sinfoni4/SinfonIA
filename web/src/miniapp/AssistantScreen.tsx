@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 
 import { describeError } from '../api/client';
 import { useSession } from '../session/session';
@@ -58,6 +58,21 @@ export function AssistantScreen() {
     ask.mutate(sent.trim());
   };
 
+  // The question written in the line of «Oggi»: sent once, then removed from the history entry
+  // so that going back and forth does not send it again.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const asked = useRef(false);
+  useEffect(() => {
+    const question = (location.state as { question?: unknown } | null)?.question;
+    if (asked.current || typeof question !== 'string' || !question.trim()) return;
+    asked.current = true;
+    add('me', question);
+    ask.mutate(question.trim());
+    void navigate('.', { replace: true, state: null });
+    // Only when the screen opens.
+  }, []);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     send(text);
@@ -74,8 +89,8 @@ export function AssistantScreen() {
             <BackIcon />
           </Link>
           <h1>Assistente</h1>
-          <span className="ma-tile small" style={{ width: 40, height: 40, background: '#4f46e5' }}>
-            <ChatIcon size={20} color="#f3f5f7" />
+          <span className="ma-tile small" style={{ width: 40, height: 40 }}>
+            <ChatIcon size={20} />
           </span>
         </header>
       </div>

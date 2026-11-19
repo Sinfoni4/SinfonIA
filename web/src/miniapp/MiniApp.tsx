@@ -16,7 +16,16 @@ import {
   Logo,
   PersonIcon,
 } from './icons';
-import { AgendaScreen, PracticeScreen, TodayScreen, useSummary } from './MiniAppScreens';
+import {
+  AgendaScreen,
+  PracticeScreen,
+  PracticesScreen,
+  TodayScreen,
+  useSummary,
+} from './MiniAppScreens';
+import '@fontsource/ibm-plex-sans/latin-400.css';
+import '@fontsource/ibm-plex-sans/latin-500.css';
+import '@fontsource/ibm-plex-sans/latin-600.css';
 import './miniapp.css';
 
 /** What the «+» sheet shows: the menu, or one of its forms. */
@@ -28,7 +37,16 @@ export type SheetIntent =
   | { kind: 'operator' }
   | { kind: 'invite' };
 
-type TelegramWebApp = { ready?: () => void; expand?: () => void; close?: () => void };
+type TelegramWebApp = {
+  ready?: () => void;
+  expand?: () => void;
+  close?: () => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+};
+
+/** The one background of the Mini App, also behind Telegram's own header. */
+const BACKGROUND = '#1F1F1F';
 
 function telegram(): TelegramWebApp | undefined {
   return (window as unknown as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
@@ -37,13 +55,15 @@ function telegram(): TelegramWebApp | undefined {
 /**
  * Telegram Mini App of SinfonIA (`/app/tg`): the person opens it from the bot and is logged in
  * with the data Telegram signs (their Telegram account must be linked, AGX-10). The same API and
- * grants as the dashboard; dark look with a green glow, as in the approved mockup.
+ * grants as the dashboard; a minimal look on a plain dark grey, with white icons.
  */
 export function MiniApp() {
   const { state } = useSession();
   useEffect(() => {
     telegram()?.ready?.();
     telegram()?.expand?.();
+    telegram()?.setHeaderColor?.(BACKGROUND);
+    telegram()?.setBackgroundColor?.(BACKGROUND);
     // A dark page around the app, scrollbars included, while it is open.
     const root = document.documentElement;
     // A phone app: no desktop scrollbar over the content (a page still scrolls).
@@ -52,7 +72,7 @@ export function MiniApp() {
       scheme: root.style.colorScheme,
       scrollbar: root.style.scrollbarWidth,
     };
-    document.body.style.background = '#16191d';
+    document.body.style.background = BACKGROUND;
     root.style.colorScheme = 'dark';
     root.style.scrollbarWidth = 'none';
     return () => {
@@ -170,6 +190,7 @@ function MiniAppHome({ me }: { me: Me }) {
         <Route path="tg" element={<TodayScreen me={me} openSheet={setSheet} />} />
         <Route path="tg/agenda" element={<AgendaScreen me={me} openSheet={setSheet} />} />
         <Route path="tg/assistente" element={<AssistantScreen />} />
+        <Route path="tg/pratiche" element={<PracticesScreen me={me} />} />
         <Route path="tg/pratiche/:id" element={<PracticeScreen me={me} openSheet={setSheet} />} />
         <Route path="*" element={<Navigate to="/tg" replace />} />
       </Routes>
@@ -280,7 +301,7 @@ function Sheet({
               onClick={() => onIntent({ kind: 'upload' })}
             >
               <span className="ma-tile">
-                <CameraIcon color="#ffffff" />
+                <CameraIcon />
               </span>
               <span>
                 <strong>Manda un documento</strong>
@@ -293,7 +314,7 @@ function Sheet({
               onClick={() => onIntent({ kind: 'practice' })}
             >
               <span className="ma-tile small info" style={{ width: 40, height: 40 }}>
-                <FolderPlusIcon size={20} color="#f3f5f7" />
+                <FolderPlusIcon size={20} />
               </span>
               <span>
                 <strong>Nuova pratica</strong>
@@ -307,7 +328,7 @@ function Sheet({
                 onClick={() => onIntent({ kind: 'deadline' })}
               >
                 <span className="ma-tile small ask" style={{ width: 40, height: 40 }}>
-                  <CalendarIcon size={20} color="#f3f5f7" />
+                  <CalendarIcon size={20} />
                 </span>
                 <span>
                   <strong>Nuova scadenza</strong>
@@ -323,11 +344,8 @@ function Sheet({
                 void navigate('/tg/assistente');
               }}
             >
-              <span
-                className="ma-tile small"
-                style={{ width: 40, height: 40, background: '#4f46e5' }}
-              >
-                <ChatIcon size={20} color="#f3f5f7" />
+              <span className="ma-tile small" style={{ width: 40, height: 40 }}>
+                <ChatIcon size={20} />
               </span>
               <span>
                 <strong>Chiedi all’assistente</strong>
@@ -340,7 +358,7 @@ function Sheet({
               onClick={() => onIntent({ kind: 'operator' })}
             >
               <span className="ma-tile small bad" style={{ width: 40, height: 40 }}>
-                <PersonIcon size={20} color="#f3f5f7" />
+                <PersonIcon size={20} />
               </span>
               <span>
                 <strong>Parla con un operatore</strong>
@@ -354,7 +372,7 @@ function Sheet({
                 onClick={() => onIntent({ kind: 'invite' })}
               >
                 <span className="ma-tile small info" style={{ width: 40, height: 40 }}>
-                  <PersonIcon size={20} color="#f3f5f7" />
+                  <PersonIcon size={20} />
                 </span>
                 <span>
                   <strong>Invita una persona</strong>
