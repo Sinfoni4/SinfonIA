@@ -134,3 +134,30 @@ export function activeSectorFeatures(
   const on = new Set(enabled ?? []);
   return sectorFeaturesOf(module).filter((f) => on.has(f.id));
 }
+
+/** Where a function of a sector is shown: the dashboard, the Telegram Mini App, or both. */
+export const SECTOR_CHANNELS = ['dashboard', 'miniapp'] as const;
+export type SectorChannel = (typeof SECTOR_CHANNELS)[number];
+
+export type ActiveSectorFeature = SectorFeatureDefinition & {
+  dashboard: boolean;
+  miniApp: boolean;
+};
+
+/**
+ * The functions of a sector on for an organization in at least one place, each with where it is
+ * shown: the dashboard (`enabled_features`) and the Mini App (`miniapp_features`) are chosen apart.
+ */
+export function sectorFeaturesOn(
+  module: string,
+  lists: {
+    dashboard: readonly string[] | null | undefined;
+    miniApp: readonly string[] | null | undefined;
+  },
+): ActiveSectorFeature[] {
+  const dashboard = new Set(lists.dashboard ?? []);
+  const miniApp = new Set(lists.miniApp ?? []);
+  return sectorFeaturesOf(module)
+    .map((f) => ({ ...f, dashboard: dashboard.has(f.id), miniApp: miniApp.has(f.id) }))
+    .filter((f) => f.dashboard || f.miniApp);
+}

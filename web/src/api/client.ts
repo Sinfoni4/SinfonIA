@@ -42,7 +42,20 @@ export type SectorFeatureInfo = {
   description: string;
   /** False while it is being built: shown as «in preparazione». */
   ready: boolean;
+  /** Where it is on (absent: older server, both): the dashboard and the Mini App apart. */
+  dashboard?: boolean;
+  miniApp?: boolean;
 };
+
+/** The functions of the sector on in the dashboard. */
+export function dashboardSectorFeatures(me: Me): SectorFeatureInfo[] {
+  return (me.current.sectorFeatures ?? []).filter((f) => f.dashboard !== false);
+}
+
+/** The functions of the sector on in the Telegram Mini App. */
+export function miniAppSectorFeatures(me: Me): SectorFeatureInfo[] {
+  return (me.current.sectorFeatures ?? []).filter((f) => f.miniApp !== false);
+}
 
 /** The platform administrator in the console, with their own organizations to go back to. */
 export type PlatformAdmin = { userId: string; email: string; organizations: Organization[] };

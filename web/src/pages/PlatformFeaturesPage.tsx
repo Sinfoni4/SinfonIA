@@ -27,7 +27,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 
-type Toggle = { orgId: string; feature: string; enabled: boolean };
+/** Functions of a sector only: where it is turned on. */
+type Channel = 'dashboard' | 'miniapp';
+type Toggle = { orgId: string; feature: string; enabled: boolean; channel?: Channel };
+
+const CHANNEL_LABELS: Record<Channel, string> = {
+  dashboard: 'nella dashboard',
+  miniapp: 'nella Mini App',
+};
 
 /**
  * The functions of every organization in one table: the common ones (on unless turned off) in a
@@ -56,12 +63,12 @@ export function PlatformFeaturesPage() {
   });
   const [pending, setPending] = useState<string | null>(null);
   const toggle = useMutation({
-    mutationFn: ({ orgId, feature, enabled }: Toggle) =>
+    mutationFn: ({ orgId, feature, enabled, channel }: Toggle) =>
       api(`/platform/organizations/${orgId}/features/${feature}`, {
         method: 'PATCH',
-        body: { enabled },
+        body: channel ? { enabled, channel } : { enabled },
       }),
-    onMutate: ({ orgId, feature }) => setPending(`${orgId}:${feature}`),
+    onMutate: ({ orgId, feature, channel }) => setPending(`${orgId}:${feature}:${channel ?? ''}`),
     onSettled: async () => {
       setPending(null);
       await queryClient.invalidateQueries({ queryKey: ['platform'] });
@@ -70,14 +77,22 @@ export function PlatformFeaturesPage() {
   const sector = catalog.data?.sector;
 
   const columns = useMemo<Array<DataColumn<OrganizationRow>>>(() => {
-    const box = (o: OrganizationRow, feature: string, on: boolean, label: string) => (
+    const box = (
+      o: OrganizationRow,
+      feature: string,
+      on: boolean,
+      label: string,
+      channel?: Channel,
+    ) => (
       <input
         type="checkbox"
         className="size-4 accent-primary"
         checked={on}
-        disabled={pending === `${o.id}:${feature}`}
-        aria-label={`${label} per ${o.name}`}
-        onChange={(e) => toggle.mutate({ orgId: o.id, feature, enabled: e.target.checked })}
+        disabled={pending === `${o.id}:${feature}:${channel ?? ''}`}
+        aria-label={`${label}${channel ? ` ${CHANNEL_LABELS[channel]}` : ''} per ${o.name}`}
+        onChange={(e) =>
+          toggle.mutate({ orgId: o.id, feature, enabled: e.target.checked, channel })
+        }
       />
     );
     return [
@@ -115,16 +130,23 @@ export function PlatformFeaturesPage() {
           return (
             <ul className="m-0 flex list-none flex-col gap-1 p-0">
               {own.map((f) => (
-                <li key={f.id}>
-                  <label className="flex items-center gap-2 whitespace-nowrap">
-                    {box(o, f.id, (o.enabledFeatures ?? []).includes(f.id), f.label)}
-                    <span>{f.label}</span>
-                    {!f.ready && (
-                      <Badge variant="outline" className="px-1.5 text-muted-foreground">
-                        in preparazione
-                      </Badge>
-                    )}
-                  </label>
+                <li key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-medium">{f.label}</span>
+                  {!f.ready && (
+                    <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                      in preparazione
+                    </Badge>
+                  )}
+                  <span className="flex items-center gap-3 whitespace-nowrap">
+                    <label className="flex items-center gap-1.5">
+                      {box(o, f.id, (o.enabledFeatures ?? []).includes(f.id), f.label, 'dashboard')}
+                      Dashboard
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      {box(o, f.id, (o.miniAppFeatures ?? []).includes(f.id), f.label, 'miniapp')}
+                      Mini App
+                    </label>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -140,9 +162,9 @@ export function PlatformFeaturesPage() {
       <h1 className="m-0 text-2xl font-semibold tracking-tight">Funzioni</h1>
       <p className="m-0 max-w-3xl text-muted-foreground">
         Le funzioni comuni sono accese per tutti finché non le spegni. Quelle di settore compaiono
-        solo per le organizzazioni di quel settore e partono spente: accese, la dashboard e la Mini
-        App le mostrano ai membri. Ogni casella si salva subito e vale dalla richiesta successiva;
-        spegnere non cancella i dati.
+        solo per le organizzazioni di quel settore, partono spente e si accendono a parte nella
+        dashboard e nella Mini App di Telegram (nel menu). Ogni casella si salva subito e vale dalla
+        richiesta successiva; spegnere non cancella i dati.
       </p>
       {(query.isError || catalog.isError) && (
         <p className="error m-0" role="alert">

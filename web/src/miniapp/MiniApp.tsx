@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router';
 
 import { miniAppPalette, type Appearance } from '../api/appearance';
-import { describeError, request, type Me } from '../api/client';
+import { describeError, miniAppSectorFeatures, request, type Me } from '../api/client';
 import { CATEGORY_LABELS, type DeadlineCategory } from '../api/compliance';
 import { useSession, type SessionState } from '../session/session';
 
@@ -13,6 +13,7 @@ import {
   CameraIcon,
   ChatIcon,
   CloseIcon,
+  DocIcon,
   FolderPlusIcon,
   Logo,
   PersonIcon,
@@ -399,6 +400,26 @@ function Sheet({
                 </span>
               </button>
             )}
+            {/* The functions of the sector turned on for the Mini App from the console. */}
+            {miniAppSectorFeatures(me).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className="ma-action"
+                onClick={() => {
+                  onClose();
+                  void navigate(`/tg/settore/${f.id}`);
+                }}
+              >
+                <span className="ma-tile">
+                  <DocIcon size={20} />
+                </span>
+                <span>
+                  <strong>{f.label}</strong>
+                  <small>{f.ready ? f.description : `In preparazione · ${f.description}`}</small>
+                </span>
+              </button>
+            ))}
           </>
         ) : intent.kind === 'upload' ? (
           <UploadForm

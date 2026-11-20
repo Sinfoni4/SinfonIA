@@ -8,6 +8,7 @@ import {
   sectorFeature,
   sectorFeatureApplies,
   sectorFeaturesOf,
+  type SectorChannel,
 } from '../../modules/registry.js';
 import { FEATURE_LABELS, FEATURES, isFeature, type Feature } from '../features/features.js';
 import { inviteMemberInTx, NETWORK_TYPES } from '../network/network.service.js';
@@ -85,8 +86,10 @@ export type OrganizationRow = {
   module: string;
   /** A03: common functions turned off. */
   disabledFeatures: string[];
-  /** Functions of the sector turned on (only those of `module` count). */
+  /** Functions of the sector on in the dashboard (only those of `module` count). */
   enabledFeatures: string[];
+  /** Functions of the sector on in the Telegram Mini App. */
+  miniAppFeatures: string[];
   createdAt: Date;
   members: number;
   practices: number;
@@ -125,6 +128,7 @@ export async function listOrganizations(
         module: true,
         disabledFeatures: true,
         enabledFeatures: true,
+        miniAppFeatures: true,
         createdAt: true,
       },
     }),
@@ -202,6 +206,7 @@ export async function getOrganization(
       module: true,
       disabledFeatures: true,
       enabledFeatures: true,
+      miniAppFeatures: true,
       schedulerEnabled: true,
       integrationType: true,
       deactivatedAt: true,
@@ -238,6 +243,7 @@ export async function getOrganization(
     module: org.module,
     disabledFeatures: org.disabledFeatures,
     enabledFeatures: org.enabledFeatures,
+    miniAppFeatures: org.miniAppFeatures,
     scheduledExport: org.schedulerEnabled,
     webhook: org.integrationType === 'external',
     deactivatedAt: org.deactivatedAt,
@@ -422,6 +428,18 @@ export async function setOrganizationSuspended(
 
 // --- A03: module and functions of an organization -------------------------------------------
 
+/** The functions of each kind of an organization, as the console sets and reads them. */
+export type OrganizationFeatures = {
+  disabledFeatures: string[];
+  /** Functions of the sector on in the dashboard. */
+  enabledFeatures: string[];
+  /** Functions of the sector on in the Telegram Mini App. */
+  miniAppFeatures: string[];
+};
+
+const sameList = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((f) => b.includes(f));
+
 /**
  * Sets the module of an organization and the functions turned off for it. Takes effect at the
  * next request of its members (the authorization reads them every time); no data is touched:
@@ -430,97 +448,133 @@ export async function setOrganizationSuspended(
 export async function setOrganizationModules(
   prisma: PrismaClient,
   orgId: string,
-  input: { module: ModuleId; disabledFeatures: Feature[]; enabledFeatures?: string[] },
+  input: {
+    module: ModuleId;
+    disabledFeatures: Feature[];
+    enabledFeatures?: string[];
+    miniAppFeatures?: string[];
+  },
   actor: PlatformActor,
-): Promise<{ module: ModuleId; disabledFeatures: Feature[]; enabledFeatures: string[] }> {
+): Promise<OrganizationFeatures & { module: ModuleId }> {
   const disabledFeatures = FEATURES.filter((f) => input.disabledFeatures.includes(f));
   return withTransaction(prisma, async (tx) => {
     const org = await tx.tenant.findUnique({
       where: { id: orgId },
-      select: { module: true, disabledFeatures: true, enabledFeatures: true },
+      select: {
+        module: true,
+        disabledFeatures: true,
+        enabledFeatures: true,
+        miniAppFeatures: true,
+      },
     });
     if (!org) throw new NotFoundError('Organization not found');
     // Functions of a sector: only those of the new module are kept, given or not.
-    const enabledFeatures = sectorFeaturesOf(input.module)
-      .map((f) => f.id)
-      .filter((id) => (input.enabledFeatures ?? org.enabledFeatures).includes(id));
-    const sameList = (a: readonly string[], b: readonly string[]) =>
-      a.length === b.length && a.every((f) => b.includes(f));
+    const ofModule = (list: readonly string[]) =>
+      sectorFeaturesOf(input.module)
+        .map((f) => f.id)
+        .filter((id) => list.includes(id));
+    const enabledFeatures = ofModule(input.enabledFeatures ?? org.enabledFeatures);
+    const miniAppFeatures = ofModule(input.miniAppFeatures ?? org.miniAppFeatures);
     const same =
       org.module === input.module &&
       sameList(org.disabledFeatures, disabledFeatures) &&
-      sameList(org.enabledFeatures, enabledFeatures);
+      sameList(org.enabledFeatures, enabledFeatures) &&
+      sameList(org.miniAppFeatures, miniAppFeatures);
     if (!same) {
       await tx.tenant.update({
         where: { id: orgId },
-        data: { module: input.module, disabledFeatures, enabledFeatures },
+        data: { module: input.module, disabledFeatures, enabledFeatures, miniAppFeatures },
       });
       await logPlatform(tx, {
         actor,
         action: 'ORGANIZATION_MODULES_CHANGED',
         orgId,
-        payload: { module: input.module, disabledFeatures, enabledFeatures },
+        payload: { module: input.module, disabledFeatures, enabledFeatures, miniAppFeatures },
       });
       await logInOrganization(tx, orgId, 'ORGANIZATION_MODULES_CHANGED');
     }
-    return { module: input.module, disabledFeatures, enabledFeatures };
+    return { module: input.module, disabledFeatures, enabledFeatures, miniAppFeatures };
   });
 }
 
-/**
- * The console's table of functions: turns one function on or off for an organization. A common
- * function (features.ts) is on unless turned off; a function of a sector (sector-features.ts) is
- * off unless turned on, and only for an organization of that sector. Recorded like the module.
- */
 function labelOf(feature: string): string {
   return isFeature(feature) ? FEATURE_LABELS[feature] : (sectorFeature(feature)?.label ?? feature);
 }
 
+/**
+ * The console's table of functions: turns one function on or off for an organization. A common
+ * function (features.ts) is on unless turned off, everywhere; a function of a sector
+ * (sector-features.ts) is off unless turned on, only for an organization of that sector, and in
+ * the dashboard and in the Mini App apart (`channel`). Recorded like the module.
+ */
 export async function setOrganizationFeature(
   prisma: PrismaClient,
   orgId: string,
-  input: { feature: string; enabled: boolean },
+  input: { feature: string; enabled: boolean; channel?: SectorChannel },
   actor: PlatformActor,
-): Promise<{ disabledFeatures: string[]; enabledFeatures: string[] }> {
+): Promise<OrganizationFeatures> {
   const { feature, enabled } = input;
   if (!isFeature(feature) && !isSectorFeature(feature)) {
     throw new NotFoundError('Feature not found');
   }
+  if (isFeature(feature) && input.channel) {
+    throw new PlatformActionError(
+      'Le funzioni comuni valgono ovunque: il canale si sceglie solo per quelle di settore',
+    );
+  }
+  const channel = input.channel ?? 'dashboard';
   return withTransaction(prisma, async (tx) => {
     const org = await tx.tenant.findUnique({
       where: { id: orgId },
-      select: { module: true, disabledFeatures: true, enabledFeatures: true },
+      select: {
+        module: true,
+        disabledFeatures: true,
+        enabledFeatures: true,
+        miniAppFeatures: true,
+      },
     });
     if (!org) throw new NotFoundError('Organization not found');
-    let { disabledFeatures, enabledFeatures } = org;
+    let { disabledFeatures, enabledFeatures, miniAppFeatures } = org;
+    const toggle = (list: string[]) => {
+      const rest = list.filter((f) => f !== feature);
+      return enabled ? [...rest, feature] : rest;
+    };
     if (isFeature(feature)) {
-      const off = disabledFeatures.filter((f) => f !== feature);
-      disabledFeatures = enabled ? off : [...off, feature];
+      // Stored the other way round: the list of those turned off.
+      const rest = disabledFeatures.filter((f) => f !== feature);
+      disabledFeatures = enabled ? rest : [...rest, feature];
     } else {
       if (enabled && !sectorFeatureApplies(feature, org.module)) {
         throw new PlatformActionError(
           "Questa funzione non è del settore dell'organizzazione: cambia prima il settore",
         );
       }
-      const on = enabledFeatures.filter((f) => f !== feature);
-      enabledFeatures = enabled ? [...on, feature] : on;
+      if (channel === 'miniapp') miniAppFeatures = toggle(miniAppFeatures);
+      else enabledFeatures = toggle(enabledFeatures);
     }
     const same =
-      disabledFeatures.length === org.disabledFeatures.length &&
-      enabledFeatures.length === org.enabledFeatures.length &&
-      disabledFeatures.every((f) => org.disabledFeatures.includes(f)) &&
-      enabledFeatures.every((f) => org.enabledFeatures.includes(f));
+      sameList(org.disabledFeatures, disabledFeatures) &&
+      sameList(org.enabledFeatures, enabledFeatures) &&
+      sameList(org.miniAppFeatures, miniAppFeatures);
     if (!same) {
-      await tx.tenant.update({ where: { id: orgId }, data: { disabledFeatures, enabledFeatures } });
+      await tx.tenant.update({
+        where: { id: orgId },
+        data: { disabledFeatures, enabledFeatures, miniAppFeatures },
+      });
       await logPlatform(tx, {
         actor,
         action: 'ORGANIZATION_FEATURE_CHANGED',
         orgId,
-        payload: { feature, featureLabel: labelOf(feature), enabled },
+        payload: {
+          feature,
+          featureLabel: labelOf(feature),
+          enabled,
+          ...(isFeature(feature) ? {} : { channel }),
+        },
       });
       await logInOrganization(tx, orgId, 'ORGANIZATION_FEATURE_CHANGED');
     }
-    return { disabledFeatures, enabledFeatures };
+    return { disabledFeatures, enabledFeatures, miniAppFeatures };
   });
 }
 
@@ -622,12 +676,21 @@ export type PlatformAuditRow = {
   targetEmail: string | null;
   details: Partial<
     Record<
-      'name' | 'type' | 'reason' | 'via' | 'module' | 'organization' | 'feature' | 'featureLabel',
+      | 'name'
+      | 'type'
+      | 'reason'
+      | 'via'
+      | 'module'
+      | 'organization'
+      | 'feature'
+      | 'featureLabel'
+      | 'channel',
       string
     >
   > & {
     disabledFeatures?: string[];
     enabledFeatures?: string[];
+    miniAppFeatures?: string[];
     /** ORGANIZATION_FEATURE_CHANGED: whether `feature` was turned on. */
     enabled?: boolean;
   };
@@ -687,6 +750,7 @@ export async function listPlatformAudit(
         'organization',
         'feature',
         'featureLabel',
+        'channel',
       ] as const;
       for (const key of keys) {
         if (typeof payload[key] === 'string') details[key] = payload[key];
@@ -697,6 +761,9 @@ export async function listPlatformAudit(
       }
       if (Array.isArray(payload.enabledFeatures)) {
         details.enabledFeatures = payload.enabledFeatures.filter((f) => typeof f === 'string');
+      }
+      if (Array.isArray(payload.miniAppFeatures)) {
+        details.miniAppFeatures = payload.miniAppFeatures.filter((f) => typeof f === 'string');
       }
       return {
         id: r.id,

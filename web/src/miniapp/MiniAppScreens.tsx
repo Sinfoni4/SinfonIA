@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 
-import { describeError, ROLE_LABELS, type Me } from '../api/client';
+import { describeError, miniAppSectorFeatures, ROLE_LABELS, type Me } from '../api/client';
 import { logoSrc, type OrganizationLogo } from '../api/logo';
 import {
   deadlineWhen,
@@ -212,17 +212,6 @@ export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetInt
         </section>
       )}
 
-      {(me.current.sectorFeatures ?? []).length > 0 && (
-        <section className="ma-list ma-sector" aria-label="Funzioni del settore">
-          {(me.current.sectorFeatures ?? []).map((f) => (
-            <Link key={f.id} to={`/tg/settore/${f.id}`} className="ma-row">
-              <span className="ma-row-title">{f.label}</span>
-              <span className="ma-row-when">{f.ready ? '' : 'in preparazione'}</span>
-            </Link>
-          ))}
-        </section>
-      )}
-
       <nav className="ma-grid" aria-label="Comandi">
         <Card
           icon={<CameraIcon size={22} />}
@@ -300,7 +289,7 @@ function initials(name: string): string {
 /** A function of the sector turned on from the console; «in preparazione» while it is built. */
 export function SectorScreen({ me }: { me: Me }) {
   const { featureId } = useParams();
-  const feature = (me.current.sectorFeatures ?? []).find((f) => f.id === featureId);
+  const feature = miniAppSectorFeatures(me).find((f) => f.id === featureId);
   if (!feature) return <Navigate to="/tg" replace />;
   return (
     <>

@@ -1,6 +1,6 @@
 import { Navigate, useParams } from 'react-router';
 
-import { type Me } from '../api/client';
+import { dashboardSectorFeatures, type Me } from '../api/client';
 
 import { Badge } from '@/components/ui/badge';
 
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
  */
 export function SectorFeaturePage({ me }: { me: Me }) {
   const { featureId } = useParams();
-  const feature = (me.current.sectorFeatures ?? []).find((f) => f.id === featureId);
+  const feature = dashboardSectorFeatures(me).find((f) => f.id === featureId);
   if (!feature) return <Navigate to="/" replace />;
   return (
     <div className="flex max-w-2xl flex-col gap-4">

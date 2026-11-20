@@ -1166,8 +1166,3 @@
   font-size: 13px;
   white-space: nowrap;
 }
-
-/* The functions of the sector turned on from the console, above the commands. */
-.ma-home .ma-sector {
-  gap: 0;
-}
