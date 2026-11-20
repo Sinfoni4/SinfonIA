@@ -635,7 +635,12 @@ function OrganizationPage() {
           </dl>
 
           <ModulesCard
-            key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}:${(org.enabledFeatures ?? []).join(',')}`}
+            key={[
+              org.module,
+              (org.disabledFeatures ?? []).join(','),
+              (org.enabledFeatures ?? []).join(','),
+              (org.miniAppFeatures ?? []).join(','),
+            ].join(':')}
             org={org}
           />
 
@@ -759,6 +764,7 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
     FEATURES.filter((f) => (org.disabledFeatures ?? []).includes(f)),
   );
   const [sectorOn, setSectorOn] = useState<string[]>(org.enabledFeatures ?? []);
+  const [appOn, setAppOn] = useState<string[]>(org.miniAppFeatures ?? []);
   const catalog = useQuery({
     queryKey: ['platform', 'features'],
     queryFn: () => api<FeatureCatalog>('/platform/features'),
@@ -778,6 +784,7 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
                 enabledFeatures: sectorFeatures
                   .map((f) => f.id)
                   .filter((id) => sectorOn.includes(id)),
+                miniAppFeatures: sectorFeatures.map((f) => f.id).filter((id) => appOn.includes(id)),
               }
             : {}),
         },
@@ -824,21 +831,36 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
       {sectorFeatures.length > 0 && (
         <fieldset>
           <legend>Funzioni di settore</legend>
-          {sectorFeatures.map((f) => (
-            <label key={f.id} className="checkbox">
-              <input
-                type="checkbox"
-                checked={sectorOn.includes(f.id)}
-                onChange={(e) =>
-                  setSectorOn((current) =>
-                    e.target.checked ? [...current, f.id] : current.filter((id) => id !== f.id),
-                  )
-                }
-              />{' '}
-              {f.label}
-              {!f.ready && <span className="muted"> (in preparazione)</span>}
-            </label>
-          ))}
+          {sectorFeatures.map((f) => {
+            const flip = (on: boolean) => (current: string[]) =>
+              on ? [...current, f.id] : current.filter((id) => id !== f.id);
+            return (
+              <div key={f.id}>
+                <p className="m-0">
+                  {f.label}
+                  {!f.ready && <span className="muted"> (in preparazione)</span>}
+                </p>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    aria-label={`${f.label}: dashboard`}
+                    checked={sectorOn.includes(f.id)}
+                    onChange={(e) => setSectorOn(flip(e.target.checked))}
+                  />{' '}
+                  Dashboard
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    aria-label={`${f.label}: Mini App`}
+                    checked={appOn.includes(f.id)}
+                    onChange={(e) => setAppOn(flip(e.target.checked))}
+                  />{' '}
+                  Mini App
+                </label>
+              </div>
+            );
+          })}
         </fieldset>
       )}
       <span className="actions">

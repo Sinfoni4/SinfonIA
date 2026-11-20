@@ -63,6 +63,10 @@ export {
   sectorFeature,
   sectorFeatureApplies,
   sectorFeaturesOf,
+  sectorFeaturesOn,
+  SECTOR_CHANNELS,
+  type ActiveSectorFeature,
+  type SectorChannel,
   type SectorFeature,
   type SectorFeatureDefinition,
 } from './sector-features.js';

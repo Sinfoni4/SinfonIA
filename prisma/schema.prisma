@@ -18,8 +18,10 @@ model Tenant {
   module              String             @default("generic")
   /// A03: functions the platform turned off for this organization (src/core/features).
   disabledFeatures    String[]           @default([]) @map("disabled_features")
-  /// Functions of a sector turned on for this organization (src/modules/sector-features.ts).
+  /// Functions of a sector turned on in the dashboard (src/modules/sector-features.ts).
   enabledFeatures     String[]           @default([]) @map("enabled_features")
+  /// Functions of a sector turned on in the Telegram Mini App, chosen apart from the dashboard.
+  miniAppFeatures     String[]           @default([]) @map("miniapp_features")
   integrationType     String             @default("none") @map("integration_type")
   schedulerEnabled    Boolean            @default(false) @map("scheduler_enabled")
   schedulerFrequency  String?            @map("scheduler_frequency")

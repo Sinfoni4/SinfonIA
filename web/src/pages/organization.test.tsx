@@ -268,6 +268,16 @@ describe('home (P11)', () => {
         label: 'Formazione e sicurezza',
         description: 'Corsi obbligatori e attestati in scadenza.',
         ready: false,
+        dashboard: true,
+        miniApp: false,
+      },
+      {
+        id: 'grants',
+        label: 'Bandi e contributi',
+        description: 'Bandi.',
+        ready: false,
+        dashboard: false,
+        miniApp: true,
       },
     ];
     api('MEMBER', {
@@ -281,6 +291,8 @@ describe('home (P11)', () => {
     });
     openAt('/');
     await userEvent.click(await screen.findByRole('link', { name: 'Formazione e sicurezza' }));
+    // Only in the Mini App: not in the menu of the dashboard.
+    expect(screen.queryByRole('link', { name: 'Bandi e contributi' })).toBeNull();
     expect(await screen.findByRole('heading', { name: 'Formazione e sicurezza' })).toBeTruthy();
     expect(screen.getByText('Corsi obbligatori e attestati in scadenza.')).toBeTruthy();
     expect(screen.getByText('in preparazione')).toBeTruthy();

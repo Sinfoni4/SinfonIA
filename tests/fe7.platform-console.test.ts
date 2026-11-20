@@ -537,11 +537,11 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
     });
 
     it('turns single functions on and off from the table, those of a sector only for it', async () => {
-      const put = (feature: string, enabled: unknown, headers = bearer()) =>
+      const put = (feature: string, enabled: unknown, headers = bearer(), channel?: string) =>
         app.inject({
           method: 'PATCH',
           url: `/platform/organizations/${farmId}/features/${feature}`,
-          payload: { enabled } as object,
+          payload: (channel ? { enabled, channel } : { enabled }) as object,
           headers,
         });
       const catalog = await get('/platform/features', bearer());
@@ -572,18 +572,35 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
           }>()
           .data.current.sectorFeatures.map((f) => [f.id, f.ready]),
       ).toEqual([['field_book', false]]);
-      // Twice the same: recorded once, for the platform and for the organization.
+      const where = async () =>
+        (await get('/auth/me', farm())).json<{
+          data: { current: { sectorFeatures: Array<{ dashboard: boolean; miniApp: boolean }> } };
+        }>().data.current.sectorFeatures;
+      // Only in the dashboard at first; the Mini App is chosen apart.
+      expect(await where()).toMatchObject([{ dashboard: true, miniApp: false }]);
+      expect((await put('field_book', true, bearer(), 'telegram')).statusCode).toBe(400);
+      expect((await put('assistance', true, bearer(), 'miniapp')).statusCode).toBe(409);
+      const inApp = await put('field_book', true, bearer(), 'miniapp');
+      expect(inApp.json<{ data: { miniAppFeatures: string[] } }>().data.miniAppFeatures).toEqual([
+        'field_book',
+      ]);
+      await put('field_book', false, bearer(), 'dashboard');
+      expect(await where()).toMatchObject([{ id: 'field_book', dashboard: false, miniApp: true }]);
+      await put('field_book', false, bearer(), 'miniapp');
+      expect(await where()).toEqual([]);
       await put('field_book', true);
-      expect(
+      // Every change recorded, for the platform and for the organization; the same again, not.
+      const records = async () => [
         await prisma.platformAuditLog.count({
           where: { orgId: farmId, action: 'ORGANIZATION_FEATURE_CHANGED' },
         }),
-      ).toBe(1);
-      expect(
         await prisma.auditLog.count({
           where: { tenantId: farmId, eventType: 'ORGANIZATION_FEATURE_CHANGED', userId: null },
         }),
-      ).toBe(1);
+      ];
+      expect(await records()).toEqual([5, 5]);
+      await put('field_book', true);
+      expect(await records()).toEqual([5, 5]);
       const list = await get('/platform/organizations?search=fe7-farm', bearer());
       expect(
         list
@@ -609,14 +626,26 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       expect((await put('trade_licenses', true)).statusCode).toBe(200);
       const agri = await patch(
         url,
-        { module: 'agri', disabledFeatures: [], enabledFeatures: ['risk_assessment', 'grants'] },
+        {
+          module: 'agri',
+          disabledFeatures: [],
+          enabledFeatures: ['risk_assessment', 'grants'],
+          miniAppFeatures: ['grants', 'field_book'],
+        },
         bearer(),
       );
+      expect(agri.json<{ data: { miniAppFeatures: string[] } }>().data.miniAppFeatures).toEqual([
+        'field_book',
+      ]);
       // risk_assessment is of both sectors; grants only of crafts.
       expect(agri.json<{ data: { enabledFeatures: string[] } }>().data.enabledFeatures).toEqual([
         'risk_assessment',
       ]);
-      await patch(url, { module: 'agri', disabledFeatures: [], enabledFeatures: [] }, bearer());
+      await patch(
+        url,
+        { module: 'agri', disabledFeatures: [], enabledFeatures: [], miniAppFeatures: [] },
+        bearer(),
+      );
     });
 
     it('offers the kinds and fields of the module and checks them', async () => {

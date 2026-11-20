@@ -28,7 +28,7 @@ import {
   type UsageRates,
 } from '../../../core/usage/usage.service.js';
 import { AuditService } from '../../../data/services/audit.service.js';
-import { SECTOR_FEATURE_IDS, SECTOR_FEATURES } from '../../../modules/registry.js';
+import { SECTOR_CHANNELS, SECTOR_FEATURE_IDS, SECTOR_FEATURES } from '../../../modules/registry.js';
 import { requirePlatform } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -129,6 +129,8 @@ const ModulesBodySchema = z
     disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
     /** Functions of the sector turned on; absent: those already on (of the module) stay. */
     enabledFeatures: z.array(z.enum(SECTOR_FEATURE_IDS)).max(SECTOR_FEATURE_IDS.length).optional(),
+    /** The same for the Telegram Mini App, chosen apart. */
+    miniAppFeatures: z.array(z.enum(SECTOR_FEATURE_IDS)).max(SECTOR_FEATURE_IDS.length).optional(),
   })
   .strict();
 
@@ -137,7 +139,13 @@ const FeatureParamsSchema = z.object({
   id: z.string().uuid(),
   feature: z.enum([...FEATURES, ...SECTOR_FEATURE_IDS] as [string, ...string[]]),
 });
-const FeatureBodySchema = z.object({ enabled: z.boolean() }).strict();
+const FeatureBodySchema = z
+  .object({
+    enabled: z.boolean(),
+    /** Functions of a sector only: where (default the dashboard). */
+    channel: z.enum(SECTOR_CHANNELS).optional(),
+  })
+  .strict();
 
 /** AGX-02: identifiers of a company; null removes one, a missing field leaves it as it is. */
 const IdentifiersBodySchema = z
@@ -302,9 +310,9 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
     try {
       const { userId } = requirePlatform(req);
       const { id, feature } = FeatureParamsSchema.parse(req.params);
-      const { enabled } = FeatureBodySchema.parse(req.body);
+      const body = FeatureBodySchema.parse(req.body);
       return reply.send(
-        ok(await setOrganizationFeature(deps.prisma, id, { feature, enabled }, { userId })),
+        ok(await setOrganizationFeature(deps.prisma, id, { feature, ...body }, { userId })),
       );
     } catch (err: unknown) {
       return sendError(reply, err);

@@ -224,13 +224,23 @@ describe('Telegram Mini App', () => {
     expect(main()?.style.getPropertyValue('--ma-card')).toBe('#2a2a2a');
   });
 
-  it('offers the functions of the sector turned on, «in preparazione» while built', async () => {
+  it('offers in the menu the functions of the sector on for the Mini App', async () => {
     const sectorFeatures = [
       {
         id: 'field_book',
         label: 'Quaderno di campagna',
         description: 'Registro dei trattamenti e delle lavorazioni.',
         ready: false,
+        dashboard: true,
+        miniApp: true,
+      },
+      {
+        id: 'cap_file',
+        label: 'Fascicolo e scadenze PAC',
+        description: 'Fascicolo aziendale.',
+        ready: false,
+        dashboard: true,
+        miniApp: false,
       },
     ];
     api({
@@ -246,18 +256,22 @@ describe('Telegram Mini App', () => {
         }),
     });
     openFromTelegram();
-    const sector = await screen.findByRole('region', { name: 'Funzioni del settore' });
-    await userEvent.click(within(sector).getByRole('link', { name: /Quaderno di campagna/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Altre azioni' }));
+    const sheet = await screen.findByRole('dialog');
+    // Only in the dashboard: not offered in the Mini App.
+    expect(within(sheet).queryByRole('button', { name: /Fascicolo e scadenze PAC/ })).toBeNull();
+    await userEvent.click(within(sheet).getByRole('button', { name: /Quaderno di campagna/ }));
     expect(await screen.findByRole('heading', { name: 'Quaderno di campagna' })).toBeTruthy();
     expect(screen.getByText('Registro dei trattamenti e delle lavorazioni.')).toBeTruthy();
     expect(screen.getByText(/In preparazione/)).toBeTruthy();
   });
 
-  it('shows no sector functions when none is on', async () => {
+  it('keeps the home without the functions of the sector', async () => {
     api();
     openFromTelegram();
-    await screen.findByText('SinfonIA');
-    expect(screen.queryByRole('region', { name: 'Funzioni del settore' })).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Altre azioni' }));
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).queryByRole('button', { name: /Quaderno di campagna/ })).toBeNull();
   });
 
   it('lists the practices from «Le mie pratiche»', async () => {

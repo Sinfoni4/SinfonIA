@@ -36,8 +36,10 @@ export type OrganizationRow = {
   module: string;
   /** A03: common functions turned off (absent: older server). */
   disabledFeatures?: string[];
-  /** Functions of the sector turned on; only those of `module` count (absent: older server). */
+  /** Functions of the sector on in the dashboard; only those of `module` count. */
   enabledFeatures?: string[];
+  /** Functions of the sector on in the Mini App (absent: older server). */
+  miniAppFeatures?: string[];
   createdAt: string;
   members: number;
   practices: number;
@@ -76,7 +78,15 @@ export type PlatformAuditRow = {
   targetEmail: string | null;
   details: Partial<
     Record<
-      'name' | 'type' | 'reason' | 'via' | 'module' | 'organization' | 'feature' | 'featureLabel',
+      | 'name'
+      | 'type'
+      | 'reason'
+      | 'via'
+      | 'module'
+      | 'organization'
+      | 'feature'
+      | 'featureLabel'
+      | 'channel',
       string
     >
   > & {
@@ -219,7 +229,13 @@ export function describePlatformAction(row: PlatformAuditRow): string {
         (FEATURE_LABELS as Record<string, string>)[row.details.feature ?? ''] ??
         row.details.feature ??
         'Una funzione';
-      return `${name} ${row.details.enabled ? 'accesa' : 'spenta'} per ${org}`;
+      const where =
+        row.details.channel === 'miniapp'
+          ? ' nella Mini App'
+          : row.details.channel === 'dashboard'
+            ? ' nella dashboard'
+            : '';
+      return `${name} ${row.details.enabled ? 'accesa' : 'spenta'}${where} per ${org}`;
     }
     case 'ORGANIZATION_IDENTIFIERS_CHANGED':
       return `Dati identificativi di ${org} aggiornati`;

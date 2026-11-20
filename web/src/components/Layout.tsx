@@ -24,7 +24,7 @@ import {
 import { useState } from 'react';
 import { Link } from 'react-router';
 
-import { describeError, ROLE_LABELS, type Me } from '../api/client';
+import { dashboardSectorFeatures, describeError, ROLE_LABELS, type Me } from '../api/client';
 import { NETWORK_TYPES } from '../api/organization';
 import { useSession } from '../session/session';
 
@@ -76,7 +76,7 @@ function sections(me: Me): NavGroup[] {
     {
       // The functions of the sector turned on from the console.
       label: 'Settore',
-      items: (me.current.sectorFeatures ?? []).map((f) => ({
+      items: dashboardSectorFeatures(me).map((f) => ({
         to: `/settore/${f.id}`,
         label: f.label,
         icon: <Layers aria-hidden />,

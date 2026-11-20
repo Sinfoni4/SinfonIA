@@ -184,6 +184,7 @@ describe('platform console (FE7)', () => {
       module: 'agri',
       disabledFeatures: ['assistance'],
       enabledFeatures: ['field_book'],
+      miniAppFeatures: [],
     };
     api({
       'GET /platform/features': () =>
@@ -211,13 +212,29 @@ describe('platform console (FE7)', () => {
         }),
       'GET /platform/organizations': () => ok({ items: [farm], total: 1, page: 1, totalPages: 1 }),
       [`PATCH /platform/organizations/${ORG}/features/assistance`]: () =>
-        ok({ disabledFeatures: [], enabledFeatures: ['field_book'] }),
+        ok({ disabledFeatures: [], enabledFeatures: ['field_book'], miniAppFeatures: [] }),
+      [`PATCH /platform/organizations/${ORG}/features/field_book`]: () =>
+        ok({ disabledFeatures: [], enabledFeatures: ['field_book'], miniAppFeatures: [] }),
     });
     openAt('/piattaforma/funzioni', 'platform');
     const book = await screen.findByRole('checkbox', {
-      name: 'Quaderno di campagna per Cooperativa Alfa',
+      name: 'Quaderno di campagna nella dashboard per Cooperativa Alfa',
     });
     expect((book as HTMLInputElement).checked).toBe(true);
+    // The Mini App is chosen apart.
+    const bookInApp = screen.getByRole('checkbox', {
+      name: 'Quaderno di campagna nella Mini App per Cooperativa Alfa',
+    });
+    expect((bookInApp as HTMLInputElement).checked).toBe(false);
+    await userEvent.click(bookInApp);
+    await waitFor(() =>
+      expect(
+        calls.find(
+          (c) =>
+            c.method === 'PATCH' && c.path === `/platform/organizations/${ORG}/features/field_book`,
+        )?.body,
+      ).toEqual({ enabled: true, channel: 'miniapp' }),
+    );
     expect(screen.getAllByText('in preparazione').length).toBeGreaterThan(0);
     // A function of another sector is not offered to this organization.
     expect(screen.queryByRole('checkbox', { name: /Bandi e contributi/ })).toBeNull();
