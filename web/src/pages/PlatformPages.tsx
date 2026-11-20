@@ -17,13 +17,6 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 
 import { describeError, type PlatformAdmin } from '../api/client';
-import {
-  fileToBase64,
-  LOGO_ACCEPT,
-  LOGO_MAX_BYTES,
-  logoSrc,
-  type OrganizationLogo,
-} from '../api/logo';
 import { invitationLink } from '../api/members';
 import { formatDateTime } from '../api/organization';
 import {
@@ -52,6 +45,7 @@ import {
 import { formatDate } from '../api/practices';
 import { AppFrame } from '../components/AppFrame';
 import { DataTable, TablePagination, type DataColumn } from '../components/DataTable';
+import { LogoCard } from '../components/LogoCard';
 import { useSession } from '../session/session';
 
 import { AiUsagePage, HealthPage } from './PlatformHealthPages';
@@ -633,7 +627,11 @@ function OrganizationPage() {
 
           <ModulesCard key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}`} org={org} />
 
-          <LogoCard orgId={org.id} />
+          <LogoCard
+            path={`/platform/organizations/${org.id}/logo`}
+            queryKey={['platform', 'organization', org.id, 'logo']}
+            invalidate={['platform', 'organization', org.id]}
+          />
 
           {org.identifiers && (
             <IdentifiersCard
@@ -806,102 +804,6 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
       {save.isError && (
         <p className="error" role="alert">
           {describeError(save.error)}
-        </p>
-      )}
-    </section>
-  );
-}
-
-// --- The logo shown in the Telegram Mini App ----------------------------------------------------
-
-/** The logo of the organization: shown next to its name in the Mini App, on the dark grey. */
-function LogoCard({ orgId }: { orgId: string }) {
-  const { api } = useSession();
-  const queryClient = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
-  const [inputKey, setInputKey] = useState(0);
-  const query = useQuery({
-    queryKey: ['platform', 'organization', orgId, 'logo'],
-    queryFn: () => api<OrganizationLogo | null>(`/platform/organizations/${orgId}/logo`),
-  });
-  const done = async () => {
-    setFile(null);
-    setInputKey((k) => k + 1);
-    await queryClient.invalidateQueries({ queryKey: ['platform', 'organization', orgId] });
-  };
-  const upload = useMutation({
-    mutationFn: async (chosen: File) =>
-      api(`/platform/organizations/${orgId}/logo`, {
-        method: 'POST',
-        body: { contentType: chosen.type, data: await fileToBase64(chosen) },
-      }),
-    onSuccess: done,
-  });
-  const remove = useMutation({
-    mutationFn: () => api(`/platform/organizations/${orgId}/logo`, { method: 'DELETE' }),
-    onSuccess: done,
-  });
-  const tooLarge = file !== null && file.size > LOGO_MAX_BYTES;
-  const failure = upload.error ?? remove.error;
-  const logo = query.data;
-
-  return (
-    <section className="card form" aria-labelledby="logo-title">
-      <h2 id="logo-title">Logo</h2>
-      <p className="muted">
-        Compare nella Mini App di Telegram accanto al nome dell’organizzazione, su fondo grigio
-        scuro: va bene un logo bianco o chiaro. SVG, PNG, JPEG o WebP, al massimo{' '}
-        {LOGO_MAX_BYTES / 1024} KB; gli SVG con script o collegamenti esterni sono rifiutati.
-      </p>
-      <div className="logo-preview">
-        {query.isPending ? (
-          <span>Caricamento…</span>
-        ) : logo ? (
-          <img src={logoSrc(logo)} alt="Logo attuale" />
-        ) : (
-          <span>Nessun logo: la Mini App mostra le iniziali.</span>
-        )}
-      </div>
-      <label htmlFor="logo-file">Nuovo logo</label>
-      <input
-        key={inputKey}
-        id="logo-file"
-        type="file"
-        accept={LOGO_ACCEPT}
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-      />
-      {tooLarge && (
-        <p className="error" role="alert">
-          Il file supera {LOGO_MAX_BYTES / 1024} KB.
-        </p>
-      )}
-      <span className="actions">
-        <button
-          type="button"
-          disabled={!file || tooLarge || upload.isPending}
-          onClick={() => file && upload.mutate(file)}
-        >
-          Carica il logo
-        </button>
-        {logo && (
-          <button
-            type="button"
-            className="secondary"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate()}
-          >
-            Togli il logo
-          </button>
-        )}
-      </span>
-      {(upload.isSuccess || remove.isSuccess) && !failure && (
-        <p className="notice" role="status">
-          {upload.isSuccess ? 'Logo caricato.' : 'Logo tolto.'}
-        </p>
-      )}
-      {failure && (
-        <p className="error" role="alert">
-          {describeError(failure)}
         </p>
       )}
     </section>

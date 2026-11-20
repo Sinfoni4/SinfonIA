@@ -46,6 +46,8 @@ const SHOWN_FIELDS = [
   'expectedKey',
   // AGX-10: the chat account shortened (last digits), never the whole id.
   'ref',
+  // The background of the Telegram Mini App (#rrggbb or «default»).
+  'miniAppBackground',
 ] as const;
 
 type ShownField = (typeof SHOWN_FIELDS)[number];

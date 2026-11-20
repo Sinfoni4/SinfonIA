@@ -1,6 +1,8 @@
 /*
  * Telegram Mini App: minimal, on a plain dark grey (#1F1F1F), white icons, IBM Plex Sans.
- * Everything under .ma.
+ * Everything under .ma. An organization can choose its own dark background: MiniApp.tsx then
+ * sets --ma-bg and the panels and cards made from it (web/src/api/appearance.ts) on .ma, so
+ * what is dark on white (today, buttons, counters) uses var(--ma-bg) and follows it.
  */
 
 .ma {
@@ -161,12 +163,12 @@
 /* Today in white; a day with a deadline gets a small mark under its number. */
 .ma-week div.today {
   background: #ffffff;
-  color: #1f1f1f;
+  color: var(--ma-bg);
   font-weight: 600;
 }
 
 .ma-week div.today small {
-  color: #1f1f1f;
+  color: var(--ma-bg);
   font-weight: 600;
 }
 
@@ -180,7 +182,7 @@
 }
 
 .ma-week div.today i {
-  background: #1f1f1f;
+  background: var(--ma-bg);
 }
 
 .ma-org {
@@ -516,6 +518,8 @@
 .ma-check.valid {
   border-color: #ffffff;
   background: #ffffff;
+  /* The check mark, drawn in currentColor: the background of the app. */
+  color: var(--ma-bg);
 }
 
 .ma-check.to_verify {
@@ -574,7 +578,7 @@
   border-radius: 14px;
   border: 0;
   background: #ffffff;
-  color: #1f1f1f !important;
+  color: var(--ma-bg) !important;
   font-size: 15px;
   font-weight: 500;
 }
@@ -804,7 +808,7 @@
 .ma-bubble.me {
   align-self: flex-end;
   background: #ffffff;
-  color: #1f1f1f;
+  color: var(--ma-bg);
   border-bottom-right-radius: 4px;
 }
 
@@ -923,7 +927,7 @@
   flex: none;
   border-radius: 10px;
   background: #ffffff;
-  color: #1f1f1f;
+  color: var(--ma-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1030,7 +1034,7 @@
   padding: 0 6px;
   border-radius: 11px;
   background: #ffffff;
-  color: #1f1f1f;
+  color: var(--ma-bg);
   font-size: 12px;
   font-weight: 600;
   display: inline-flex;
@@ -1072,7 +1076,7 @@
   border: 0;
   border-radius: 12px;
   background: #ffffff;
-  color: #1f1f1f !important;
+  color: var(--ma-bg) !important;
   display: flex;
   align-items: center;
   justify-content: center;

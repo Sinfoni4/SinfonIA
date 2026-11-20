@@ -539,7 +539,7 @@ export function PracticeScreen({ me, openSheet }: { me: Me; openSheet: (i: Sheet
             {items.map((i) => (
               <li key={i.key}>
                 <span className={`ma-check ${i.state}`} aria-hidden="true">
-                  {i.state === 'valid' && <CheckIcon size={14} color="#1f1f1f" />}
+                  {i.state === 'valid' && <CheckIcon size={14} />}
                 </span>
                 <span>{i.label}</span>
                 <span className={`ma-state ${i.state}`}>{DOC_STATES[i.state]}</span>

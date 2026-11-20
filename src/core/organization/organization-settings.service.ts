@@ -4,13 +4,15 @@ import { withTransaction } from '../../data/transactions/transaction.js';
 import { REMINDER_THRESHOLDS } from '../compliance/compliance.dates.js';
 
 import { changeMark, normalizeTaxCode, normalizeVatNumber } from './company-identifiers.js';
+import { checkBackground } from './organization-appearance.js';
 
 import type { SchedulerFrequency } from '../tenant/tenant.store.js';
 import type { OrganizationType, PrismaClient } from '@prisma/client';
 
 /**
  * Settings an administrator manages from the dashboard (P12, docs/PROGETTO_FRONTEND_V2.md §3):
- * the name, the profile, the identifiers (AGX-02) and the scheduled export of the organization. The type is shown but changed only by
+ * the name, the profile, the identifiers (AGX-02), the scheduled export of the organization and the
+ * background of its Telegram Mini App. The type is shown but changed only by
  * the platform; deadline reminders are always on, with fixed thresholds.
  */
 
@@ -28,6 +30,8 @@ export type OrganizationSettings = {
   vatNumber: string | null;
   scheduledExport: { enabled: boolean; frequency: SchedulerFrequency };
   reminderDays: number[];
+  /** The background of the Telegram Mini App (#rrggbb); null for the default dark grey. */
+  miniAppBackground: string | null;
 };
 
 export type OrganizationSettingsChange = {
@@ -37,6 +41,7 @@ export type OrganizationSettingsChange = {
   taxCode?: string | null;
   vatNumber?: string | null;
   scheduledExport?: { enabled: boolean; frequency?: SchedulerFrequency };
+  miniAppBackground?: string | null;
 };
 
 export class OrganizationSettingsError extends Error {
@@ -70,6 +75,7 @@ export async function getOrganizationSettings(
       vatNumber: true,
       schedulerEnabled: true,
       schedulerFrequency: true,
+      miniAppBackground: true,
     },
   });
   if (!row) throw new NotFoundError('Organization not found');
@@ -86,6 +92,7 @@ export async function getOrganizationSettings(
       frequency: frequencyOf(row.schedulerFrequency),
     },
     reminderDays: REMINDER_THRESHOLDS.filter((d) => d > 0),
+    miniAppBackground: row.miniAppBackground,
   };
 }
 
@@ -112,6 +119,8 @@ export async function updateOrganizationSettings(
   const sector = profile(change.sector, 'Settore');
   const taxCode = normalizeTaxCode(change.taxCode);
   const vatNumber = normalizeVatNumber(change.vatNumber);
+  const background =
+    change.miniAppBackground === undefined ? undefined : checkBackground(change.miniAppBackground);
   await withTransaction(prisma, async (tx) => {
     const current = await tx.tenant.findUnique({
       where: { id: orgId },
@@ -123,6 +132,7 @@ export async function updateOrganizationSettings(
         vatNumber: true,
         schedulerEnabled: true,
         schedulerFrequency: true,
+        miniAppBackground: true,
       },
     });
     if (!current) throw new NotFoundError('Organization not found');
@@ -134,6 +144,7 @@ export async function updateOrganizationSettings(
       vatNumber?: string | null;
       schedulerEnabled?: boolean;
       schedulerFrequency?: string;
+      miniAppBackground?: string | null;
     } = {};
     const changed: Record<string, string | boolean | null> = {};
     if (name !== undefined && name !== current.name) {
@@ -156,6 +167,10 @@ export async function updateOrganizationSettings(
     if (vatNumber !== undefined && vatNumber !== current.vatNumber) {
       data.vatNumber = vatNumber;
       changed.vatNumber = changeMark(vatNumber);
+    }
+    if (background !== undefined && background !== current.miniAppBackground) {
+      data.miniAppBackground = background;
+      changed.miniAppBackground = background ?? 'default';
     }
     const exportChange = change.scheduledExport;
     if (exportChange) {

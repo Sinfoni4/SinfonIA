@@ -1,7 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router';
 
+import { miniAppPalette, type Appearance } from '../api/appearance';
 import { describeError, request, type Me } from '../api/client';
 import { CATEGORY_LABELS, type DeadlineCategory } from '../api/compliance';
 import { useSession, type SessionState } from '../session/session';
@@ -45,7 +46,7 @@ type TelegramWebApp = {
   setBackgroundColor?: (color: string) => void;
 };
 
-/** The one background of the Mini App, also behind Telegram's own header. */
+/** The background of the Mini App before the organization's own (if any) is known. */
 const BACKGROUND = '#1F1F1F';
 
 function telegram(): TelegramWebApp | undefined {
@@ -184,8 +185,24 @@ function Outside({ state }: { state: Exclude<SessionState, { status: 'loading' |
 
 function MiniAppHome({ me }: { me: Me }) {
   const [sheet, setSheet] = useState<SheetIntent | null>(null);
+  const { api } = useSession();
+  // The background chosen by the organization; without one (or with an older server) the grey.
+  const appearance = useQuery({
+    queryKey: ['miniapp', me.current.orgId, 'appearance'],
+    queryFn: () => api<Appearance>('/organization/appearance'),
+    staleTime: 10 * 60 * 1000,
+    retry: false,
+  });
+  const palette = miniAppPalette(appearance.data?.background);
+  const background = palette['--ma-bg'];
+  // The same color behind Telegram's header and around the page (MiniApp restores it on exit).
+  useEffect(() => {
+    telegram()?.setHeaderColor?.(background);
+    telegram()?.setBackgroundColor?.(background);
+    document.body.style.background = background;
+  }, [background]);
   return (
-    <main className="ma">
+    <main className="ma" style={palette}>
       <Routes>
         <Route path="tg" element={<TodayScreen me={me} openSheet={setSheet} />} />
         <Route path="tg/agenda" element={<AgendaScreen me={me} openSheet={setSheet} />} />

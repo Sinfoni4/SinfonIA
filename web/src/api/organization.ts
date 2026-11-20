@@ -78,7 +78,8 @@ export type AuditEvent = {
       | 'taxCode'
       | 'vatNumber'
       | 'expectedKey'
-      | 'ref',
+      | 'ref'
+      | 'miniAppBackground',
       string | number | boolean
     >
   >;
@@ -407,9 +408,11 @@ export function describeEvent(event: AuditEvent): string {
     case 'ORGANIZATION_IDENTIFIERS_CHANGED':
       return 'Dati identificativi cambiati dal gestore della piattaforma';
     case 'ORGANIZATION_LOGO_CHANGED':
-      return 'Logo caricato dal gestore della piattaforma';
+      return d.byPlatform === true
+        ? 'Logo caricato dal gestore della piattaforma'
+        : 'Logo caricato';
     case 'ORGANIZATION_LOGO_REMOVED':
-      return 'Logo tolto dal gestore della piattaforma';
+      return d.byPlatform === true ? 'Logo tolto dal gestore della piattaforma' : 'Logo tolto';
     case 'USAGE_EVENT_REVERSED':
       return 'Un consumo è stato stornato dal gestore della piattaforma';
     case 'COMPANY_IDENTIFIERS_VIEWED':
@@ -429,6 +432,12 @@ export function describeEvent(event: AuditEvent): string {
         parts.push(`codice fiscale / CUAA ${d.taxCode === 'removed' ? 'tolto' : 'aggiornato'}`);
       if (typeof d.vatNumber === 'string')
         parts.push(`partita IVA ${d.vatNumber === 'removed' ? 'tolta' : 'aggiornata'}`);
+      if (typeof d.miniAppBackground === 'string')
+        parts.push(
+          d.miniAppBackground === 'default'
+            ? 'sfondo della Mini App predefinito'
+            : `sfondo della Mini App ${d.miniAppBackground}`,
+        );
       return `Impostazioni: ${parts.join(', ') || 'modificate'}`;
     }
     default:
@@ -538,6 +547,8 @@ export type Settings = {
   vatNumber: string | null;
   scheduledExport: { enabled: boolean; frequency: Frequency };
   reminderDays: number[];
+  /** The background of the Telegram Mini App (#rrggbb); null for the default dark grey. */
+  miniAppBackground: string | null;
 };
 
 /** MF9: the types that can have member organizations (G5). */

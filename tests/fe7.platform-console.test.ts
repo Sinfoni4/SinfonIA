@@ -634,7 +634,7 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       (await prisma.tenant.findUnique({ where: { id: orgId }, select: { logoPath: true } }))
         ?.logoPath ?? null;
 
-    it('is set only from the console and read by the members of the organization', async () => {
+    it('is set from the console (not with an organization token) and read by the members', async () => {
       expect(await logoOf()).toBeNull();
       const body = { contentType: 'image/svg+xml', data: b64(SVG) };
       expect([401, 403]).toContain((await put(body, member())).statusCode);
@@ -694,6 +694,34 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
           where: { orgId, action: 'ORGANIZATION_LOGO_REMOVED' },
         }),
       ).toBe(1);
+    });
+
+    it('is set and removed by an administrator of the organization from the settings', async () => {
+      const own = (method: 'POST' | 'DELETE', headers: Record<string, string>, payload?: object) =>
+        app.inject({ method, url: '/organization/logo', headers, ...(payload ? { payload } : {}) });
+      const body = { contentType: 'image/svg+xml', data: b64(SVG) };
+      // A member who is not an administrator: refused.
+      const notAdmin = authHeaders(orgId, platformAdminId, 'MEMBER');
+      expect((await own('POST', notAdmin, body)).statusCode).toBe(403);
+      expect(await logoOf()).toBeNull();
+
+      expect((await own('POST', member(), body)).statusCode).toBe(200);
+      expect(await logoOf()).toMatchObject({ contentType: 'image/svg+xml', data: b64(SVG) });
+      // The same checks as the console.
+      const bad = { contentType: 'image/svg+xml', data: b64('<svg><script>x()</script></svg>') };
+      expect((await own('POST', member(), bad)).statusCode).toBe(400);
+      const first = await pathOf();
+      expect((await own('DELETE', notAdmin)).statusCode).toBe(403);
+      expect((await own('DELETE', member())).statusCode).toBe(200);
+      expect(await logoOf()).toBeNull();
+      expect(existsSync(path.join(storageDir, first!))).toBe(false);
+      // In the activity log of the organization, with who did it; not in the platform log.
+      for (const eventType of ['ORGANIZATION_LOGO_CHANGED', 'ORGANIZATION_LOGO_REMOVED']) {
+        expect(
+          await prisma.auditLog.count({ where: { tenantId: orgId, eventType, userId: adminId } }),
+        ).toBe(1);
+      }
+      expect(await prisma.platformAuditLog.count({ where: { actorUserId: adminId } })).toBe(0);
     });
   });
 

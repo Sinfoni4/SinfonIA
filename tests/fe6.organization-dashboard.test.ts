@@ -316,5 +316,49 @@ describe.runIf(Boolean(DATABASE_URL))('organization in the dashboard (FE6)', () 
         403,
       );
     });
+
+    it('sets the background of the Mini App, dark enough for white text, for everyone to read', async () => {
+      const member = authHeaders(orgId, memberId, 'MEMBER');
+      const appearance = async () =>
+        (await get('/organization/appearance', member)).json<{
+          data: { background: string | null };
+        }>().data;
+      expect(await appearance()).toEqual({ background: null });
+
+      const res = await patch('/organization', { miniAppBackground: ' #5A3E2B ' }, admin());
+      expect(res.statusCode).toBe(200);
+      expect(
+        res.json<{ data: { miniAppBackground: string | null } }>().data.miniAppBackground,
+      ).toBe('#5a3e2b');
+      expect(await appearance()).toEqual({ background: '#5a3e2b' });
+      const events = await prisma.auditLog.findMany({
+        where: { tenantId: orgId, eventType: 'ORGANIZATION_SETTINGS_CHANGED', userId: adminId },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
+      expect(events[0]?.payload).toEqual({ miniAppBackground: '#5a3e2b' });
+
+      // Too light for white text, or not a color: refused, nothing changes.
+      for (const bad of ['#d9c7a0', '#ffffff', 'marrone', '#12345', 'red']) {
+        const refused = await patch('/organization', { miniAppBackground: bad }, admin());
+        expect(refused.statusCode, bad).toBe(400);
+      }
+      expect(await appearance()).toEqual({ background: '#5a3e2b' });
+
+      // Only an administrator changes it.
+      const asOperator = authHeaders(orgId, operatorId, 'OPERATOR');
+      expect(
+        (await patch('/organization', { miniAppBackground: '#1e3a5f' }, asOperator)).statusCode,
+      ).toBe(403);
+
+      // Back to the default (null, or the default grey itself).
+      await patch('/organization', { miniAppBackground: '#1F1F1F' }, admin());
+      expect(await appearance()).toEqual({ background: null });
+      const last = await prisma.auditLog.findFirstOrThrow({
+        where: { tenantId: orgId, eventType: 'ORGANIZATION_SETTINGS_CHANGED', userId: adminId },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(last.payload).toEqual({ miniAppBackground: 'default' });
+    });
   });
 });

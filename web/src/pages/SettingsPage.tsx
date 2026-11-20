@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 
+import {
+  contrastWithWhite,
+  DEFAULT_BACKGROUND,
+  isHexColor,
+  isReadableBackground,
+  miniAppPalette,
+  MIN_CONTRAST_WITH_WHITE,
+} from '../api/appearance';
 import { describeError, type Me } from '../api/client';
 import {
   FREQUENCY_LABELS,
@@ -8,11 +16,12 @@ import {
   type Frequency,
   type Settings,
 } from '../api/organization';
+import { LogoCard } from '../components/LogoCard';
 import { useSession } from '../session/session';
 
 const FREQUENCIES = Object.keys(FREQUENCY_LABELS) as Frequency[];
 
-/** P12: name and scheduled export of the organization; administrators only. */
+/** P12: name, scheduled export and look of the Mini App of the organization; administrators only. */
 export function SettingsPage({ me }: { me: Me }) {
   const { api, refreshMe } = useSession();
   const queryClient = useQueryClient();
@@ -222,6 +231,122 @@ export function SettingsPage({ me }: { me: Me }) {
           {save.isSuccess && <p role="status">Impostazioni salvate.</p>}
         </form>
       )}
+      {saved && <MiniAppLook orgId={me.current.orgId} saved={saved.miniAppBackground} />}
+    </>
+  );
+}
+
+/**
+ * How the Telegram Mini App looks for the people of the organization: its background and the
+ * logo next to the name. Saved on their own, so the form above keeps what is being typed.
+ */
+function MiniAppLook({ orgId, saved }: { orgId: string; saved: string | null }) {
+  const { api } = useSession();
+  const [current, setCurrent] = useState<string | null>(saved);
+  const [color, setColor] = useState(saved ?? DEFAULT_BACKGROUND);
+  const save = useMutation({
+    mutationFn: (value: string | null) =>
+      api<Settings>('/organization', { method: 'PATCH', body: { miniAppBackground: value } }),
+    onSuccess: (data) => {
+      setCurrent(data.miniAppBackground);
+      setColor(data.miniAppBackground ?? DEFAULT_BACKGROUND);
+    },
+  });
+  const valid = isHexColor(color);
+  const readable = isReadableBackground(color);
+  const clean = color.trim().toLowerCase();
+  const unchanged = clean === (current ?? DEFAULT_BACKGROUND);
+  const palette = miniAppPalette(readable ? clean : current);
+  const pick = (value: string) => {
+    setColor(value);
+    save.reset();
+  };
+
+  return (
+    <>
+      <section className="card form" aria-labelledby="background-title">
+        <h2 id="background-title">Sfondo della Mini App</h2>
+        <p className="muted">
+          Lo sfondo della Mini App di Telegram per tutte le persone dell&apos;organizzazione. Testi
+          e icone restano bianchi, quindi serve un colore scuro: per esempio un marrone terra o un
+          blu istituzionale.
+        </p>
+        <label htmlFor="background-hex">Colore</label>
+        <span className="color-field">
+          <input
+            type="color"
+            aria-label="Scegli il colore"
+            value={valid ? clean : DEFAULT_BACKGROUND}
+            onChange={(e) => pick(e.target.value)}
+          />
+          <input
+            id="background-hex"
+            maxLength={7}
+            value={color}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => pick(e.target.value)}
+          />
+        </span>
+        {!valid && (
+          <p className="error">Scrivi il colore nel formato #RRGGBB, per esempio #5A3E2B.</p>
+        )}
+        {valid && !readable && (
+          <p className="error" role="alert">
+            Troppo chiaro: i testi bianchi non si leggerebbero (contrasto{' '}
+            {contrastWithWhite(clean).toFixed(1).replace('.', ',')}:1, ne serve almeno{' '}
+            {String(MIN_CONTRAST_WITH_WHITE).replace('.', ',')}:1). Scegli un colore più scuro.
+          </p>
+        )}
+        <div
+          className="miniapp-preview"
+          style={{ background: palette['--ma-bg'] }}
+          aria-hidden="true"
+        >
+          <strong>Buongiorno</strong>
+          <span className="miniapp-preview-card" style={{ background: palette['--ma-card'] }}>
+            Pratiche
+          </span>
+          <span className="miniapp-preview-button" style={{ color: palette['--ma-bg'] }}>
+            Manda un documento
+          </span>
+        </div>
+        <span className="actions">
+          <button
+            type="button"
+            disabled={!readable || unchanged || save.isPending}
+            onClick={() => save.mutate(clean)}
+          >
+            Salva il colore
+          </button>
+          {current && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={save.isPending}
+              onClick={() => save.mutate(null)}
+            >
+              Torna al grigio predefinito
+            </button>
+          )}
+        </span>
+        {save.isError && (
+          <p className="error" role="alert">
+            {describeError(save.error)}
+          </p>
+        )}
+        {save.isSuccess && (
+          <p className="notice" role="status">
+            Colore salvato: le persone lo vedono alla prossima apertura della Mini App.
+          </p>
+        )}
+      </section>
+      <LogoCard
+        path="/organization/logo"
+        queryKey={['organization', orgId, 'logo']}
+        invalidate={['organization', orgId, 'logo']}
+        background={current}
+      />
     </>
   );
 }

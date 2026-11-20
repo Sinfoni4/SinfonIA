@@ -1,11 +1,13 @@
 import { NotFoundError } from '../../data/errors/errors.js';
+import { AuditService } from '../../data/services/audit.service.js';
+import { withTransaction } from '../../data/transactions/transaction.js';
 
 import type { StorageService } from '../../data/storage/storage.service.js';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * The logo of an organization (shown in the Telegram Mini App next to its name). The platform
- * console uploads it; the file lives in the attachment storage, the tenant row keeps where it is.
+ * console or an administrator of the organization uploads it; the file lives in the attachment storage, the tenant row keeps where it is.
  * The Mini App shows it as an image from a data URL, so an SVG never runs as a page; it is still
  * checked here, and refused when it holds scripts, events or links to other resources.
  */
@@ -108,4 +110,73 @@ export async function readOrganizationLogo(
     // initials, as without a logo.
     return null;
   }
+}
+
+export type LogoAction = 'ORGANIZATION_LOGO_CHANGED' | 'ORGANIZATION_LOGO_REMOVED';
+type SavedLogo = { path: string; type: string; size: number };
+
+/**
+ * Sets (or, with null, removes) the logo of an organization; `record` writes the audit in the
+ * same transaction. The new file is saved before the row changes and the old one removed after,
+ * so a failure never leaves the row without its file.
+ */
+export async function replaceOrganizationLogo(
+  prisma: PrismaClient,
+  storage: StorageService,
+  orgId: string,
+  logo: { contentType: string; data: Buffer } | null,
+  record: (
+    tx: Prisma.TransactionClient,
+    action: LogoAction,
+    saved: SavedLogo | null,
+  ) => Promise<void>,
+): Promise<{ logoUpdatedAt: Date | null }> {
+  const current = await prisma.tenant.findUnique({
+    where: { id: orgId },
+    select: { logoPath: true },
+  });
+  if (!current) throw new NotFoundError('Organization not found');
+  if (!logo && !current.logoPath) return { logoUpdatedAt: null };
+
+  let saved: SavedLogo | null = null;
+  if (logo) {
+    const type = checkLogo(logo.contentType, logo.data);
+    const file = await storage.save(orgId, logoFileName(type), logo.data, type);
+    saved = { path: file.storagePath, type, size: file.fileSize };
+  }
+  const now = new Date();
+  try {
+    await withTransaction(prisma, async (tx) => {
+      await tx.tenant.update({
+        where: { id: orgId },
+        data: saved
+          ? { logoPath: saved.path, logoType: saved.type, logoUpdatedAt: now }
+          : { logoPath: null, logoType: null, logoUpdatedAt: now },
+      });
+      await record(tx, saved ? 'ORGANIZATION_LOGO_CHANGED' : 'ORGANIZATION_LOGO_REMOVED', saved);
+    });
+  } catch (err: unknown) {
+    if (saved) await storage.delete(orgId, saved.path).catch(() => undefined);
+    throw err;
+  }
+  if (current.logoPath) await storage.delete(orgId, current.logoPath).catch(() => undefined);
+  return { logoUpdatedAt: saved ? now : null };
+}
+
+/** Sets (or removes) the logo of one's own organization: an administrator, from the settings. */
+export function setOwnOrganizationLogo(
+  prisma: PrismaClient,
+  storage: StorageService,
+  orgId: string,
+  logo: { contentType: string; data: Buffer } | null,
+  actor: { userId: string },
+): Promise<{ logoUpdatedAt: Date | null }> {
+  return replaceOrganizationLogo(prisma, storage, orgId, logo, async (tx, action, saved) => {
+    await new AuditService(tx).logEvent({
+      tenantId: orgId,
+      userId: actor.userId,
+      eventType: action,
+      payload: saved ? { type: saved.type, bytes: saved.size } : {},
+    });
+  });
 }
