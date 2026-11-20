@@ -401,6 +401,7 @@ function Sheet({
               </button>
             )}
             {/* The functions of the sector turned on for the Mini App from the console. */}
+            {miniAppSectorFeatures(me).length > 0 && <h3>Per il tuo settore</h3>}
             {miniAppSectorFeatures(me).map((f) => (
               <button
                 key={f.id}

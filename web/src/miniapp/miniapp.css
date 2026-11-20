@@ -640,6 +640,19 @@
   font-weight: 700;
 }
 
+/* With many entries the sheet scrolls: its entries keep their height instead of being squeezed. */
+.ma-sheet > * {
+  flex-shrink: 0;
+}
+
+/* «Per il tuo settore»: the functions of the sector under the usual actions. */
+.ma-sheet h3 {
+  margin: 10px 4px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ma-muted);
+}
+
 .ma-grip {
   align-self: center;
   width: 40px;
@@ -674,6 +687,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .ma-action strong {
@@ -684,6 +698,11 @@
 .ma-action small {
   font-size: 14px;
   color: var(--ma-muted);
+  /* Two lines at most: a long description of a sector function stays inside its entry. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ma-form {
