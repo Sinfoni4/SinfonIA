@@ -206,6 +206,24 @@ describe('Telegram Mini App', () => {
     expect(container.querySelector('.ma-org-mark')).toBeNull();
   });
 
+  it('takes the background chosen by the organization, with cards made from it', async () => {
+    api({ 'GET /organization/appearance': () => ok({ background: '#5a3e2b' }) });
+    const { container } = openFromTelegram();
+    const main = () => container.querySelector<HTMLElement>('main.ma');
+    await waitFor(() => expect(main()?.style.getPropertyValue('--ma-bg')).toBe('#5a3e2b'));
+    expect(main()?.style.getPropertyValue('--ma-card')).toBe('#624735');
+    expect(document.body.style.background).toBe('rgb(90, 62, 43)');
+  });
+
+  it('keeps the grey when the organization has no background, or a bad one', async () => {
+    api({ 'GET /organization/appearance': () => ok({ background: '#ffffff' }) });
+    const { container } = openFromTelegram();
+    await screen.findByText('SinfonIA');
+    const main = () => container.querySelector<HTMLElement>('main.ma');
+    await waitFor(() => expect(main()?.style.getPropertyValue('--ma-bg')).toBe('#1f1f1f'));
+    expect(main()?.style.getPropertyValue('--ma-card')).toBe('#2a2a2a');
+  });
+
   it('lists the practices from «Le mie pratiche»', async () => {
     api();
     openFromTelegram();

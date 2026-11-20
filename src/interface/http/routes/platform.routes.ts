@@ -138,7 +138,7 @@ const IdentifiersBodySchema = z
   .strict();
 
 /** The logo of an organization: its type and the file in base64 (checked again in Core). */
-const LogoBodySchema = z
+export const LogoBodySchema = z
   .object({
     contentType: z.enum(LOGO_TYPES),
     data: z

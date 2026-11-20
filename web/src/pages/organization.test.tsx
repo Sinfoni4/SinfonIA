@@ -71,6 +71,7 @@ const SETTINGS = {
   type: 'COMPANY',
   scheduledExport: { enabled: false, frequency: 'monthly' },
   reminderDays: [30, 15, 7, 1],
+  miniAppBackground: null,
 };
 
 let calls: Call[];
@@ -91,8 +92,8 @@ function api(role: 'ADMIN' | 'OPERATOR' | 'MEMBER', routes: Record<string, (c: C
     'GET /audit': () => ok({ items: [event()], total: 1, page: 1, limit: 50, totalPages: 1 }),
     'GET /organization': () => ok(SETTINGS),
     'PATCH /organization': (c) => {
-      const body = c.body as { name: string; scheduledExport: object };
-      orgName = body.name;
+      const body = c.body as { name?: string; scheduledExport?: object };
+      orgName = body.name ?? orgName;
       return ok({ ...SETTINGS, ...body });
     },
   };
@@ -327,6 +328,43 @@ describe('settings (P12)', () => {
     );
     expect(await screen.findByRole('status')).toBeTruthy();
     expect(screen.getByText(/le reti non li vedono/)).toBeTruthy();
+  });
+
+  it('saves a dark background for the Mini App and refuses one too light for white text', async () => {
+    api('ADMIN', {});
+    openAt('/impostazioni');
+    const hex = await screen.findByLabelText('Colore');
+    const save = screen.getByRole('button', { name: 'Salva il colore' });
+    expect((hex as HTMLInputElement).value).toBe('#1f1f1f');
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.clear(hex);
+    await userEvent.type(hex, '#D9C7A0');
+    expect((await screen.findByRole('alert')).textContent).toContain('Troppo chiaro');
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.clear(hex);
+    await userEvent.type(hex, '#5A3E2B');
+    expect(screen.queryByRole('alert')).toBeNull();
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(requested('/organization').find((c) => c.method === 'PATCH')?.body).toEqual({
+        miniAppBackground: '#5a3e2b',
+      }),
+    );
+    expect((await screen.findByRole('status')).textContent).toContain('Colore salvato');
+    // Back to the grey.
+    await userEvent.click(screen.getByRole('button', { name: 'Torna al grigio predefinito' }));
+    await waitFor(() =>
+      expect(
+        requested('/organization')
+          .filter((c) => c.method === 'PATCH')
+          .at(-1)?.body,
+      ).toEqual({ miniAppBackground: null }),
+    );
+    // The logo of the organization, from its own settings.
+    expect(screen.getByRole('button', { name: 'Carica il logo' })).toBeTruthy();
+    await waitFor(() => expect(requested('/organization/logo').length).toBeGreaterThan(0));
   });
 
   it('is only for administrators, also in the menu', async () => {

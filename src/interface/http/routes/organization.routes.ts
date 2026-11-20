@@ -4,7 +4,12 @@ import { listAuditEvents } from '../../../core/audit/audit-view.service.js';
 import { authorize, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { dashboardSummary } from '../../../core/dashboard/dashboard.service.js';
 import { miniAppSummary } from '../../../core/miniapp/miniapp.service.js';
-import { readOrganizationLogo } from '../../../core/organization/organization-logo.js';
+import { readOrganizationAppearance } from '../../../core/organization/organization-appearance.js';
+import {
+  LOGO_MAX_BYTES,
+  readOrganizationLogo,
+  setOwnOrganizationLogo,
+} from '../../../core/organization/organization-logo.js';
 import {
   getOrganizationSettings,
   updateOrganizationSettings,
@@ -16,6 +21,7 @@ import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
 import { StatsQuerySchema } from './network.routes.js';
+import { LogoBodySchema } from './platform.routes.js';
 
 import type { ComplianceService } from '../../../core/compliance/compliance.service.js';
 import type { StorageService } from '../../../data/storage/storage.service.js';
@@ -88,6 +94,7 @@ const SettingsBodySchema = z
         frequency: z.enum(['daily', 'weekly', 'monthly']).optional(),
       })
       .optional(),
+    miniAppBackground: z.string().max(20).nullable().optional(),
   })
   .strict();
 
@@ -136,7 +143,22 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
     },
   );
 
-  // The logo of one's own organization (set from the platform console), for the Mini App.
+  // How the Mini App looks for one's own organization (its background), for everyone in it.
+  app.get(
+    '/organization/appearance',
+    { config: { permission: 'authenticated' } },
+    async (req, reply) => {
+      try {
+        const { tenantId } = requirePrincipal(req);
+        return reply.send(ok(await readOrganizationAppearance(deps.prisma, tenantId)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // The logo of one's own organization, for the Mini App: everyone reads it, an administrator
+  // sets or removes it (the platform console can too).
   if (deps.storage) {
     const storage = deps.storage;
     app.get(
@@ -146,6 +168,44 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
         try {
           const { tenantId } = requirePrincipal(req);
           return reply.send(ok(await readOrganizationLogo(deps.prisma, storage, tenantId)));
+        } catch (err: unknown) {
+          return sendError(reply, err);
+        }
+      },
+    );
+    app.post(
+      '/organization/logo',
+      { config: { permission: 'organization.manage' }, bodyLimit: 2 * LOGO_MAX_BYTES },
+      async (req, reply) => {
+        try {
+          const auth = requirePermission(req, 'organization.manage').principal;
+          const body = LogoBodySchema.parse(req.body);
+          const logo = { contentType: body.contentType, data: Buffer.from(body.data, 'base64') };
+          return reply.send(
+            ok(
+              await setOwnOrganizationLogo(deps.prisma, storage, auth.tenantId, logo, {
+                userId: auth.userId,
+              }),
+            ),
+          );
+        } catch (err: unknown) {
+          return sendError(reply, err);
+        }
+      },
+    );
+    app.delete(
+      '/organization/logo',
+      { config: { permission: 'organization.manage' } },
+      async (req, reply) => {
+        try {
+          const auth = requirePermission(req, 'organization.manage').principal;
+          return reply.send(
+            ok(
+              await setOwnOrganizationLogo(deps.prisma, storage, auth.tenantId, null, {
+                userId: auth.userId,
+              }),
+            ),
+          );
         } catch (err: unknown) {
           return sendError(reply, err);
         }

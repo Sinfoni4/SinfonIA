@@ -1078,3 +1078,53 @@ table.list {
   max-height: 56px;
   max-width: 220px;
 }
+
+/* Settings: the background of the Telegram Mini App and a small preview of it. */
+.color-field {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.color-field input[type='color'] {
+  width: 3rem;
+  height: 2.5rem;
+  padding: 0.125rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.color-field input:not([type='color']) {
+  max-width: 9rem;
+  font-family: ui-monospace, monospace;
+}
+
+.miniapp-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  color: #ffffff;
+}
+
+.miniapp-preview strong {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.miniapp-preview-card {
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+}
+
+.miniapp-preview-button {
+  padding: 0.5rem 0.875rem;
+  border-radius: 10px;
+  background: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
