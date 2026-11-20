@@ -18,6 +18,7 @@ import {
   FEATURES,
   FeatureDisabledError,
   featureOf,
+  isFeature,
 } from '../src/core/features/features.js';
 import { MODULE_IDS } from '../src/core/modules/module.contract.js';
 import { resolvePracticeCreation } from '../src/core/practice/practice-module.js';
@@ -28,7 +29,14 @@ import { TenantRepository } from '../src/data/repositories/tenant.repository.js'
 import { ConversationService } from '../src/interface/conversation/conversation.service.js';
 import { executeComplianceCommand } from '../src/interface/telegram/compliance.command.js';
 import { mapTelegramErrorToMessage } from '../src/interface/telegram/telegram.errors.js';
-import { getModule, MODULES, PRACTICE_KINDS } from '../src/modules/registry.js';
+import {
+  activeSectorFeatures,
+  getModule,
+  MODULES,
+  PRACTICE_KINDS,
+  SECTOR_FEATURES,
+  sectorFeaturesOf,
+} from '../src/modules/registry.js';
 
 import type { SchedulerTaskHandler } from '../src/core/scheduler/scheduler.tasks.js';
 import type { Tenant } from '../src/core/tenant/tenant.store.js';
@@ -82,6 +90,22 @@ describe('A01/A02: the Core and the modules', () => {
     for (const [file, count] of found) {
       expect(count, file).toBeLessThanOrEqual(allowed.get(file) ?? 0);
     }
+  });
+
+  it('gives every function of a sector known modules, and counts only those of the module', () => {
+    const ids = SECTOR_FEATURES.map((f) => f.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const feature of SECTOR_FEATURES) {
+      expect(feature.modules.length, feature.id).toBeGreaterThan(0);
+      for (const m of feature.modules) expect(MODULE_IDS).toContain(m);
+      // Never the name of a common function, which is stored the other way round.
+      expect(isFeature(feature.id), feature.id).toBe(false);
+    }
+    expect(
+      activeSectorFeatures('agri', ['field_book', 'grants', 'teleport']).map((f) => f.id),
+    ).toEqual(['field_book']);
+    expect(activeSectorFeatures('music', ['field_book'])).toEqual([]);
+    expect(sectorFeaturesOf('artisan').map((f) => f.id)).toContain('risk_assessment');
   });
 
   it('falls back to the generic module for an unknown value', () => {

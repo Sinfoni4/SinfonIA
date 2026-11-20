@@ -536,6 +536,89 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       expect((await get('/assistance', farm())).statusCode).toBe(200);
     });
 
+    it('turns single functions on and off from the table, those of a sector only for it', async () => {
+      const put = (feature: string, enabled: unknown, headers = bearer()) =>
+        app.inject({
+          method: 'PATCH',
+          url: `/platform/organizations/${farmId}/features/${feature}`,
+          payload: { enabled } as object,
+          headers,
+        });
+      const catalog = await get('/platform/features', bearer());
+      expect(catalog.statusCode).toBe(200);
+      const { common, sector } = catalog.json<{
+        data: { common: Array<{ id: string }>; sector: Array<{ id: string; modules: string[] }> };
+      }>().data;
+      expect(common.map((f) => f.id)).toContain('assistance');
+      expect(sector.find((f) => f.id === 'field_book')?.modules).toEqual(['agri']);
+      expect([401, 403]).toContain((await get('/platform/features', farm())).statusCode);
+
+      // A function of the sector: off at first, on only from the console and only for its sector.
+      expect([401, 403]).toContain((await put('field_book', true, farm())).statusCode);
+      expect((await put('teleport', true)).statusCode).toBe(400);
+      expect((await put('field_book', 'yes')).statusCode).toBe(400);
+      const wrongSector = await put('trade_licenses', true);
+      expect(wrongSector.statusCode).toBe(409);
+      const on = await put('field_book', true);
+      expect(on.statusCode).toBe(200);
+      expect(on.json<{ data: { enabledFeatures: string[] } }>().data.enabledFeatures).toEqual([
+        'field_book',
+      ]);
+      const me = await get('/auth/me', farm());
+      expect(
+        me
+          .json<{
+            data: { current: { sectorFeatures: Array<{ id: string; ready: boolean }> } };
+          }>()
+          .data.current.sectorFeatures.map((f) => [f.id, f.ready]),
+      ).toEqual([['field_book', false]]);
+      // Twice the same: recorded once, for the platform and for the organization.
+      await put('field_book', true);
+      expect(
+        await prisma.platformAuditLog.count({
+          where: { orgId: farmId, action: 'ORGANIZATION_FEATURE_CHANGED' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { tenantId: farmId, eventType: 'ORGANIZATION_FEATURE_CHANGED', userId: null },
+        }),
+      ).toBe(1);
+      const list = await get('/platform/organizations?search=fe7-farm', bearer());
+      expect(
+        list
+          .json<{ data: { items: Array<{ id: string; enabledFeatures: string[] }> } }>()
+          .data.items.find((o) => o.id === farmId)?.enabledFeatures,
+      ).toEqual(['field_book']);
+
+      // A common function: on unless turned off, refused by the backend when off.
+      expect((await put('assistance', false)).statusCode).toBe(200);
+      expect((await get('/assistance', farm())).statusCode).toBe(403);
+      const back = await put('assistance', true);
+      expect(back.json<{ data: { disabledFeatures: string[] } }>().data.disabledFeatures).toEqual(
+        [],
+      );
+      expect((await get('/assistance', farm())).statusCode).toBe(200);
+
+      // Another sector drops the functions of the old one; back to agriculture, nothing is on.
+      const url = `/platform/organizations/${farmId}/modules`;
+      const artisan = await patch(url, { module: 'artisan', disabledFeatures: [] }, bearer());
+      expect(artisan.json<{ data: { enabledFeatures: string[] } }>().data.enabledFeatures).toEqual(
+        [],
+      );
+      expect((await put('trade_licenses', true)).statusCode).toBe(200);
+      const agri = await patch(
+        url,
+        { module: 'agri', disabledFeatures: [], enabledFeatures: ['risk_assessment', 'grants'] },
+        bearer(),
+      );
+      // risk_assessment is of both sectors; grants only of crafts.
+      expect(agri.json<{ data: { enabledFeatures: string[] } }>().data.enabledFeatures).toEqual([
+        'risk_assessment',
+      ]);
+      await patch(url, { module: 'agri', disabledFeatures: [], enabledFeatures: [] }, bearer());
+    });
+
     it('offers the kinds and fields of the module and checks them', async () => {
       const current = await get('/modules/current', farm());
       expect(current.statusCode).toBe(200);

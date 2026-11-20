@@ -14,6 +14,7 @@ export const PRACTICE_PAYLOAD_TYPES = [
   'music_practice',
   'generic_practice',
   'agri_practice',
+  'artisan_practice',
   'legacy_practice',
 ] as const;
 export type PracticePayloadType = (typeof PRACTICE_PAYLOAD_TYPES)[number];

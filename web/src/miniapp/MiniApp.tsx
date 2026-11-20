@@ -21,6 +21,7 @@ import {
   AgendaScreen,
   PracticeScreen,
   PracticesScreen,
+  SectorScreen,
   TodayScreen,
   useSummary,
 } from './MiniAppScreens';
@@ -209,6 +210,7 @@ function MiniAppHome({ me }: { me: Me }) {
         <Route path="tg/assistente" element={<AssistantScreen />} />
         <Route path="tg/pratiche" element={<PracticesScreen me={me} />} />
         <Route path="tg/pratiche/:id" element={<PracticeScreen me={me} openSheet={setSheet} />} />
+        <Route path="tg/settore/:featureId" element={<SectorScreen me={me} />} />
         <Route path="*" element={<Navigate to="/tg" replace />} />
       </Routes>
       {sheet && <Sheet me={me} intent={sheet} onIntent={setSheet} onClose={() => setSheet(null)} />}

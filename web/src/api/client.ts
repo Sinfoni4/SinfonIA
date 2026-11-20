@@ -23,8 +23,25 @@ export type Me = {
   organizations: Organization[];
   /** A platform administrator: the console is offered too (FE7). */
   platform: boolean;
-  /** A03: `disabledFeatures`, the functions the platform turned off for the organization. */
-  current: { orgId: string; role: Role; disabledFeatures?: string[] };
+  /**
+   * A03: `disabledFeatures`, the functions the platform turned off for the organization;
+   * `sectorFeatures`, those of its sector turned on (absent: older server).
+   */
+  current: {
+    orgId: string;
+    role: Role;
+    disabledFeatures?: string[];
+    sectorFeatures?: SectorFeatureInfo[];
+  };
+};
+
+/** A function of a sector (agriculture, crafts, ...), as the server's catalog describes it. */
+export type SectorFeatureInfo = {
+  id: string;
+  label: string;
+  description: string;
+  /** False while it is being built: shown as «in preparazione». */
+  ready: boolean;
 };
 
 /** The platform administrator in the console, with their own organizations to go back to. */

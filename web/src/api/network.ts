@@ -73,6 +73,7 @@ export const KIND_NAMES: Record<string, string> = {
   music: 'Musicali',
   artist: 'Artisti',
   agri: 'Agricole',
+  artisan: 'Artigiane',
 };
 
 export const MEMBERSHIP_STATUS_LABELS: Record<MembershipStatus, string> = {

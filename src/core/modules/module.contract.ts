@@ -14,7 +14,7 @@ import type { ComplianceCategory, PracticeStatus } from '@prisma/client';
  * from the Core except this file (checked by tests/a01.core-modules.test.ts).
  */
 
-export const MODULE_IDS = ['generic', 'music', 'agri'] as const;
+export const MODULE_IDS = ['generic', 'music', 'agri', 'artisan'] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
 /** One field of a practice type, stored under `payload.fields.<key>`. */

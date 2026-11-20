@@ -26,6 +26,7 @@ import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RequestsPage } from './pages/RequestsPage';
 import { ReviewPage } from './pages/ReviewPage';
+import { SectorFeaturePage } from './pages/SectorFeaturePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { OrganizationUsagePage } from './pages/UsagePages';
 import { useSession } from './session/session';
@@ -81,6 +82,7 @@ export function App() {
         <Route path="attivita" element={<ActivityPage me={me} />} />
         <Route path="attivita/assistente" element={<AssistantUsagePage me={me} />} />
         <Route path="attivita/consumi" element={<OrganizationUsagePage me={me} />} />
+        <Route path="settore/:featureId" element={<SectorFeaturePage me={me} />} />
         <Route path="impostazioni" element={<SettingsPage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

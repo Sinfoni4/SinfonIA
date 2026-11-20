@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { FEATURES } from '../../../core/features/features.js';
+import { FEATURE_LABELS, FEATURES } from '../../../core/features/features.js';
 import { MODULE_IDS } from '../../../core/modules/module.contract.js';
 import {
   LOGO_MAX_BYTES,
@@ -17,6 +17,7 @@ import {
   listPlatformAudit,
   setOrganizationIdentifiers,
   setOrganizationLogo,
+  setOrganizationFeature,
   setOrganizationModules,
   setOrganizationSuspended,
 } from '../../../core/platform/platform.service.js';
@@ -27,6 +28,7 @@ import {
   type UsageRates,
 } from '../../../core/usage/usage.service.js';
 import { AuditService } from '../../../data/services/audit.service.js';
+import { SECTOR_FEATURE_IDS, SECTOR_FEATURES } from '../../../modules/registry.js';
 import { requirePlatform } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -125,8 +127,17 @@ const ModulesBodySchema = z
   .object({
     module: z.enum(MODULE_IDS),
     disabledFeatures: z.array(z.enum(FEATURES)).max(FEATURES.length),
+    /** Functions of the sector turned on; absent: those already on (of the module) stay. */
+    enabledFeatures: z.array(z.enum(SECTOR_FEATURE_IDS)).max(SECTOR_FEATURE_IDS.length).optional(),
   })
   .strict();
+
+/** The console's table of functions: one function, on or off. */
+const FeatureParamsSchema = z.object({
+  id: z.string().uuid(),
+  feature: z.enum([...FEATURES, ...SECTOR_FEATURE_IDS] as [string, ...string[]]),
+});
+const FeatureBodySchema = z.object({ enabled: z.boolean() }).strict();
 
 /** AGX-02: identifiers of a company; null removes one, a missing field leaves it as it is. */
 const IdentifiersBodySchema = z
@@ -266,6 +277,35 @@ export const platformRoutes: FastifyPluginCallback<PlatformRoutesDeps> = (app, d
       const { id } = IdParamsSchema.parse(req.params);
       const body = ModulesBodySchema.parse(req.body);
       return reply.send(ok(await setOrganizationModules(deps.prisma, id, body, { userId })));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // The catalog of the functions: common ones (on unless turned off) and those of each sector.
+  app.get('/platform/features', { config }, async (req, reply) => {
+    try {
+      requirePlatform(req);
+      return reply.send(
+        ok({
+          common: FEATURES.map((id) => ({ id, label: FEATURE_LABELS[id] })),
+          sector: SECTOR_FEATURES,
+        }),
+      );
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // One function turned on or off for an organization, from the console's table.
+  app.patch('/platform/organizations/:id/features/:feature', { config }, async (req, reply) => {
+    try {
+      const { userId } = requirePlatform(req);
+      const { id, feature } = FeatureParamsSchema.parse(req.params);
+      const { enabled } = FeatureBodySchema.parse(req.body);
+      return reply.send(
+        ok(await setOrganizationFeature(deps.prisma, id, { feature, enabled }, { userId })),
+      );
     } catch (err: unknown) {
       return sendError(reply, err);
     }

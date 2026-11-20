@@ -10,6 +10,7 @@ import {
 import { UserRepository } from '../../data/repositories/user.repository.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { activeSectorFeatures, type SectorFeatureDefinition } from '../../modules/registry.js';
 import { isPlatformAdmin, resolvePlatformPrincipal } from '../authz/platform.js';
 
 import { revokeAllSessions } from './revocation.service.js';
@@ -300,7 +301,7 @@ export class LoginService {
       select: {
         orgId: true,
         role: true,
-        org: { select: { name: true, type: true, module: true } },
+        org: { select: { name: true, type: true, module: true, enabledFeatures: true } },
       },
     });
     const audit = new AuditService(this.prisma);
@@ -322,6 +323,7 @@ export class LoginService {
         role: m.role,
         type: m.org.type,
         module: m.org.module,
+        sectorFeatures: activeSectorFeatures(m.org.module, m.org.enabledFeatures),
       })),
       platform: isPlatformAdmin(user.platformRole),
     };
@@ -624,6 +626,8 @@ export class LoginService {
       type: OrganizationType;
       /** A02: the sector module of the organization. */
       module: string;
+      /** The functions of its sector turned on, for the menu of the dashboard and the Mini App. */
+      sectorFeatures: SectorFeatureDefinition[];
     }>;
     platform: boolean;
   }> {
@@ -637,7 +641,7 @@ export class LoginService {
       select: {
         orgId: true,
         role: true,
-        org: { select: { name: true, type: true, module: true } },
+        org: { select: { name: true, type: true, module: true, enabledFeatures: true } },
       },
     });
     return {
@@ -649,6 +653,7 @@ export class LoginService {
         role: m.role,
         type: m.org.type,
         module: m.org.module,
+        sectorFeatures: activeSectorFeatures(m.org.module, m.org.enabledFeatures),
       })),
       platform: isPlatformAdmin(user.platformRole),
     };

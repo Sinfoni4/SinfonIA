@@ -224,6 +224,42 @@ describe('Telegram Mini App', () => {
     expect(main()?.style.getPropertyValue('--ma-card')).toBe('#2a2a2a');
   });
 
+  it('offers the functions of the sector turned on, «in preparazione» while built', async () => {
+    const sectorFeatures = [
+      {
+        id: 'field_book',
+        label: 'Quaderno di campagna',
+        description: 'Registro dei trattamenti e delle lavorazioni.',
+        ready: false,
+      },
+    ];
+    api({
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'anna@collio.it',
+          organizations: [
+            { orgId: ORG, name: 'Azienda Agricola Collio', role: 'MEMBER', type: 'COMPANY' },
+          ],
+          platform: false,
+          current: { orgId: ORG, role: 'MEMBER', sectorFeatures },
+        }),
+    });
+    openFromTelegram();
+    const sector = await screen.findByRole('region', { name: 'Funzioni del settore' });
+    await userEvent.click(within(sector).getByRole('link', { name: /Quaderno di campagna/ }));
+    expect(await screen.findByRole('heading', { name: 'Quaderno di campagna' })).toBeTruthy();
+    expect(screen.getByText('Registro dei trattamenti e delle lavorazioni.')).toBeTruthy();
+    expect(screen.getByText(/In preparazione/)).toBeTruthy();
+  });
+
+  it('shows no sector functions when none is on', async () => {
+    api();
+    openFromTelegram();
+    await screen.findByText('SinfonIA');
+    expect(screen.queryByRole('region', { name: 'Funzioni del settore' })).toBeNull();
+  });
+
   it('lists the practices from «Le mie pratiche»', async () => {
     api();
     openFromTelegram();

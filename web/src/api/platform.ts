@@ -2,6 +2,8 @@
 
 import { ORGANIZATION_TYPE_LABELS as TYPE_LABELS, type OrganizationType } from './organization';
 
+import type { SectorFeatureInfo } from './client';
+
 export { TYPE_LABELS, type OrganizationType };
 
 export type OrganizationStatus = 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED' | 'PENDING_DELETION';
@@ -32,6 +34,10 @@ export type OrganizationRow = {
   status: OrganizationStatus;
   /** A02: the sector module. */
   module: string;
+  /** A03: common functions turned off (absent: older server). */
+  disabledFeatures?: string[];
+  /** Functions of the sector turned on; only those of `module` count (absent: older server). */
+  enabledFeatures?: string[];
   createdAt: string;
   members: number;
   practices: number;
@@ -46,8 +52,6 @@ export type OrganizationPage = {
 };
 
 export type OrganizationDetail = OrganizationRow & {
-  /** A03: functions turned off for the organization. */
-  disabledFeatures?: string[];
   scheduledExport: boolean;
   webhook: boolean;
   deactivatedAt: string | null;
@@ -71,19 +75,25 @@ export type PlatformAuditRow = {
   organization: { id: string; name: string | null } | null;
   targetEmail: string | null;
   details: Partial<
-    Record<'name' | 'type' | 'reason' | 'via' | 'module' | 'organization', string>
+    Record<
+      'name' | 'type' | 'reason' | 'via' | 'module' | 'organization' | 'feature' | 'featureLabel',
+      string
+    >
   > & {
     disabledFeatures?: string[];
+    enabledFeatures?: string[];
+    enabled?: boolean;
   };
 };
 
 /** A02: the sector modules (src/modules on the server). */
-export const MODULES = ['generic', 'music', 'agri'] as const;
+export const MODULES = ['generic', 'music', 'agri', 'artisan'] as const;
 export type ModuleId = (typeof MODULES)[number];
 export const MODULE_LABELS: Record<ModuleId, string> = {
   generic: 'Generico',
   music: 'Musica e spettacolo',
   agri: 'Agricoltura',
+  artisan: 'Artigianato',
 };
 
 /** A03: the functions the platform can turn off for one organization. */
@@ -105,6 +115,23 @@ export const FEATURE_LABELS: Record<Feature, string> = {
   exports: 'Esportazioni',
   delegations: 'Deleghe tra organizzazioni',
   network_stats: 'Statistiche di rete',
+};
+
+/** Short names for the columns of the console's table of functions. */
+export const FEATURE_SHORT_LABELS: Record<Feature, string> = {
+  ai_chat: 'IA',
+  documents: 'Documenti',
+  deadlines: 'Scadenze',
+  assistance: 'Assistenza',
+  exports: 'Export',
+  delegations: 'Deleghe',
+  network_stats: 'Statistiche',
+};
+
+/** GET /platform/features: the common functions and those of each sector. */
+export type FeatureCatalog = {
+  common: Array<{ id: Feature; label: string }>;
+  sector: Array<SectorFeatureInfo & { modules: string[] }>;
 };
 
 export function moduleLabel(id: string): string {
@@ -185,6 +212,14 @@ export function describePlatformAction(row: PlatformAuditRow): string {
       return `Modulo di ${org}: ${moduleLabel(row.details.module ?? '')}${
         off ? `; spente: ${off}` : '; tutte le funzioni attive'
       }`;
+    }
+    case 'ORGANIZATION_FEATURE_CHANGED': {
+      const name =
+        row.details.featureLabel ??
+        (FEATURE_LABELS as Record<string, string>)[row.details.feature ?? ''] ??
+        row.details.feature ??
+        'Una funzione';
+      return `${name} ${row.details.enabled ? 'accesa' : 'spenta'} per ${org}`;
     }
     case 'ORGANIZATION_IDENTIFIERS_CHANGED':
       return `Dati identificativi di ${org} aggiornati`;

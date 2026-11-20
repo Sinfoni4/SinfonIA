@@ -188,7 +188,9 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
     try {
       const auth = requirePrincipal(req);
       const profile = await deps.login.profile(auth.userId);
-      // A03: the functions turned off, so the dashboard hides them (the backend refuses them).
+      // A03: the functions turned off, so the dashboard hides them (the backend refuses them),
+      // and those of the sector turned on, which the dashboard and the Mini App offer.
+      const current = profile.organizations.find((o) => o.orgId === auth.tenantId);
       return reply.send(
         ok({
           ...profile,
@@ -196,6 +198,7 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesDeps> = (app, deps, don
             orgId: auth.tenantId,
             role: auth.role,
             disabledFeatures: auth.disabledFeatures ?? [],
+            sectorFeatures: current?.sectorFeatures ?? [],
           },
         }),
       );
