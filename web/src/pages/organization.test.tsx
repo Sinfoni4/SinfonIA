@@ -260,6 +260,38 @@ describe('home (P11)', () => {
     expect(screen.queryByRole('heading', { name: 'Ultime attività' })).toBeNull();
     expect(requested('/audit')).toHaveLength(0);
   });
+
+  it('offers the functions of the sector turned on in the menu, with their page', async () => {
+    const sectorFeatures = [
+      {
+        id: 'training_safety',
+        label: 'Formazione e sicurezza',
+        description: 'Corsi obbligatori e attestati in scadenza.',
+        ready: false,
+      },
+    ];
+    api('MEMBER', {
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'mario@coop.it',
+          organizations: [{ orgId: ORG, name: 'Cooperativa', role: 'MEMBER' }],
+          current: { orgId: ORG, role: 'MEMBER', sectorFeatures },
+        }),
+    });
+    openAt('/');
+    await userEvent.click(await screen.findByRole('link', { name: 'Formazione e sicurezza' }));
+    expect(await screen.findByRole('heading', { name: 'Formazione e sicurezza' })).toBeTruthy();
+    expect(screen.getByText('Corsi obbligatori e attestati in scadenza.')).toBeTruthy();
+    expect(screen.getByText('in preparazione')).toBeTruthy();
+  });
+
+  it('sends home from the page of a sector function that is not on', async () => {
+    api('MEMBER', {});
+    openAt('/settore/field_book');
+    expect(await screen.findByText(/qui vedi le tue pratiche/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Quaderno di campagna' })).toBeNull();
+  });
 });
 
 describe('settings (P12)', () => {

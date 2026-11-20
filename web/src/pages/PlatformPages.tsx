@@ -11,6 +11,7 @@ import {
   LogOut,
   ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
@@ -38,6 +39,7 @@ import {
   type OrganizationStatus,
   type OrganizationType,
   type Feature,
+  type FeatureCatalog,
   type ModuleId,
   type PlatformAuditPage,
   type Verification,
@@ -48,6 +50,7 @@ import { DataTable, TablePagination, type DataColumn } from '../components/DataT
 import { LogoCard } from '../components/LogoCard';
 import { useSession } from '../session/session';
 
+import { PlatformFeaturesPage } from './PlatformFeaturesPage';
 import { AiUsagePage, HealthPage } from './PlatformHealthPages';
 import { PlatformUsagePage } from './UsagePages';
 
@@ -70,6 +73,7 @@ export function PlatformApp({ admin }: { admin: PlatformAdmin }) {
         <Route path="piattaforma" element={<OrganizationsPage />} />
         <Route path="piattaforma/nuova" element={<NewOrganizationPage />} />
         <Route path="piattaforma/organizzazioni/:id" element={<OrganizationPage />} />
+        <Route path="piattaforma/funzioni" element={<PlatformFeaturesPage />} />
         <Route path="piattaforma/registro" element={<AuditPage />} />
         <Route path="piattaforma/salute" element={<HealthPage />} />
         <Route path="piattaforma/consumi-ia" element={<AiUsagePage />} />
@@ -121,6 +125,11 @@ function PlatformLayout({ admin }: { admin: PlatformAdmin }) {
               label: 'Organizzazioni',
               icon: <Building2 aria-hidden />,
               end: true,
+            },
+            {
+              to: '/piattaforma/funzioni',
+              label: 'Funzioni',
+              icon: <SlidersHorizontal aria-hidden />,
             },
             { to: '/piattaforma/registro', label: 'Registro', icon: <ScrollText aria-hidden /> },
           ],
@@ -625,7 +634,10 @@ function OrganizationPage() {
             <dd>{moduleLabel(org.module)}</dd>
           </dl>
 
-          <ModulesCard key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}`} org={org} />
+          <ModulesCard
+            key={`${org.module}:${(org.disabledFeatures ?? []).join(',')}:${(org.enabledFeatures ?? []).join(',')}`}
+            org={org}
+          />
 
           <LogoCard
             path={`/platform/organizations/${org.id}/logo`}
@@ -746,11 +758,29 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
   const [off, setOff] = useState<Feature[]>(
     FEATURES.filter((f) => (org.disabledFeatures ?? []).includes(f)),
   );
+  const [sectorOn, setSectorOn] = useState<string[]>(org.enabledFeatures ?? []);
+  const catalog = useQuery({
+    queryKey: ['platform', 'features'],
+    queryFn: () => api<FeatureCatalog>('/platform/features'),
+    staleTime: Infinity,
+  });
+  // Only the functions of the chosen sector: changing it hides (and, saved, drops) the others.
+  const sectorFeatures = (catalog.data?.sector ?? []).filter((f) => f.modules.includes(module));
   const save = useMutation({
     mutationFn: () =>
       api(`/platform/organizations/${org.id}/modules`, {
         method: 'PATCH',
-        body: { module, disabledFeatures: off },
+        body: {
+          module,
+          disabledFeatures: off,
+          ...(catalog.data
+            ? {
+                enabledFeatures: sectorFeatures
+                  .map((f) => f.id)
+                  .filter((id) => sectorOn.includes(id)),
+              }
+            : {}),
+        },
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['platform'] });
@@ -791,6 +821,26 @@ function ModulesCard({ org }: { org: OrganizationDetail }) {
           </label>
         ))}
       </fieldset>
+      {sectorFeatures.length > 0 && (
+        <fieldset>
+          <legend>Funzioni di settore</legend>
+          {sectorFeatures.map((f) => (
+            <label key={f.id} className="checkbox">
+              <input
+                type="checkbox"
+                checked={sectorOn.includes(f.id)}
+                onChange={(e) =>
+                  setSectorOn((current) =>
+                    e.target.checked ? [...current, f.id] : current.filter((id) => id !== f.id),
+                  )
+                }
+              />{' '}
+              {f.label}
+              {!f.ready && <span className="muted"> (in preparazione)</span>}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <span className="actions">
         <button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
           Salva settore e funzioni

@@ -1,4 +1,5 @@
 import { AGRI_MODULE } from './agri.module.js';
+import { ARTISAN_MODULE } from './artisan.module.js';
 import { GENERIC_MODULE } from './generic.module.js';
 import { MUSIC_MODULE } from './music.module.js';
 
@@ -14,13 +15,14 @@ export const MODULES: Readonly<Record<ModuleId, VerticalModule>> = {
   generic: GENERIC_MODULE,
   music: MUSIC_MODULE,
   agri: AGRI_MODULE,
+  artisan: ARTISAN_MODULE,
 };
 
 /**
  * Every practice kind of every module (a test checks it matches the definitions). Listed here so
  * that the type stays a union the compiler checks.
  */
-export const PRACTICE_KINDS = ['artist', 'music', 'generic', 'agri'] as const;
+export const PRACTICE_KINDS = ['artist', 'music', 'generic', 'agri', 'artisan'] as const;
 export type PracticeKind = (typeof PRACTICE_KINDS)[number];
 
 const TYPES_BY_KIND = new Map<string, PracticeTypeDefinition>(
@@ -51,3 +53,16 @@ export function deadlineCategoriesOf(module: VerticalModule): readonly Complianc
     ? module.deadlineCategories
     : [...module.deadlineCategories, 'ALTRO'];
 }
+
+/** The functions of each sector, turned on from the console (sector-features.ts). */
+export {
+  SECTOR_FEATURE_IDS,
+  SECTOR_FEATURES,
+  activeSectorFeatures,
+  isSectorFeature,
+  sectorFeature,
+  sectorFeatureApplies,
+  sectorFeaturesOf,
+  type SectorFeature,
+  type SectorFeatureDefinition,
+} from './sector-features.js';

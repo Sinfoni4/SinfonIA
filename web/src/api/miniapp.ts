@@ -156,6 +156,7 @@ export function describeFeed(item: MiniAppSummary['feed'][number]): {
 /** The type of a practice in Italian (the API's label is the module's internal one). */
 export const KIND_LABELS: Record<string, string> = {
   agri: 'Pratica agricola',
+  artisan: 'Pratica artigiana',
   music: 'Pratica musicale',
   artist: 'Pratica artista',
   generic: 'Pratica',

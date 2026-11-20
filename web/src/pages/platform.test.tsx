@@ -178,6 +178,64 @@ describe('platform console (FE7)', () => {
     );
   });
 
+  it('turns functions on and off from the table, those of a sector only for it', async () => {
+    const farm = {
+      ...ROW,
+      module: 'agri',
+      disabledFeatures: ['assistance'],
+      enabledFeatures: ['field_book'],
+    };
+    api({
+      'GET /platform/features': () =>
+        ok({
+          common: [
+            { id: 'ai_chat', label: 'Assistente IA nella chat' },
+            { id: 'assistance', label: 'Richieste di assistenza' },
+          ],
+          sector: [
+            {
+              id: 'field_book',
+              label: 'Quaderno di campagna',
+              description: 'Registro dei trattamenti.',
+              modules: ['agri'],
+              ready: false,
+            },
+            {
+              id: 'grants',
+              label: 'Bandi e contributi',
+              description: 'Bandi.',
+              modules: ['artisan'],
+              ready: false,
+            },
+          ],
+        }),
+      'GET /platform/organizations': () => ok({ items: [farm], total: 1, page: 1, totalPages: 1 }),
+      [`PATCH /platform/organizations/${ORG}/features/assistance`]: () =>
+        ok({ disabledFeatures: [], enabledFeatures: ['field_book'] }),
+    });
+    openAt('/piattaforma/funzioni', 'platform');
+    const book = await screen.findByRole('checkbox', {
+      name: 'Quaderno di campagna per Cooperativa Alfa',
+    });
+    expect((book as HTMLInputElement).checked).toBe(true);
+    expect(screen.getAllByText('in preparazione').length).toBeGreaterThan(0);
+    // A function of another sector is not offered to this organization.
+    expect(screen.queryByRole('checkbox', { name: /Bandi e contributi/ })).toBeNull();
+    const assistance = screen.getByRole('checkbox', {
+      name: 'Richieste di assistenza per Cooperativa Alfa',
+    });
+    expect((assistance as HTMLInputElement).checked).toBe(false);
+    await userEvent.click(assistance);
+    await waitFor(() =>
+      expect(
+        calls.find(
+          (c) =>
+            c.method === 'PATCH' && c.path === `/platform/organizations/${ORG}/features/assistance`,
+        )?.body,
+      ).toEqual({ enabled: true }),
+    );
+  });
+
   it('resumes the console after a reload and goes back to the organization', async () => {
     api({});
     openAt('/piattaforma', 'platform');

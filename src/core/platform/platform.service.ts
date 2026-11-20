@@ -3,7 +3,13 @@ import { Prisma } from '@prisma/client';
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
-import { FEATURES, type Feature } from '../features/features.js';
+import {
+  isSectorFeature,
+  sectorFeature,
+  sectorFeatureApplies,
+  sectorFeaturesOf,
+} from '../../modules/registry.js';
+import { FEATURE_LABELS, FEATURES, isFeature, type Feature } from '../features/features.js';
 import { inviteMemberInTx, NETWORK_TYPES } from '../network/network.service.js';
 import {
   changeMark,
@@ -77,6 +83,10 @@ export type OrganizationRow = {
   status: OrganizationStatus;
   /** A02: the sector module (one of MODULE_IDS). */
   module: string;
+  /** A03: common functions turned off. */
+  disabledFeatures: string[];
+  /** Functions of the sector turned on (only those of `module` count). */
+  enabledFeatures: string[];
   createdAt: Date;
   members: number;
   practices: number;
@@ -107,7 +117,16 @@ export async function listOrganizations(
       orderBy: { name: 'asc' },
       skip: (input.page - 1) * input.limit,
       take: input.limit,
-      select: { id: true, name: true, type: true, status: true, module: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        module: true,
+        disabledFeatures: true,
+        enabledFeatures: true,
+        createdAt: true,
+      },
     }),
   ]);
   const ids = rows.map((r) => r.id);
@@ -149,9 +168,6 @@ export async function listOrganizations(
 // --- A3: detail ---------------------------------------------------------------------------------
 
 export type OrganizationDetail = OrganizationRow & {
-  module: string;
-  /** A03: functions the platform turned off. */
-  disabledFeatures: string[];
   scheduledExport: boolean;
   webhook: boolean;
   deactivatedAt: Date | null;
@@ -185,6 +201,7 @@ export async function getOrganization(
       createdAt: true,
       module: true,
       disabledFeatures: true,
+      enabledFeatures: true,
       schedulerEnabled: true,
       integrationType: true,
       deactivatedAt: true,
@@ -220,6 +237,7 @@ export async function getOrganization(
     lastActivityAt: last._max.createdAt,
     module: org.module,
     disabledFeatures: org.disabledFeatures,
+    enabledFeatures: org.enabledFeatures,
     scheduledExport: org.schedulerEnabled,
     webhook: org.integrationType === 'external',
     deactivatedAt: org.deactivatedAt,
@@ -412,34 +430,98 @@ export async function setOrganizationSuspended(
 export async function setOrganizationModules(
   prisma: PrismaClient,
   orgId: string,
-  input: { module: ModuleId; disabledFeatures: Feature[] },
+  input: { module: ModuleId; disabledFeatures: Feature[]; enabledFeatures?: string[] },
   actor: PlatformActor,
-): Promise<{ module: ModuleId; disabledFeatures: Feature[] }> {
+): Promise<{ module: ModuleId; disabledFeatures: Feature[]; enabledFeatures: string[] }> {
   const disabledFeatures = FEATURES.filter((f) => input.disabledFeatures.includes(f));
-  await withTransaction(prisma, async (tx) => {
+  return withTransaction(prisma, async (tx) => {
     const org = await tx.tenant.findUnique({
       where: { id: orgId },
-      select: { module: true, disabledFeatures: true },
+      select: { module: true, disabledFeatures: true, enabledFeatures: true },
     });
     if (!org) throw new NotFoundError('Organization not found');
+    // Functions of a sector: only those of the new module are kept, given or not.
+    const enabledFeatures = sectorFeaturesOf(input.module)
+      .map((f) => f.id)
+      .filter((id) => (input.enabledFeatures ?? org.enabledFeatures).includes(id));
+    const sameList = (a: readonly string[], b: readonly string[]) =>
+      a.length === b.length && a.every((f) => b.includes(f));
     const same =
       org.module === input.module &&
-      org.disabledFeatures.length === disabledFeatures.length &&
-      disabledFeatures.every((f) => org.disabledFeatures.includes(f));
-    if (same) return;
-    await tx.tenant.update({
-      where: { id: orgId },
-      data: { module: input.module, disabledFeatures },
-    });
-    await logPlatform(tx, {
-      actor,
-      action: 'ORGANIZATION_MODULES_CHANGED',
-      orgId,
-      payload: { module: input.module, disabledFeatures },
-    });
-    await logInOrganization(tx, orgId, 'ORGANIZATION_MODULES_CHANGED');
+      sameList(org.disabledFeatures, disabledFeatures) &&
+      sameList(org.enabledFeatures, enabledFeatures);
+    if (!same) {
+      await tx.tenant.update({
+        where: { id: orgId },
+        data: { module: input.module, disabledFeatures, enabledFeatures },
+      });
+      await logPlatform(tx, {
+        actor,
+        action: 'ORGANIZATION_MODULES_CHANGED',
+        orgId,
+        payload: { module: input.module, disabledFeatures, enabledFeatures },
+      });
+      await logInOrganization(tx, orgId, 'ORGANIZATION_MODULES_CHANGED');
+    }
+    return { module: input.module, disabledFeatures, enabledFeatures };
   });
-  return { module: input.module, disabledFeatures };
+}
+
+/**
+ * The console's table of functions: turns one function on or off for an organization. A common
+ * function (features.ts) is on unless turned off; a function of a sector (sector-features.ts) is
+ * off unless turned on, and only for an organization of that sector. Recorded like the module.
+ */
+function labelOf(feature: string): string {
+  return isFeature(feature) ? FEATURE_LABELS[feature] : (sectorFeature(feature)?.label ?? feature);
+}
+
+export async function setOrganizationFeature(
+  prisma: PrismaClient,
+  orgId: string,
+  input: { feature: string; enabled: boolean },
+  actor: PlatformActor,
+): Promise<{ disabledFeatures: string[]; enabledFeatures: string[] }> {
+  const { feature, enabled } = input;
+  if (!isFeature(feature) && !isSectorFeature(feature)) {
+    throw new NotFoundError('Feature not found');
+  }
+  return withTransaction(prisma, async (tx) => {
+    const org = await tx.tenant.findUnique({
+      where: { id: orgId },
+      select: { module: true, disabledFeatures: true, enabledFeatures: true },
+    });
+    if (!org) throw new NotFoundError('Organization not found');
+    let { disabledFeatures, enabledFeatures } = org;
+    if (isFeature(feature)) {
+      const off = disabledFeatures.filter((f) => f !== feature);
+      disabledFeatures = enabled ? off : [...off, feature];
+    } else {
+      if (enabled && !sectorFeatureApplies(feature, org.module)) {
+        throw new PlatformActionError(
+          "Questa funzione non è del settore dell'organizzazione: cambia prima il settore",
+        );
+      }
+      const on = enabledFeatures.filter((f) => f !== feature);
+      enabledFeatures = enabled ? [...on, feature] : on;
+    }
+    const same =
+      disabledFeatures.length === org.disabledFeatures.length &&
+      enabledFeatures.length === org.enabledFeatures.length &&
+      disabledFeatures.every((f) => org.disabledFeatures.includes(f)) &&
+      enabledFeatures.every((f) => org.enabledFeatures.includes(f));
+    if (!same) {
+      await tx.tenant.update({ where: { id: orgId }, data: { disabledFeatures, enabledFeatures } });
+      await logPlatform(tx, {
+        actor,
+        action: 'ORGANIZATION_FEATURE_CHANGED',
+        orgId,
+        payload: { feature, featureLabel: labelOf(feature), enabled },
+      });
+      await logInOrganization(tx, orgId, 'ORGANIZATION_FEATURE_CHANGED');
+    }
+    return { disabledFeatures, enabledFeatures };
+  });
 }
 
 // --- Cantiere 1, voce 17: network and companies from the console -----------------------------
@@ -539,9 +621,15 @@ export type PlatformAuditRow = {
   /** The person a role change is about (another platform administrator). */
   targetEmail: string | null;
   details: Partial<
-    Record<'name' | 'type' | 'reason' | 'via' | 'module' | 'organization', string>
+    Record<
+      'name' | 'type' | 'reason' | 'via' | 'module' | 'organization' | 'feature' | 'featureLabel',
+      string
+    >
   > & {
     disabledFeatures?: string[];
+    enabledFeatures?: string[];
+    /** ORGANIZATION_FEATURE_CHANGED: whether `feature` was turned on. */
+    enabled?: boolean;
   };
 };
 
@@ -590,11 +678,25 @@ export async function listPlatformAudit(
       const payload = recordOf(r.payload);
       const target = targetOf(r.payload);
       const details: PlatformAuditRow['details'] = {};
-      for (const key of ['name', 'type', 'reason', 'via', 'module', 'organization'] as const) {
+      const keys = [
+        'name',
+        'type',
+        'reason',
+        'via',
+        'module',
+        'organization',
+        'feature',
+        'featureLabel',
+      ] as const;
+      for (const key of keys) {
         if (typeof payload[key] === 'string') details[key] = payload[key];
       }
+      if (typeof payload.enabled === 'boolean') details.enabled = payload.enabled;
       if (Array.isArray(payload.disabledFeatures)) {
         details.disabledFeatures = payload.disabledFeatures.filter((f) => typeof f === 'string');
+      }
+      if (Array.isArray(payload.enabledFeatures)) {
+        details.enabledFeatures = payload.enabledFeatures.filter((f) => typeof f === 'string');
       }
       return {
         id: r.id,

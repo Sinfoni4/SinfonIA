@@ -10,6 +10,7 @@ import {
   Handshake,
   History,
   Inbox,
+  Layers,
   LayoutDashboard,
   LifeBuoy,
   LogOut,
@@ -71,6 +72,15 @@ function sections(me: Me): NavGroup[] {
           icon: <LifeBuoy aria-hidden />,
         }),
       ],
+    },
+    {
+      // The functions of the sector turned on from the console.
+      label: 'Settore',
+      items: (me.current.sectorFeatures ?? []).map((f) => ({
+        to: `/settore/${f.id}`,
+        label: f.label,
+        icon: <Layers aria-hidden />,
+      })),
     },
     {
       label: 'Strumenti',
