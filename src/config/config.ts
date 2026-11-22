@@ -78,6 +78,19 @@ const ConfigSchema = z
       .optional()
       .default('false')
       .transform((v) => v === 'true' || v === '1'),
+    // Transactional emails (login codes, invitations) through SMTP (D11). All four of SMTP_HOST,
+    // SMTP_USER, SMTP_PASSWORD and EMAIL_FROM together; absent: simulated, nothing leaves the server.
+    SMTP_HOST: unsetIfEmpty(z.string().trim().min(1).optional()),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+    // TLS from the first byte (port 465); absent: on for 465, STARTTLS required otherwise.
+    SMTP_SECURE: z
+      .enum(['true', 'false', '1', '0'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true' || v === '1')),
+    SMTP_USER: unsetIfEmpty(z.string().trim().min(1).optional()),
+    SMTP_PASSWORD: unsetIfEmpty(z.string().min(1).optional()),
+    // Sender shown to the person, e.g. "SinfonIA <noreply@synfonia.it>".
+    EMAIL_FROM: unsetIfEmpty(z.string().trim().min(3).optional()),
     // Maximum size of a single practice attachment (default 10 MB).
     ATTACHMENT_MAX_BYTES: z.coerce
       .number()
@@ -164,11 +177,22 @@ const ConfigSchema = z
     message: 'DEMO_ACCESS is allowed only outside production',
     path: ['DEMO_ACCESS'],
   })
-  .refine((c) => !(c.AUTH_EMAIL_LOGIN && c.NODE_ENV === 'production'), {
-    // The login codes would go nowhere: no email provider is configured yet (D11).
-    message: 'AUTH_EMAIL_LOGIN needs a real email provider, not available yet',
+  .refine((c) => !(c.AUTH_EMAIL_LOGIN && c.NODE_ENV === 'production' && !c.SMTP_HOST), {
+    // Without SMTP the login codes would go nowhere (the simulated sender keeps them in memory).
+    message:
+      'AUTH_EMAIL_LOGIN in production needs SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_FROM',
     path: ['AUTH_EMAIL_LOGIN'],
   })
+  .refine(
+    (c) => {
+      const set = [c.SMTP_HOST, c.SMTP_USER, c.SMTP_PASSWORD, c.EMAIL_FROM].filter(Boolean).length;
+      return set === 0 || set === 4;
+    },
+    {
+      message: 'SMTP needs SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_FROM together',
+      path: ['SMTP_HOST'],
+    },
+  )
   .refine((c) => c.LLM_PROVIDER !== 'mistral' || Boolean(c.MISTRAL_API_KEY), {
     message: 'LLM_PROVIDER=mistral needs MISTRAL_API_KEY',
     path: ['LLM_PROVIDER'],
@@ -199,6 +223,29 @@ const ConfigSchema = z
   );
 
 export type AppConfig = z.infer<typeof ConfigSchema>;
+
+export type SmtpSettings = {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+  from: string;
+};
+
+/** The SMTP server for transactional emails, when configured (all four values are checked). */
+export function smtpSettings(config: AppConfig): SmtpSettings | undefined {
+  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM, SMTP_PORT } = config;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD || !EMAIL_FROM) return undefined;
+  return {
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: config.SMTP_SECURE ?? SMTP_PORT === 465,
+    user: SMTP_USER,
+    password: SMTP_PASSWORD,
+    from: EMAIL_FROM,
+  };
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = ConfigSchema.safeParse(env);

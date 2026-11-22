@@ -321,6 +321,8 @@ async function main(): Promise<void> {
         BACKUP_KEEP: 14,
         OCR_MAX_ATTEMPTS: 3,
         WHATSAPP_API_VERSION: 'v21.0',
+        SMTP_PORT: 465,
+        SMTP_SECURE: undefined,
         RATE_LIMIT_PER_MINUTE: 120,
         RATE_LIMIT_AI_PER_MINUTE: 20,
         RATE_LIMIT_TENANT_PER_MINUTE: 600,
