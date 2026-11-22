@@ -17,7 +17,7 @@ import {
   validateBeforeDecision,
   validateResolvedCommand,
 } from './ai/validation/pre-execution.validator.js';
-import { loadConfig } from './config/config.js';
+import { loadConfig, smtpSettings } from './config/config.js';
 import { requestAssistance } from './core/assistance/assistance.service.js';
 import {
   createPrismaPrincipalResolver,
@@ -65,6 +65,7 @@ import { SchedulerService } from './core/scheduler/scheduler.service.js';
 import { parseBackupKey } from './data/backup/encrypted-backup.js';
 import { databaseName } from './data/backup/pg-tools.js';
 import { createPrismaClient } from './data/db/prisma.js';
+import { SmtpEmailSender } from './data/email/smtp-email.sender.js';
 import { AiTraceRepository } from './data/repositories/ai-trace.repository.js';
 import { createStorageService } from './data/storage/storage.factory.js';
 import { createAppChat } from './interface/conversation/app-chat.js';
@@ -241,9 +242,22 @@ async function main() {
     contextService,
     formatResponse: formatTelegramResponse,
   });
-  // MF6 and AGX-10: email login and the verified chat link share the (simulated) email sender;
-  // both exist only where email login is on, never in production until a provider exists (D11).
-  const emailSender = new SimulatedEmailSender();
+  // MF6 and AGX-10: email login and the verified chat link share the email sender: SMTP when
+  // configured (D11), otherwise simulated (nothing leaves the server; production refuses email
+  // login without SMTP).
+  const smtp = smtpSettings(config);
+  const emailSender = smtp ? SmtpEmailSender.fromSettings(smtp) : new SimulatedEmailSender();
+  if (smtp && emailSender instanceof SmtpEmailSender) {
+    logger.info({ host: smtp.host, port: smtp.port, secure: smtp.secure }, 'Email: SMTP sender');
+    void emailSender
+      .verify()
+      .catch((err: unknown) =>
+        logger.warn(
+          { error: err instanceof Error ? err.message : 'unknown error' },
+          'Email: SMTP server not reachable or login refused',
+        ),
+      );
+  }
   const channelLinks = config.AUTH_EMAIL_LOGIN
     ? new ChannelLinkService(prisma, emailSender, config.AUTH_SECRET, {
         exposeCodes: config.AUTH_DEV_SHOW_CODE,
@@ -323,7 +337,7 @@ async function main() {
     principals: createPrismaPrincipalResolver(prisma),
     prisma,
     storage: storageService,
-    // Email login (MF6): only where enabled, never in production until a provider exists (D11).
+    // Email login (MF6): only where enabled; in production only with SMTP (D11).
     // Telegram Mini App: sessions without email login (no email routes, no console then).
     emailLogin: config.AUTH_EMAIL_LOGIN,
     ...(config.AUTH_EMAIL_LOGIN ||
