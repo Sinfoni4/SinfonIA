@@ -4,7 +4,11 @@
  * only their entries; an expiry keeps one deadline of the organization in step.
  */
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
+import ExcelJS from 'exceljs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ContextService } from '../src/ai/context/context.service.js';
@@ -19,6 +23,7 @@ import { recordTitle } from '../src/core/sector/sector-records.service.js';
 import { createPrismaClient } from '../src/data/db/prisma.js';
 import { TenantRepository } from '../src/data/repositories/tenant.repository.js';
 import { UserRepository } from '../src/data/repositories/user.repository.js';
+import { LocalStorageService } from '../src/data/storage/storage.service.js';
 import { buildServer } from '../src/interface/http/server.js';
 import { sectorRecordKind } from '../src/modules/registry.js';
 import { createLogger } from '../src/shared/logger.js';
@@ -47,6 +52,11 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
   let prisma: PrismaClient;
   let app: ReturnType<typeof buildServer>;
   let orgId = '';
+  const storageDir = mkdtempSync(path.join(tmpdir(), 'sinfonia-sector-'));
+  const filesOnDisk = () => {
+    const dir = path.join(storageDir, orgId);
+    return existsSync(dir) ? readdirSync(dir).length : 0;
+  };
   const people: Record<string, string> = {};
 
   const as = (who: string, role: UserRole) => authHeaders(orgId, people[who], role);
@@ -114,6 +124,7 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
       prisma,
       practiceService: practices,
       complianceService: new ComplianceService(prisma),
+      storage: new LocalStorageService(storageDir),
       interpreterService: new InterpreterService(llm),
       executorService: new ExecutorService({ practiceService: practices }),
       contextService: new ContextService(practices),
@@ -358,6 +369,178 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
       }
       expect(await prisma.sectorRecord.findUnique({ where: { id } })).not.toBeNull();
     }
+  });
+
+  describe('files of an entry', () => {
+    const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n');
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const upload = (url: string, headers: Record<string, string>, name: string, content: Buffer) =>
+      call('POST', url, headers, {
+        fileName: name,
+        mimeType: 'application/pdf',
+        contentBase64: content.toString('base64'),
+      });
+    let licence = '';
+
+    beforeAll(async () => {
+      const created = await call('POST', '/sector/trade_licenses/records', admin(), {
+        kind: 'license',
+        data: { holder: `Anna ${run}`, licenseType: 'plant_protection', expiresOn: '2030-05-01' },
+      });
+      licence = created.body.data.id as string;
+    });
+
+    it('takes PDFs and photos, recognized from the content, and gives them back', async () => {
+      const before = filesOnDisk();
+      const added = await upload(
+        `/sector/trade_licenses/records/${licence}/attachments`,
+        admin(),
+        'attestato.pdf',
+        PDF,
+      );
+      expect(added.status).toBe(201);
+      const files = added.body.data.attachments as Array<{ id: string; mimeType: string }>;
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({ mimeType: 'application/pdf', fileName: 'attestato.pdf' });
+      expect(filesOnDisk()).toBe(before + 1);
+
+      // A photo from the Mini App, whatever name it has.
+      const photo = await upload(
+        `/miniapp/sector/trade_licenses/records/${licence}/attachments`,
+        admin(),
+        'foto.pdf',
+        PNG,
+      );
+      expect(photo.status).toBe(201);
+      expect(
+        (photo.body.data.attachments as Array<{ mimeType: string }>).map((f) => f.mimeType),
+      ).toEqual(['application/pdf', 'image/png']);
+
+      const download = await app.inject({
+        method: 'GET',
+        url: `/sector/trade_licenses/records/${licence}/attachments/${files[0].id}/download`,
+        headers: admin(),
+      });
+      expect(download.statusCode).toBe(200);
+      expect(download.headers['content-type']).toContain('application/pdf');
+      expect(download.headers['content-disposition']).toContain('attachment;');
+      expect(download.headers['x-content-type-options']).toBe('nosniff');
+      expect(download.rawPayload.equals(PDF)).toBe(true);
+    });
+
+    it('refuses other formats, empty files, and members on entries not theirs', async () => {
+      const url = `/sector/trade_licenses/records/${licence}/attachments`;
+      const exe = await upload(
+        url,
+        admin(),
+        'virus.pdf',
+        Buffer.from('MZ\u0090\u0000\u0003binary'),
+      );
+      expect(exe.status).toBe(400);
+      expect(exe.body.error?.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+      const text = await upload(url, admin(), 'nota.txt', Buffer.from('solo testo'));
+      expect(text.status).toBe(400);
+      expect((await upload(url, farmer(), 'a.pdf', PDF)).status).toBe(404);
+    });
+
+    it('removes a file, and the files of a deleted entry, from the storage too', async () => {
+      const entry = await call('GET', `/sector/trade_licenses/records/${licence}`, admin());
+      const files = entry.body.data.attachments as Array<{ id: string }>;
+      const before = filesOnDisk();
+      const removed = await call(
+        'DELETE',
+        `/sector/trade_licenses/records/${licence}/attachments/${files[0].id}`,
+        admin(),
+      );
+      expect(removed.status).toBe(200);
+      expect(removed.body.data.attachments).toHaveLength(1);
+      expect(filesOnDisk()).toBe(before - 1);
+
+      expect(
+        (await call('DELETE', `/sector/trade_licenses/records/${licence}`, admin())).status,
+      ).toBe(200);
+      expect(filesOnDisk()).toBe(before - 2);
+      expect(await prisma.sectorRecordAttachment.count({ where: { recordId: licence } })).toBe(0);
+      const audit = await prisma.auditLog.findMany({
+        where: { tenantId: orgId, eventType: { startsWith: 'SECTOR_RECORD_FILE' } },
+      });
+      expect(audit.map((a) => a.eventType).sort()).toEqual([
+        'SECTOR_RECORD_FILE_ADDED',
+        'SECTOR_RECORD_FILE_ADDED',
+        'SECTOR_RECORD_FILE_REMOVED',
+      ]);
+    });
+  });
+
+  describe('export of the register', () => {
+    it('gives CSV, Excel and PDF with the filters of the page', async () => {
+      await call(
+        'POST',
+        '/sector/field_book/records',
+        admin(),
+        treatment({ product: `=HYPERLINK("x") ${run}`, date: '2026-10-05' }),
+      );
+      await call('POST', '/sector/field_book/records', admin(), {
+        kind: 'harvest',
+        data: { date: '2026-10-06', plot: 'Vigna nord', crop: `Uva ${run}` },
+      });
+      const get = (query: string, headers = admin()) =>
+        app.inject({
+          method: 'GET',
+          url: `/sector/field_book/records/export?${query}`,
+          headers,
+        });
+
+      const csv = await get('format=csv&from=2026-10-01&to=2026-10-31');
+      expect(csv.statusCode).toBe(200);
+      expect(csv.headers['content-type']).toContain('text/csv');
+      const text = csv.body;
+      expect(text.startsWith('﻿"Data";"Tipo";"Voce";"Appezzamento";"Coltura"')).toBe(true);
+      expect(text).toContain('"05/10/2026";"Trattamento fitosanitario"');
+      expect(text).toContain(`"06/10/2026";"Raccolta";"Uva ${run} · Vigna nord"`);
+      // Never a formula in a spreadsheet.
+      expect(text).toContain(`"'=HYPERLINK(""x"") ${run}`);
+      expect(text.trim().split('\r\n')).toHaveLength(3);
+
+      const xlsx = await get('format=xlsx&kind=harvest');
+      expect(xlsx.statusCode).toBe(200);
+      const book = new ExcelJS.Workbook();
+      await book.xlsx.load(xlsx.rawPayload as unknown as ArrayBuffer);
+      const sheet = book.worksheets[0];
+      expect(sheet.getRow(1).getCell(2).value).toBe('Tipo');
+      expect(sheet.getColumn(2).values.slice(2)).toEqual(['Raccolta']);
+
+      const pdf = await get('format=pdf');
+      expect(pdf.statusCode).toBe(200);
+      expect(pdf.rawPayload.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+      expect(pdf.headers['content-disposition']).toMatch(/quaderno-di-campagna.*\.pdf/);
+
+      // A member exports only their own entries.
+      const own = await get('format=csv', farmer());
+      expect(own.statusCode).toBe(200);
+      expect(own.body).not.toContain(`Uva ${run}`);
+
+      const exported = await prisma.auditLog.findMany({
+        where: { tenantId: orgId, eventType: 'SECTOR_RECORDS_EXPORTED' },
+      });
+      expect(exported.map((a) => (a.payload as { format: string }).format).sort()).toEqual([
+        'csv',
+        'csv',
+        'pdf',
+        'xlsx',
+      ]);
+    });
+
+    it('is refused when the exports of the organization are off', async () => {
+      await prisma.tenant.update({ where: { id: orgId }, data: { disabledFeatures: ['exports'] } });
+      const off = await app.inject({
+        method: 'GET',
+        url: '/sector/field_book/records/export?format=csv',
+        headers: admin(),
+      });
+      expect(off.statusCode).toBe(403);
+      await prisma.tenant.update({ where: { id: orgId }, data: { disabledFeatures: [] } });
+    });
   });
 
   it('lists only the built functions of its sector among the permissions of custom roles', async () => {

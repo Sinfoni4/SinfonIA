@@ -321,6 +321,81 @@ describe('Telegram Mini App', () => {
     expect(calls.some((c) => c.path.startsWith('/sector/'))).toBe(false);
   });
 
+  it('adds a photo to an entry from the phone', async () => {
+    const sectorFeatures = [
+      {
+        id: 'trade_licenses',
+        label: 'Abilitazioni e patentini',
+        description: 'Patentini e abilitazioni.',
+        ready: true,
+        dashboard: false,
+        miniApp: true,
+      },
+    ];
+    const licence = {
+      ...TREATMENT,
+      feature: 'trade_licenses',
+      kind: 'license',
+      kindLabel: 'Abilitazione o patentino',
+      title: 'Patentino prodotti fitosanitari · Anna',
+      data: { holder: 'Anna', licenseType: 'plant_protection' },
+    };
+    const page = {
+      ...fieldBookPage([licence]),
+      feature: { id: 'trade_licenses', label: 'Abilitazioni e patentini', description: '' },
+      kinds: [
+        {
+          kind: 'license',
+          label: 'Abilitazione o patentino',
+          titleFields: ['licenseType', 'holder'],
+          fields: [{ key: 'holder', label: 'Titolare', type: 'text', required: true }],
+        },
+      ],
+    };
+    api({
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'anna@collio.it',
+          organizations: [
+            { orgId: ORG, name: 'Azienda Agricola Collio', role: 'MEMBER', type: 'COMPANY' },
+          ],
+          platform: false,
+          current: { orgId: ORG, role: 'MEMBER', sectorFeatures },
+        }),
+      'GET /miniapp/sector/trade_licenses/records': () => ok(page),
+      [`POST /miniapp/sector/trade_licenses/records/${licence.id}/attachments`]: () => ({
+        status: 201,
+        body: {
+          success: true,
+          data: {
+            ...licence,
+            attachments: [
+              {
+                id: 'f1',
+                fileName: 'patentino.jpg',
+                mimeType: 'image/jpeg',
+                fileSize: 2_500_000,
+                createdAt: '2026-11-23T10:00:00.000Z',
+              },
+            ],
+          },
+        },
+      }),
+    });
+    openFromTelegram('/tg/settore/trade_licenses');
+    await userEvent.click(await screen.findByRole('button', { name: /Patentino prodotti/ }));
+    expect(await screen.findByText('Nessun file.')).toBeTruthy();
+    await userEvent.upload(
+      screen.getByLabelText('Aggiungi una foto o un PDF'),
+      new File(['jpg'], 'patentino.jpg', { type: 'image/jpeg' }),
+    );
+    expect(await screen.findByText(/patentino\.jpg · 2,4 MB/)).toBeTruthy();
+    expect(
+      calls.filter((c) => c.path.endsWith('/attachments')).map((c) => `${c.method} ${c.path}`),
+    ).toEqual([`POST /miniapp/sector/trade_licenses/records/${licence.id}/attachments`]);
+  });
+
   it('keeps the home without the functions of the sector', async () => {
     api();
     openFromTelegram();

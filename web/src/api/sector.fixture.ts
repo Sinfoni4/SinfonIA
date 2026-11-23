@@ -56,6 +56,7 @@ export const TREATMENT: SectorRecord = {
   daysLeft: null,
   author: { id: 'u-1', email: 'anna@collio.it' },
   mine: true,
+  attachments: [],
   createdAt: '2026-11-20T08:00:00.000Z',
   updatedAt: '2026-11-20T08:00:00.000Z',
 };

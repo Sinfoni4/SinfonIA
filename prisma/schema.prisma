@@ -61,16 +61,17 @@ model Tenant {
   complianceDeadlines ComplianceDeadline[]
   complianceReminders ComplianceReminder[]
   sectorRecords       SectorRecord[]
+  sectorAttachments   SectorRecordAttachment[]
   whatsappIdentities  WhatsappIdentity[]
   aiTraces            AiTrace[]
   conversationStates  ConversationState[]
   memberships         Membership[]
   orgRoles            OrgRole[]
-  parentRelations     OrganizationRelation[] @relation("RelationChild")
-  childRelations      OrganizationRelation[] @relation("RelationParent")
+  parentRelations     OrganizationRelation[]   @relation("RelationChild")
+  childRelations      OrganizationRelation[]   @relation("RelationParent")
   invitations         Invitation[]
-  grantsGiven         AccessGrant[]          @relation("GrantGrantor")
-  grantsReceived      AccessGrant[]          @relation("GrantGranteeOrg")
+  grantsGiven         AccessGrant[]            @relation("GrantGrantor")
+  grantsReceived      AccessGrant[]            @relation("GrantGranteeOrg")
   assistanceRequests  AssistanceRequest[]
   documentRequests    DocumentRequest[]
   usageEvents         UsageEvent[]
@@ -126,6 +127,7 @@ model User {
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
   sectorRecords       SectorRecord[]
+  sectorAttachments   SectorRecordAttachment[]
   whatsappIdentity    WhatsappIdentity?
   conversationState   ConversationState?
   memberships         Membership[]
@@ -898,11 +900,35 @@ model SectorRecord {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  org      Tenant              @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  author   User?               @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  deadline ComplianceDeadline?
+  org         Tenant                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  author      User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  deadline    ComplianceDeadline?
+  attachments SectorRecordAttachment[]
 
   @@index([orgId, feature, occurredOn])
   @@index([orgId, feature, createdBy])
   @@map("sector_record")
+}
+
+/// A file attached to an entry of a sector register; the content is in the attachment storage.
+model SectorRecordAttachment {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  recordId    String   @map("record_id") @db.Uuid
+  fileName    String   @map("file_name")
+  /// Detected from the content, never taken from the client.
+  mimeType    String   @map("mime_type")
+  fileSize    Int      @map("file_size")
+  storagePath String   @map("storage_path")
+  contentHash String   @map("content_hash")
+  uploadedBy  String?  @map("uploaded_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  org      Tenant       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  record   SectorRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  uploader User?        @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([recordId])
+  @@index([orgId])
+  @@map("sector_record_attachment")
 }
