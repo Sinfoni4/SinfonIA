@@ -1185,3 +1185,32 @@
   font-size: 13px;
   white-space: nowrap;
 }
+
+/* Registers of the sector functions: a second line under the title, notes, deleting. */
+.ma-row-sub {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ma-muted);
+}
+
+.ma-row-when.error {
+  color: #ff8a80;
+}
+
+.ma-form textarea {
+  font: inherit;
+  font-size: 16px;
+  color: var(--ma-text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 11px 12px;
+  min-height: 88px;
+  resize: vertical;
+}
+
+.ma-primary.danger {
+  background: #c62828;
+  border-color: #c62828;
+}

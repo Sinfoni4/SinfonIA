@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { auditQuery, describeEvent, type AuditEvent } from '../api/organization';
+import { fieldBookPage, TREATMENT } from '../api/sector.fixture';
 import { App } from '../App';
 import { SessionProvider } from '../session/session';
 
@@ -296,6 +297,67 @@ describe('home (P11)', () => {
     expect(await screen.findByRole('heading', { name: 'Formazione e sicurezza' })).toBeTruthy();
     expect(screen.getByText('Corsi obbligatori e attestati in scadenza.')).toBeTruthy();
     expect(screen.getByText('in preparazione')).toBeTruthy();
+  });
+
+  it('shows the register of a built sector function and adds an entry', async () => {
+    const sectorFeatures = [
+      {
+        id: 'field_book',
+        label: 'Quaderno di campagna',
+        description: 'Registro dei trattamenti e delle lavorazioni.',
+        ready: true,
+        dashboard: true,
+        miniApp: false,
+      },
+    ];
+    api('OPERATOR', {
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'mario@coop.it',
+          organizations: [{ orgId: ORG, name: 'Azienda', role: 'OPERATOR' }],
+          current: { orgId: ORG, role: 'OPERATOR', sectorFeatures },
+        }),
+      'GET /sector/field_book/records': () => ok(fieldBookPage()),
+      'POST /sector/field_book/records': () => ({
+        status: 201,
+        body: { success: true, data: TREATMENT },
+      }),
+    });
+    openAt('/settore/field_book');
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Rame · Vite')).toBeTruthy();
+    expect(within(table).getByText(/Appezzamento: Vigna nord/)).toBeTruthy();
+    expect(within(table).getByText(/Unità: kg\/ha/)).toBeTruthy();
+    // Only the dashboard path: the register is off in the Mini App.
+    expect(calls.some((c) => c.path.startsWith('/miniapp/'))).toBe(false);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Nuova voce' }));
+    const form = screen.getByRole('form', { name: 'Nuova voce' });
+    await userEvent.click(within(form).getByRole('button', { name: 'Salva' }));
+    expect(await within(form).findByRole('alert')).toHaveProperty('textContent', 'Compila «Data».');
+    await userEvent.type(within(form).getByLabelText('Data *'), '2026-11-22');
+    await userEvent.type(within(form).getByLabelText('Appezzamento *'), 'Vigna sud');
+    await userEvent.type(within(form).getByLabelText('Coltura *'), 'Vite');
+    await userEvent.type(within(form).getByLabelText('Prodotto commerciale *'), 'Zolfo');
+    await userEvent.type(within(form).getByLabelText('Quantità'), '3,5');
+    await userEvent.selectOptions(within(form).getByLabelText('Unità'), 'kg_ha');
+    await userEvent.click(within(form).getByRole('button', { name: 'Salva' }));
+    await waitFor(() =>
+      expect(
+        requested('/sector/field_book/records').find((c) => c.method === 'POST')?.body,
+      ).toEqual({
+        kind: 'treatment',
+        data: {
+          date: '2026-11-22',
+          plot: 'Vigna sud',
+          crop: 'Vite',
+          product: 'Zolfo',
+          quantity: 3.5,
+          unit: 'kg_ha',
+        },
+      }),
+    );
   });
 
   it('sends home from the page of a sector function that is not on', async () => {

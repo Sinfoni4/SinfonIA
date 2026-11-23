@@ -1,3 +1,5 @@
+import { SECTOR_FEATURE_IDS, type SectorFeature } from '../../modules/registry.js';
+
 import type { UserRole } from '@prisma/client';
 
 /**
@@ -8,7 +10,7 @@ import type { UserRole } from '@prisma/client';
  * (exports). C3 (deletion) is still to be decided, see docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md.
  */
 
-export const PERMISSIONS = [
+const CORE_PERMISSIONS = [
   'practice.create',
   'practice.read',
   'practice.export',
@@ -36,7 +38,40 @@ export const PERMISSIONS = [
   'grant.use',
 ] as const;
 
-export type Permission = (typeof PERMISSIONS)[number];
+/**
+ * Each function of a sector (sector-features.ts) has two permissions of its own: reading its
+ * register and changing it. They are checked by the register itself, together with whether the
+ * function is on for the organization and the channel (dashboard or Mini App).
+ */
+export type SectorPermission = `${SectorFeature}.read` | `${SectorFeature}.manage`;
+
+export const SECTOR_PERMISSIONS: readonly SectorPermission[] = SECTOR_FEATURE_IDS.flatMap(
+  (f) => [`${f}.read`, `${f}.manage`] as const,
+);
+
+export const PERMISSIONS = [...CORE_PERMISSIONS, ...SECTOR_PERMISSIONS] as [
+  Permission,
+  ...Permission[],
+];
+
+export type Permission = (typeof CORE_PERMISSIONS)[number] | SectorPermission;
+
+/** The sector function and the operation of a sector permission; undefined for the others. */
+export function sectorPermissionOf(
+  permission: string,
+): { feature: SectorFeature; operation: 'read' | 'manage' } | undefined {
+  if (!(SECTOR_PERMISSIONS as readonly string[]).includes(permission)) return undefined;
+  const dot = permission.lastIndexOf('.');
+  return {
+    feature: permission.slice(0, dot) as SectorFeature,
+    operation: permission.slice(dot + 1) as 'read' | 'manage',
+  };
+}
+
+/** The sector permissions at one scope: staff work on the whole register, members on their own. */
+function sectorScopes(scope: PermissionScope): Partial<Record<Permission, PermissionScope>> {
+  return Object.fromEntries(SECTOR_PERMISSIONS.map((p) => [p, scope]));
+}
 
 /**
  * Objects a granted permission reaches: the caller's own ones, or the whole tenant. B2: a custom
@@ -49,6 +84,7 @@ export type PermissionScope = 'own' | 'assigned' | 'tenant';
 export const ASSIGNABLE: readonly Permission[] = ['practice.read', 'attachment.read'];
 
 const STAFF: Partial<Record<Permission, PermissionScope>> = {
+  ...sectorScopes('tenant'),
   'practice.create': 'own',
   'practice.read': 'tenant',
   'practice.export': 'tenant',
@@ -94,6 +130,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<Permission, Permi
   // MF9: operators of a network read its aggregate statistics (D4).
   OPERATOR: { ...STAFF, 'practice.export': 'own', 'network.stats': 'tenant' },
   MEMBER: {
+    // A member fills in the registers of the sector functions (e.g. a treatment from the field)
+    // and sees only the entries they wrote.
+    ...sectorScopes('own'),
     'practice.create': 'own',
     'practice.read': 'own',
     'practice.export': 'own',

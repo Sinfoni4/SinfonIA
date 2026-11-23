@@ -9,6 +9,7 @@ import { BrowserRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { describeFeed, weekOf } from '../api/miniapp';
+import { fieldBookPage, TREATMENT } from '../api/sector.fixture';
 import { App } from '../App';
 import { SessionProvider } from '../session/session';
 
@@ -264,6 +265,60 @@ describe('Telegram Mini App', () => {
     expect(await screen.findByRole('heading', { name: 'Quaderno di campagna' })).toBeTruthy();
     expect(screen.getByText('Registro dei trattamenti e delle lavorazioni.')).toBeTruthy();
     expect(screen.getByText(/In preparazione/)).toBeTruthy();
+  });
+
+  it('fills in the register of a built function from the phone, with today already set', async () => {
+    const sectorFeatures = [
+      {
+        id: 'field_book',
+        label: 'Quaderno di campagna',
+        description: 'Registro dei trattamenti e delle lavorazioni.',
+        ready: true,
+        dashboard: false,
+        miniApp: true,
+      },
+    ];
+    api({
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'anna@collio.it',
+          organizations: [
+            { orgId: ORG, name: 'Azienda Agricola Collio', role: 'MEMBER', type: 'COMPANY' },
+          ],
+          platform: false,
+          current: { orgId: ORG, role: 'MEMBER', sectorFeatures },
+        }),
+      'GET /miniapp/sector/field_book/records': () => ok(fieldBookPage()),
+      'POST /miniapp/sector/field_book/records': () => ({
+        status: 201,
+        body: { success: true, data: TREATMENT },
+      }),
+    });
+    openFromTelegram('/tg/settore/field_book');
+    expect(await screen.findByRole('button', { name: /Rame · Vite/ })).toBeTruthy();
+    expect(screen.getByText('20/11')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Nuova voce' }));
+    expect(await screen.findByRole('heading', { name: 'Nuova voce' })).toBeTruthy();
+    const todayIso = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    expect(screen.getByLabelText<HTMLInputElement>('Data *').value).toBe(todayIso);
+    await userEvent.type(screen.getByLabelText('Appezzamento *'), 'Vigna sud');
+    await userEvent.type(screen.getByLabelText('Coltura *'), 'Vite');
+    await userEvent.type(screen.getByLabelText('Prodotto commerciale *'), 'Zolfo');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === 'POST' && c.path === '/miniapp/sector/field_book/records')
+          ?.body,
+      ).toEqual({
+        kind: 'treatment',
+        data: { date: todayIso, plot: 'Vigna sud', crop: 'Vite', product: 'Zolfo' },
+      }),
+    );
+    // Back to the list after saving; never the dashboard's path.
+    expect(await screen.findByRole('button', { name: /Rame · Vite/ })).toBeTruthy();
+    expect(calls.some((c) => c.path.startsWith('/sector/'))).toBe(false);
   });
 
   it('keeps the home without the functions of the sector', async () => {

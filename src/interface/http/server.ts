@@ -27,6 +27,7 @@ import { networkRoutes } from './routes/network.routes.js';
 import { organizationRoutes } from './routes/organization.routes.js';
 import { platformRoutes } from './routes/platform.routes.js';
 import { practiceRoutes } from './routes/practice.routes.js';
+import { sectorRoutes } from './routes/sector.routes.js';
 import { webRoutes } from './routes/web.routes.js';
 import { whatsappRoutes, type WhatsAppRoutesOptions } from './routes/whatsapp.routes.js';
 
@@ -222,6 +223,10 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(attachmentReviewRoutes, { prisma: deps.prisma });
     void app.register(assistanceRoutes, { prisma: deps.prisma });
     void app.register(networkRoutes, { prisma: deps.prisma });
+    void app.register(sectorRoutes, {
+      prisma: deps.prisma,
+      ...(deps.complianceService ? { complianceService: deps.complianceService } : {}),
+    });
     void app.register(delegationRoutes, {
       prisma: deps.prisma,
       practiceService: deps.practiceService,
