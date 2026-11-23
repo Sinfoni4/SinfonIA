@@ -4,10 +4,17 @@
  * letters, leaves out emoji and splits long tables into pages.
  */
 import ExcelJS from 'exceljs';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { parseCsv, tableFile, tableFileName } from '../src/shared/table-file.js';
+import {
+  PDF_MAX_CELL_LINES,
+  parseCsv,
+  tableFile,
+  tableFileFromRows,
+  tableFileName,
+  wrapCell,
+} from '../src/shared/table-file.js';
 
 const CSV =
   '﻿"Data","Organizzazione","Tipo","Quantità","Partita IVA","Nota"\r\n' +
@@ -70,6 +77,44 @@ describe('Excel and PDF files', () => {
       ...Array.from({ length: 120 }, (_, i) => `"Pratica ${i}","2026"`),
     ];
     const file = await tableFile({ title: 'Pratiche', csv: long.join('\n'), format: 'pdf' });
+    expect((await PDFDocument.load(file.content)).getPageCount()).toBeGreaterThan(1);
+  });
+
+  it('wraps a long cell on more lines instead of cutting it', async () => {
+    const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+    const details =
+      'Appezzamento: Vigneto Ronc di Sotto · Quantità: 1,5 kg/ha · Superficie (ha): 2,4 · ' +
+      'Avversità: Peronospora · Operatore: Marco T. · Note: Dato dimostrativo';
+    const lines = wrapCell(font, details, 8, 150);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) expect(font.widthOfTextAtSize(line, 8)).toBeLessThanOrEqual(150);
+    // Nothing is lost: the lines give back the whole text.
+    expect(lines.join(' ')).toBe(details);
+    expect(wrapCell(font, 'breve', 8, 150)).toEqual(['breve']);
+    expect(wrapCell(font, '', 8, 150)).toEqual([]);
+  });
+
+  it('splits a word wider than the column and ends a cell too long with «…»', async () => {
+    const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+    const word = 'x'.repeat(80);
+    const split = wrapCell(font, word, 8, 60);
+    expect(split.length).toBeGreaterThan(1);
+    expect(split.join('')).toBe(word);
+
+    const long = Array.from({ length: 200 }, (_, i) => `parola${i}`).join(' ');
+    const capped = wrapCell(font, long, 8, 100);
+    expect(capped).toHaveLength(PDF_MAX_CELL_LINES);
+    expect(capped.at(-1)).toMatch(/…$/);
+    expect(font.widthOfTextAtSize(capped.at(-1) ?? '', 8)).toBeLessThanOrEqual(100);
+  });
+
+  it('writes a PDF whose rows take more lines, on more pages when needed', async () => {
+    const row = ['23/11/2026', 'Trattamento', 'Rame · Friulano', 'Dettaglio '.repeat(60)];
+    const file = await tableFileFromRows({
+      title: 'Quaderno',
+      rows: [['Data', 'Tipo', 'Voce', 'Dettagli'], ...Array.from({ length: 40 }, () => row)],
+      format: 'pdf',
+    });
     expect((await PDFDocument.load(file.content)).getPageCount()).toBeGreaterThan(1);
   });
 });

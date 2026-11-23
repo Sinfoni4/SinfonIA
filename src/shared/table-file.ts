@@ -122,6 +122,49 @@ function fit(font: PDFFont, text: string, size: number, width: number): string {
   return `${cut}…`;
 }
 
+/** Most lines a cell takes in the PDF: a longer text ends with «…». */
+export const PDF_MAX_CELL_LINES = 8;
+
+/**
+ * A cell's text broken into lines that fit the column, at the spaces; a word longer than the
+ * column is split. At most `maxLines` lines: the last one ends with «…» when text is left out.
+ */
+export function wrapCell(
+  font: PDFFont,
+  text: string,
+  size: number,
+  width: number,
+  maxLines = PDF_MAX_CELL_LINES,
+): string[] {
+  const fits = (s: string) => font.widthOfTextAtSize(s, size) <= width;
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const joined = line ? `${line} ${word}` : word;
+    if (fits(joined)) {
+      line = joined;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+    // A word wider than the column: split it where it no longer fits.
+    while (!fits(line) && line.length > 1) {
+      let cut = line.length - 1;
+      while (cut > 1 && !fits(line.slice(0, cut))) cut--;
+      lines.push(line.slice(0, cut));
+      line = line.slice(cut);
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  // The last kept line always ends with «…»: text follows it.
+  let last = kept[maxLines - 1];
+  while (last.length > 1 && !fits(`${last}…`)) last = last.slice(0, -1);
+  kept[maxLines - 1] = `${last}…`;
+  return kept;
+}
+
 async function toPdf(title: string, rows: Cell[][]): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   pdf.setTitle(title);
@@ -149,13 +192,22 @@ async function toPdf(title: string, rows: Cell[][]): Promise<Buffer> {
   let page: PDFPage = pdf.addPage(pageSize);
   let y = 0;
   let pageNumber = 0;
-  const drawRow = (cells: string[], f: PDFFont) => {
+  // A cell goes on more lines instead of being cut: the row is as tall as its longest cell.
+  const lineStep = size + 3;
+  const wrapRow = (cells: string[], f: PDFFont) =>
+    widths.map((w, i) => wrapCell(f, cells[i] ?? '', size, w - 6));
+  const rowHeight = (lines: string[][]) =>
+    Math.max(1, ...lines.map((l) => l.length)) * lineStep + (lineHeight - lineStep);
+  const drawRow = (lines: string[][], f: PDFFont) => {
     let x = margin;
-    cells.forEach((c, i) => {
-      page.drawText(fit(f, c, size, widths[i] - 6), { x: x + 3, y, size, font: f });
+    lines.forEach((cellLines, i) => {
+      cellLines.forEach((text, n) => {
+        page.drawText(text, { x: x + 3, y: y - n * lineStep, size, font: f });
+      });
       x += widths[i];
     });
   };
+  const headerLines = wrapRow(header, bold);
   const newPage = (first: boolean) => {
     if (!first) page = pdf.addPage(pageSize);
     pageNumber++;
@@ -174,7 +226,8 @@ async function toPdf(title: string, rows: Cell[][]): Promise<Buffer> {
       color: rgb(0.4, 0.4, 0.4),
     });
     y -= 24;
-    drawRow(header, bold);
+    drawRow(headerLines, bold);
+    y -= rowHeight(headerLines) - lineHeight;
     page.drawLine({
       start: { x: margin, y: y - 4 },
       end: { x: pageSize[0] - margin, y: y - 4 },
@@ -188,9 +241,19 @@ async function toPdf(title: string, rows: Cell[][]): Promise<Buffer> {
     page.drawText('Nessun dato.', { x: margin, y, size, font });
   }
   for (const r of data) {
-    if (y < margin + lineHeight) newPage(false);
-    drawRow(r, font);
-    y -= lineHeight;
+    const lines = wrapRow(r, font);
+    const height = rowHeight(lines);
+    // A row is never split across pages (a row taller than a page cannot happen: 8 lines at most).
+    if (y - height + lineHeight < margin + lineHeight) newPage(false);
+    drawRow(lines, font);
+    y -= height;
+    // A thin line between rows, so a row on more lines reads as one.
+    page.drawLine({
+      start: { x: margin, y: y + lineHeight - 4 },
+      end: { x: pageSize[0] - margin, y: y + lineHeight - 4 },
+      thickness: 0.25,
+      color: rgb(0.85, 0.85, 0.85),
+    });
   }
   return Buffer.from(await pdf.save());
 }
