@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 
+import { trustedProxies, type AppConfig } from '../../config/config.js';
 import { resolvePlatformPrincipal } from '../../core/authz/platform.js';
 import { parseUsageRates } from '../../core/usage/usage.service.js';
 import { runtimeState } from '../../runtime/runtime.state.js';
@@ -35,7 +36,6 @@ import type { ExecutorService } from '../../ai/execution/executor.service.js';
 import type { InterpreterService } from '../../ai/interpreter/interpreter.service.js';
 import type { NormalizerService } from '../../ai/normalization/normalizer.service.js';
 import type { AITracer } from '../../ai/tracing/ai.tracer.js';
-import type { AppConfig } from '../../config/config.js';
 import type { PrincipalResolver } from '../../core/authz/authorization.service.js';
 import type { Permission } from '../../core/authz/permissions.js';
 import type { ComplianceService } from '../../core/compliance/compliance.service.js';
@@ -102,6 +102,9 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
   const storage = deps.storage;
   const app = Fastify({
     loggerInstance: logger,
+    // Behind nginx: the real client address comes from X-Forwarded-For, believed only when the
+    // connection comes from a configured proxy (rate limits per address, logs).
+    trustProxy: trustedProxies(config),
   });
 
   // Request context and logging correlation (requestId).
