@@ -82,8 +82,13 @@ export type VerticalModule = {
 
 /** Validation of the `fields` of one practice type, built from its definition. */
 export function fieldsSchema(type: PracticeTypeDefinition) {
+  return fieldListSchema(type.fields);
+}
+
+/** Validation of a list of declared fields (practice types, registers of sector functions). */
+export function fieldListSchema(fields: readonly FieldDefinition[]) {
   const shape: Record<string, z.ZodType> = {};
-  for (const field of type.fields) {
+  for (const field of fields) {
     let schema: z.ZodType;
     switch (field.type) {
       case 'text':

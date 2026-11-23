@@ -178,14 +178,20 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
   it('never opens an object of another tenant through a route with an id', async () => {
     const withId = routes.filter((r) => r.url.includes(':id') && r.method !== 'HEAD');
     expect(withId.map((r) => `${String(r.method)} ${r.url}`).sort()).toEqual([
+      'DELETE /miniapp/sector/:feature/records/:id',
+      'DELETE /sector/:feature/records/:id',
       'GET /grants/:id/practices',
       'GET /grants/:id/practices/:practiceId',
       'GET /grants/:id/practices/:practiceId/attachments/:attachmentId/download',
+      'GET /miniapp/sector/:feature/records/:id',
       'GET /practices/:id',
       'GET /practices/:id/attachments',
       'GET /practices/:id/attachments/:attachmentId/download',
       'GET /practices/:id/checklist',
       'GET /practices/:id/document-requests',
+      'GET /sector/:feature/records/:id',
+      'PATCH /miniapp/sector/:feature/records/:id',
+      'PATCH /sector/:feature/records/:id',
       'POST /assistance/:id/close',
       'POST /assistance/:id/take',
       'POST /compliance/deadlines/:id/close',
@@ -223,6 +229,8 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'POST /practices/:id/transition',
     ]);
     const payloads: Record<string, unknown> = {
+      '/sector/:feature/records/:id': { data: {} },
+      '/miniapp/sector/:feature/records/:id': { data: {} },
       '/practices/:id/transition': { nextState: 'VALIDATED' },
       '/practices/:id/assign': { userId: null },
       '/practices/:id/holder': { userId: null },
@@ -269,10 +277,15 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
           ? ids.assistance
           : ids.practice;
       const res = await app.inject({
-        method: String(route.method) as 'GET' | 'POST',
-        url: route.url.replace(':id', id).replace(/:[a-zA-Z]+/g, () => randomUUID()),
+        method: String(route.method) as 'GET' | 'POST' | 'PATCH' | 'DELETE',
+        url: route.url
+          .replace(':feature', 'field_book')
+          .replace(':id', id)
+          .replace(/:[a-zA-Z]+/g, () => randomUUID()),
         headers: authHeaders(other.tenantId, other.adminId, 'ADMIN'),
-        ...(route.method === 'POST' ? { payload: payloads[route.url] ?? {} } : {}),
+        ...(route.method === 'POST' || route.method === 'PATCH'
+          ? { payload: payloads[route.url] ?? {} }
+          : {}),
       });
       expect([403, 404], `${String(route.method)} ${route.url}`).toContain(res.statusCode);
     }

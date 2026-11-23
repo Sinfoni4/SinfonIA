@@ -557,7 +557,7 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
       expect([401, 403]).toContain((await put('field_book', true, farm())).statusCode);
       expect((await put('teleport', true)).statusCode).toBe(400);
       expect((await put('field_book', 'yes')).statusCode).toBe(400);
-      const wrongSector = await put('trade_licenses', true);
+      const wrongSector = await put('grants', true);
       expect(wrongSector.statusCode).toBe(409);
       const on = await put('field_book', true);
       expect(on.statusCode).toBe(200);
@@ -571,7 +571,7 @@ describe.runIf(Boolean(DATABASE_URL))('platform console (FE7)', () => {
             data: { current: { sectorFeatures: Array<{ id: string; ready: boolean }> } };
           }>()
           .data.current.sectorFeatures.map((f) => [f.id, f.ready]),
-      ).toEqual([['field_book', false]]);
+      ).toEqual([['field_book', true]]);
       const where = async () =>
         (await get('/auth/me', farm())).json<{
           data: { current: { sectorFeatures: Array<{ dashboard: boolean; miniApp: boolean }> } };

@@ -1,3 +1,5 @@
+import { FIELD_BOOK_RECORDS, LICENSE_RECORDS, type SectorRecordKind } from './sector-records.js';
+
 import type { ModuleId } from '../core/modules/module.contract.js';
 
 /**
@@ -11,8 +13,8 @@ import type { ModuleId } from '../core/modules/module.contract.js';
  * the organization's own module count, so changing the sector hides the others.
  *
  * `ready: false` marks a function still being built: it can already be turned on, and the
- * dashboard and the Mini App show it as «in preparazione». When it is built, its permissions go
- * through `authorize()` like the common functions.
+ * dashboard and the Mini App show it as «in preparazione». A built function has a register
+ * (`records`, sector-records.ts) and two permissions of its own, `<id>.read` and `<id>.manage`.
  */
 export type SectorFeatureDefinition = {
   id: string;
@@ -21,6 +23,8 @@ export type SectorFeatureDefinition = {
   description: string;
   modules: readonly ModuleId[];
   ready: boolean;
+  /** The kinds of entry of its register; only for a built function. */
+  records?: readonly SectorRecordKind[];
 };
 
 export const SECTOR_FEATURES = [
@@ -38,7 +42,8 @@ export const SECTOR_FEATURES = [
     description:
       'Registro dei trattamenti e delle lavorazioni per appezzamento, da compilare anche dal telefono.',
     modules: ['agri'],
-    ready: false,
+    ready: true,
+    records: FIELD_BOOK_RECORDS,
   },
   {
     id: 'cap_file',
@@ -66,15 +71,17 @@ export const SECTOR_FEATURES = [
     label: 'Formazione e sicurezza',
     description:
       'Corsi obbligatori (sicurezza, primo soccorso, antincendio) e attestati in scadenza per ogni addetto.',
-    modules: ['artisan'],
+    modules: ['agri', 'artisan'],
     ready: false,
   },
   {
     id: 'trade_licenses',
     label: 'Abilitazioni e patentini',
-    description: 'Abilitazioni di mestiere (impianti, F-gas, patentini) con documenti e rinnovi.',
-    modules: ['artisan'],
-    ready: false,
+    description:
+      'Patentini e abilitazioni delle persone (fitosanitari, macchine, impianti, F-gas) con le scadenze di rinnovo.',
+    modules: ['agri', 'artisan'],
+    ready: true,
+    records: LICENSE_RECORDS,
   },
   {
     id: 'grants',
@@ -114,6 +121,11 @@ export function isSectorFeature(value: string): value is SectorFeature {
 
 export function sectorFeature(id: string): SectorFeatureDefinition | undefined {
   return BY_ID.get(id);
+}
+
+/** The kind of entry of a function's register, if both exist. */
+export function sectorRecordKind(feature: string, kind: string): SectorRecordKind | undefined {
+  return BY_ID.get(feature)?.records?.find((r) => r.kind === kind);
 }
 
 /** Whether a function of a sector exists for organizations of this module. */

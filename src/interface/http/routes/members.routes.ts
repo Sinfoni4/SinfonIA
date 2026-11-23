@@ -7,7 +7,11 @@ import {
   setMemberCustomRole,
   updateCustomRole,
 } from '../../../core/authz/custom-roles.service.js';
-import { PERMISSIONS, ROLE_PERMISSIONS } from '../../../core/authz/permissions.js';
+import {
+  PERMISSIONS,
+  ROLE_PERMISSIONS,
+  sectorPermissionOf,
+} from '../../../core/authz/permissions.js';
 import {
   setScheduledExport,
   setTenantScope,
@@ -20,6 +24,7 @@ import {
   revokeMembership,
 } from '../../../core/identity/revocation.service.js';
 import { NotFoundError } from '../../../data/errors/errors.js';
+import { sectorFeature, sectorFeatureApplies } from '../../../modules/registry.js';
 import { requirePermission, requirePrincipal } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
@@ -406,8 +411,27 @@ export const membersRoutes: FastifyPluginCallback<MembersRoutesDeps> = (app, dep
   // What each base role allows, to build a custom role from it.
   app.get('/roles/catalog', { config: { permission: 'members.manage' } }, async (req, reply) => {
     try {
-      requirePermission(req, 'members.manage');
-      return reply.send(ok(ROLE_PERMISSIONS));
+      const { principal } = requirePermission(req, 'members.manage');
+      // Only the permissions of the sector functions built for the organization's sector.
+      const tenant = await deps.prisma.tenant.findUnique({
+        where: { id: principal.tenantId },
+        select: { module: true },
+      });
+      const shown = (permission: string) => {
+        const sector = sectorPermissionOf(permission);
+        if (!sector) return true;
+        const definition = sectorFeature(sector.feature);
+        return (
+          definition?.ready === true && sectorFeatureApplies(sector.feature, tenant?.module ?? '')
+        );
+      };
+      const catalog = Object.fromEntries(
+        Object.entries(ROLE_PERMISSIONS).map(([role, permissions]) => [
+          role,
+          Object.fromEntries(Object.entries(permissions).filter(([p]) => shown(p))),
+        ]),
+      );
+      return reply.send(ok(catalog));
     } catch (err: unknown) {
       const mapped = mapErrorToHttp(err);
       return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

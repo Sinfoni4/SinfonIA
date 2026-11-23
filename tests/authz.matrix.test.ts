@@ -11,13 +11,40 @@ import {
   PermissionDeniedError,
   scopedUserId,
 } from '../src/core/authz/authorization.service.js';
-import { PERMISSIONS, type Permission } from '../src/core/authz/permissions.js';
+import {
+  PERMISSIONS,
+  type Permission,
+  type SectorPermission,
+} from '../src/core/authz/permissions.js';
 
 import type { UserRole } from '@prisma/client';
 
 type Expected = 'tenant' | 'own' | 'denied';
 
+// Functions of a sector: staff read and change the whole register, members only their entries.
+const SECTOR_FUNCTIONS = [
+  'risk_assessment',
+  'field_book',
+  'cap_file',
+  'farm_fuel',
+  'organic_certification',
+  'training_safety',
+  'trade_licenses',
+  'grants',
+  'business_startup',
+  'waste_records',
+] as const;
+const SECTOR_EXPECTED = Object.fromEntries(
+  SECTOR_FUNCTIONS.flatMap((f) =>
+    (['read', 'manage'] as const).map((op) => [
+      `${f}.${op}`,
+      { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
+    ]),
+  ),
+) as Record<SectorPermission, Record<UserRole, Expected>>;
+
 const EXPECTED: Record<Permission, Record<UserRole, Expected>> = {
+  ...SECTOR_EXPECTED,
   'practice.create': { ADMIN: 'own', OPERATOR: 'own', MEMBER: 'own' },
   'practice.read': { ADMIN: 'tenant', OPERATOR: 'tenant', MEMBER: 'own' },
   'practice.export': { ADMIN: 'tenant', OPERATOR: 'own', MEMBER: 'own' },

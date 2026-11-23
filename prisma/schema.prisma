@@ -60,6 +60,7 @@ model Tenant {
   attachments         PracticeAttachment[]
   complianceDeadlines ComplianceDeadline[]
   complianceReminders ComplianceReminder[]
+  sectorRecords       SectorRecord[]
   whatsappIdentities  WhatsappIdentity[]
   aiTraces            AiTrace[]
   conversationStates  ConversationState[]
@@ -124,6 +125,7 @@ model User {
   practices           Practice[]
   auditLogs           AuditLog[]
   complianceDeadlines ComplianceDeadline[]
+  sectorRecords       SectorRecord[]
   whatsappIdentity    WhatsappIdentity?
   conversationState   ConversationState?
   memberships         Membership[]
@@ -353,9 +355,13 @@ model ComplianceDeadline {
   createdAt DateTime                 @default(now()) @map("created_at")
   updatedAt DateTime                 @updatedAt @map("updated_at")
 
-  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
-  reminders ComplianceReminder[]
+  /// The entry of a sector register this deadline follows (its expiry), if any.
+  sectorRecordId String? @unique @map("sector_record_id") @db.Uuid
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sectorRecord SectorRecord?        @relation(fields: [sectorRecordId], references: [id], onDelete: Cascade)
+  reminders    ComplianceReminder[]
 
   @@index([tenantId, status, dueDate])
   @@index([status, dueDate])
@@ -874,4 +880,29 @@ model UsageEvent {
   @@index([actorOrgId, occurredAt])
   @@index([occurredAt])
   @@map("usage_event")
+}
+
+/// One entry of the register of a function of a sector (src/modules/sector-records.ts).
+model SectorRecord {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  feature    String
+  kind       String
+  title      String
+  /// The fields declared for the kind, validated by the application.
+  data       Json      @default("{}")
+  occurredOn DateTime? @map("occurred_on") @db.Date
+  dueDate    DateTime? @map("due_date") @db.Date
+  createdBy  String?   @map("created_by") @db.Uuid
+  updatedBy  String?   @map("updated_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  org      Tenant              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  author   User?               @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  deadline ComplianceDeadline?
+
+  @@index([orgId, feature, occurredOn])
+  @@index([orgId, feature, createdBy])
+  @@map("sector_record")
 }

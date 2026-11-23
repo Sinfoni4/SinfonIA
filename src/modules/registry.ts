@@ -64,9 +64,11 @@ export {
   sectorFeatureApplies,
   sectorFeaturesOf,
   sectorFeaturesOn,
+  sectorRecordKind,
   SECTOR_CHANNELS,
   type ActiveSectorFeature,
   type SectorChannel,
   type SectorFeature,
   type SectorFeatureDefinition,
 } from './sector-features.js';
+export type { SectorRecordKind } from './sector-records.js';

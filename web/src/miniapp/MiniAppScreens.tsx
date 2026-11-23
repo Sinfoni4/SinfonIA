@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 
-import { describeError, miniAppSectorFeatures, ROLE_LABELS, type Me } from '../api/client';
+import { describeError, ROLE_LABELS, type Me } from '../api/client';
 import { logoSrc, type OrganizationLogo } from '../api/logo';
 import {
   deadlineWhen,
@@ -284,32 +284,6 @@ function initials(name: string): string {
     .filter((w) => w.length > 2 || /^\p{Lu}/u.test(w));
   const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? '?').slice(0, 2);
   return letters.toUpperCase();
-}
-
-/** A function of the sector turned on from the console; «in preparazione» while it is built. */
-export function SectorScreen({ me }: { me: Me }) {
-  const { featureId } = useParams();
-  const feature = miniAppSectorFeatures(me).find((f) => f.id === featureId);
-  if (!feature) return <Navigate to="/tg" replace />;
-  return (
-    <>
-      <header className="ma-panel-head">
-        <Link to="/tg" className="ma-iconbtn" aria-label="Torna a Oggi">
-          <BackIcon />
-        </Link>
-        <h1>{feature.label}</h1>
-        <span style={{ width: 44 }} aria-hidden="true" />
-      </header>
-      <section className="ma-list" aria-label={feature.label}>
-        <p>{feature.description}</p>
-        {!feature.ready && (
-          <p className="ma-muted">
-            In preparazione: la tua organizzazione l’ha attivata e comparirà qui appena pronta.
-          </p>
-        )}
-      </section>
-    </>
-  );
 }
 
 /** «Le mie pratiche»: the practices in progress, each opening its page. */
