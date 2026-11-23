@@ -37,8 +37,17 @@ export type SectorRecord = {
   daysLeft: number | null;
   author: { id: string; email: string } | null;
   mine: boolean;
+  attachments: SectorAttachment[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type SectorAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
 };
 
 export type SectorRegisterPage = {
@@ -136,4 +145,48 @@ export function missingRequired(
   values: Record<string, string>,
 ): SectorField | undefined {
   return kind.fields.find((f) => f.required && !(values[f.key] ?? '').trim());
+}
+
+export type SectorExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/** The register as a file, with the filters of the page (not its page and size). */
+export function sectorExportPath(
+  channel: SectorChannel,
+  feature: string,
+  format: SectorExportFormat,
+  filters: SectorFilters,
+): string {
+  const query = sectorRecordsQuery(channel, feature, {
+    ...filters,
+    page: undefined,
+    limit: undefined,
+  }).split('?')[1];
+  return `${sectorPath(channel, feature)}/export?format=${format}${query ? `&${query}` : ''}`;
+}
+
+/** The address of a file of an entry. */
+export function sectorFilePath(
+  channel: SectorChannel,
+  feature: string,
+  recordId: string,
+  attachmentId?: string,
+): string {
+  const base = `${sectorPath(channel, feature, recordId)}/attachments`;
+  return attachmentId ? `${base}/${encodeURIComponent(attachmentId)}` : base;
+}
+
+/** Saves a downloaded file on the device, never opening it in the page. */
+export function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/** A file size for people: «820 kB», «2,4 MB». */
+export function fileSizeLabel(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`;
+  return `${(bytes / 1024 / 1024).toLocaleString('it-IT', { maximumFractionDigits: 1 })} MB`;
 }

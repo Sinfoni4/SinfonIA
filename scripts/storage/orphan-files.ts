@@ -50,7 +50,10 @@ export async function orphanReport(client: pg.Client, storageDir: string): Promi
   try {
     paths = new Set(
       (
-        await client.query<{ storage_path: string }>('SELECT storage_path FROM practice_attachment')
+        await client.query<{ storage_path: string }>(
+          `SELECT storage_path FROM practice_attachment
+           UNION ALL SELECT storage_path FROM sector_record_attachment`,
+        )
       ).rows.map((r) => r.storage_path),
     );
     organizations = new Set(

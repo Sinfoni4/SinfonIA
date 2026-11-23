@@ -360,6 +360,74 @@ describe('home (P11)', () => {
     );
   });
 
+  it('exports the register with its filters and adds a file to an entry', async () => {
+    const sectorFeatures = [
+      {
+        id: 'field_book',
+        label: 'Quaderno di campagna',
+        description: 'Registro dei trattamenti e delle lavorazioni.',
+        ready: true,
+        dashboard: true,
+        miniApp: false,
+      },
+    ];
+    const withFile = {
+      ...TREATMENT,
+      attachments: [
+        {
+          id: 'f0000000-0000-4000-8000-000000000001',
+          fileName: 'fattura-rame.pdf',
+          mimeType: 'application/pdf',
+          fileSize: 84_000,
+          createdAt: '2026-11-20T09:00:00.000Z',
+        },
+      ],
+    };
+    const created = vi.fn(() => 'blob:x');
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: created, revokeObjectURL: vi.fn() }),
+    );
+    api('ADMIN', {
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'mario@coop.it',
+          organizations: [{ orgId: ORG, name: 'Azienda', role: 'ADMIN' }],
+          current: { orgId: ORG, role: 'ADMIN', sectorFeatures },
+        }),
+      'GET /sector/field_book/records': () => ok(fieldBookPage()),
+      'GET /sector/field_book/records/export': () => ok({}),
+      [`POST /sector/field_book/records/${TREATMENT.id}/attachments`]: () => ({
+        status: 201,
+        body: { success: true, data: withFile },
+      }),
+    });
+    openAt('/settore/field_book');
+    await screen.findByRole('table');
+    await userEvent.type(screen.getByLabelText('Cerca'), 'rame');
+    await userEvent.click(screen.getByRole('button', { name: 'Esporta in PDF' }));
+    await waitFor(() => expect(created).toHaveBeenCalled());
+    const exported = requested('/sector/field_book/records/export')[0];
+    expect(exported.query.get('format')).toBe('pdf');
+    expect(exported.query.get('search')).toBe('rame');
+    expect(exported.query.has('page')).toBe(false);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica Rame · Vite' }));
+    const files = screen.getByRole('region', { name: 'File allegati' });
+    expect(within(files).getByText('Nessun file allegato a questa voce.')).toBeTruthy();
+    await userEvent.upload(
+      within(files).getByLabelText('Aggiungi un file (PDF o foto)'),
+      new File(['%PDF-1.4'], 'fattura-rame.pdf', { type: 'application/pdf' }),
+    );
+    await userEvent.click(within(files).getByRole('button', { name: 'Carica' }));
+    expect(await within(files).findByText('fattura-rame.pdf')).toBeTruthy();
+    expect(within(files).getByText('82 kB')).toBeTruthy();
+    expect(
+      requested(`/sector/field_book/records/${TREATMENT.id}/attachments`).map((c) => c.method),
+    ).toEqual(['POST']);
+  });
+
   it('sends home from the page of a sector function that is not on', async () => {
     api('MEMBER', {});
     openAt('/settore/field_book');

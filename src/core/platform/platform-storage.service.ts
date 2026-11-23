@@ -77,12 +77,16 @@ export async function storageHealth(
   if (!storageDir) return { driver: 's3', ...base, disk: null };
 
   if (!diskCache || diskCache.key !== storageDir || now.getTime() - diskCache.at > DISK_CHECK_MS) {
-    const [onDisk, rows] = await Promise.all([
+    // Files of practices and of the entries of the sector registers are both referenced.
+    const [onDisk, rows, sectorRows] = await Promise.all([
       filesUnder(storageDir),
       prisma.practiceAttachment.findMany({ select: { storagePath: true } }),
+      prisma.sectorRecordAttachment.findMany({ select: { storagePath: true } }),
     ]);
     const files = new Set(onDisk);
-    const referenced = new Set(rows.map((r) => r.storagePath.replace(/\\/g, '/')));
+    const referenced = new Set(
+      [...rows, ...sectorRows].map((r) => r.storagePath.replace(/\\/g, '/')),
+    );
     diskCache = {
       key: storageDir,
       at: now.getTime(),

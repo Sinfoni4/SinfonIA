@@ -12,6 +12,8 @@ import {
   type SectorRecord,
   type SectorRecordKind,
   type SectorRegisterPage,
+  fileSizeLabel,
+  sectorFilePath,
 } from '../api/sector';
 import { useSession } from '../session/session';
 
@@ -111,6 +113,17 @@ function SectorRegisterScreen({ me, featureId }: { me: Me; featureId: string }) 
             canManage={register.canManage}
             onDone={saved}
           />
+          {view.mode === 'edit' && (
+            <EntryFiles
+              featureId={featureId}
+              record={view.record}
+              canManage={register.canManage}
+              onChange={async (record) => {
+                setView({ mode: 'edit', record });
+                await queryClient.invalidateQueries({ queryKey: key });
+              }}
+            />
+          )}
         </section>
       </>
     );
@@ -318,5 +331,72 @@ function EntryForm({
           </button>
         ))}
     </form>
+  );
+}
+
+/**
+ * The files of an entry in the Mini App: what is attached, and a photo or a PDF to add (the
+ * camera opens on the phone). Downloading is in the dashboard.
+ */
+function EntryFiles({
+  featureId,
+  record,
+  canManage,
+  onChange,
+}: {
+  featureId: string;
+  record: SectorRecord;
+  canManage: boolean;
+  onChange: (record: SectorRecord) => Promise<void>;
+}) {
+  const { api } = useSession();
+  const [inputKey, setInputKey] = useState(0);
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return api<SectorRecord>(sectorFilePath('miniapp', featureId, record.id), {
+        method: 'POST',
+        form,
+      });
+    },
+    onSuccess: async (updated) => {
+      setInputKey((k) => k + 1);
+      await onChange(updated);
+    },
+  });
+  return (
+    <div className="ma-form" aria-label="File allegati">
+      <h2>File allegati</h2>
+      {record.attachments.length === 0 ? (
+        <p className="ma-muted">Nessun file.</p>
+      ) : (
+        record.attachments.map((a) => (
+          <p key={a.id} className="ma-message">
+            📎 {a.fileName} · {fileSizeLabel(a.fileSize)}
+          </p>
+        ))
+      )}
+      {canManage && (
+        <label>
+          {upload.isPending ? 'Caricamento…' : 'Aggiungi una foto o un PDF'}
+          <input
+            key={inputKey}
+            type="file"
+            accept="image/*,application/pdf"
+            disabled={upload.isPending}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) upload.mutate(file);
+            }}
+          />
+        </label>
+      )}
+      {upload.isError && (
+        <p className="ma-message error" role="alert">
+          {describeError(upload.error)}
+        </p>
+      )}
+    </div>
   );
 }

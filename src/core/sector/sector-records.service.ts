@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+
+import { detectFileKind } from '../../ai/ocr/text-extraction.js';
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
@@ -15,9 +18,14 @@ import {
 } from '../../modules/registry.js';
 import { authorize, type Grant, type Principal } from '../authz/authorization.service.js';
 import { daysUntil, parseIsoDate, toIsoDate, todayInRome } from '../compliance/compliance.dates.js';
+import { FeatureDisabledError, featureEnabled } from '../features/features.js';
 import { fieldListSchema } from '../modules/module.contract.js';
 
+import { registerTable, type RegisterExportFormat } from './sector-records.export.js';
+
+import type { StorageService } from '../../data/storage/storage.service.js';
 import type { PrismaTx } from '../../data/types/prisma.js';
+import type { TableFile } from '../../shared/table-file.js';
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
@@ -57,8 +65,17 @@ export type SectorRecordView = {
   daysLeft: number | null;
   author: { id: string; email: string } | null;
   mine: boolean;
+  attachments: SectorAttachmentView[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type SectorAttachmentView = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
 };
 
 export type SectorRegisterPage = {
@@ -179,9 +196,15 @@ function kindOf(access: Access, kind: string): SectorRecordKind {
   return found;
 }
 
-type RecordRow = Prisma.SectorRecordGetPayload<{
-  include: { author: { select: { id: true; email: true } } };
-}>;
+const INCLUDE = {
+  author: { select: { id: true, email: true } },
+  attachments: {
+    select: { id: true, fileName: true, mimeType: true, fileSize: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  },
+} as const satisfies Prisma.SectorRecordInclude;
+
+type RecordRow = Prisma.SectorRecordGetPayload<{ include: typeof INCLUDE }>;
 
 function toView(row: RecordRow, access: Access, today: string): SectorRecordView {
   const kind = access.definition.records.find((r) => r.kind === row.kind);
@@ -197,6 +220,13 @@ function toView(row: RecordRow, access: Access, today: string): SectorRecordView
     daysLeft: row.dueDate ? daysUntil(row.dueDate, today) : null,
     author: row.author ? { id: row.author.id, email: row.author.email } : null,
     mine: row.createdBy === access.grant.principal.userId,
+    attachments: row.attachments.map((a) => ({
+      id: a.id,
+      fileName: a.fileName,
+      mimeType: a.mimeType,
+      fileSize: a.fileSize,
+      createdAt: a.createdAt.toISOString(),
+    })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -212,7 +242,50 @@ function reach(access: Access): Prisma.SectorRecordWhereInput {
   };
 }
 
-const AUTHOR = { author: { select: { id: true, email: true } } } as const;
+export type SectorFilters = {
+  kind?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+  expiringWithinDays?: number;
+};
+
+/** The entries a grant reaches, narrowed by the filters of the register. */
+function filterWhere(
+  access: Access,
+  input: SectorFilters,
+  today: string,
+): Prisma.SectorRecordWhereInput {
+  const where: Prisma.SectorRecordWhereInput = { ...reach(access) };
+  if (input.kind) where.kind = kindOf(access, input.kind).kind;
+  const from = input.from ? parseIsoDate(input.from) : null;
+  const to = input.to ? parseIsoDate(input.to) : null;
+  if ((input.from && !from) || (input.to && !to)) {
+    throw new SectorRecordError('Le date del filtro devono essere AAAA-MM-GG');
+  }
+  if (from || to) {
+    where.occurredOn = { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
+  }
+  if (input.expiringWithinDays !== undefined) {
+    const horizon = parseIsoDate(today)!;
+    horizon.setUTCDate(horizon.getUTCDate() + input.expiringWithinDays);
+    where.dueDate = { not: null, lte: horizon };
+  }
+  const search = input.search?.trim().slice(0, SEARCH_MAX);
+  if (search) where.title = { contains: search, mode: 'insensitive' };
+  return where;
+}
+
+/** Files an entry accepts: documents and photos, recognized from their content. */
+const ATTACHMENT_MIME: Partial<Record<string, string>> = {
+  pdf: 'application/pdf',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+const MAX_ATTACHMENTS_PER_RECORD = 10;
+const MAX_EXPORT_ROWS = 10_000;
+const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 
 export class SectorRecordService {
   constructor(
@@ -221,6 +294,9 @@ export class SectorRecordService {
       clock?: () => Date;
       /** Reminds a deadline at once when it is already close (the compliance service). */
       remindNow?: (input: { tenantId: string; deadlineId: string }) => Promise<unknown>;
+      /** Where the files of the entries are kept; without it, entries take no files. */
+      storage?: StorageService;
+      maxAttachmentBytes?: number;
     } = {},
   ) {}
 
@@ -253,28 +329,13 @@ export class SectorRecordService {
     const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
     const page = Math.max(input.page ?? 1, 1);
     const today = this.today();
-    const where: Prisma.SectorRecordWhereInput = { ...reach(access) };
-    if (input.kind) where.kind = kindOf(access, input.kind).kind;
-    const from = input.from ? parseIsoDate(input.from) : null;
-    const to = input.to ? parseIsoDate(input.to) : null;
-    if ((input.from && !from) || (input.to && !to)) {
-      throw new SectorRecordError('Le date del filtro devono essere AAAA-MM-GG');
-    }
-    if (from || to)
-      where.occurredOn = { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
-    if (input.expiringWithinDays !== undefined) {
-      const horizon = parseIsoDate(today)!;
-      horizon.setUTCDate(horizon.getUTCDate() + input.expiringWithinDays);
-      where.dueDate = { not: null, lte: horizon };
-    }
-    const search = input.search?.trim().slice(0, SEARCH_MAX);
-    if (search) where.title = { contains: search, mode: 'insensitive' };
+    const where = filterWhere(access, input, today);
 
     const [total, rows] = await Promise.all([
       this.prisma.sectorRecord.count({ where }),
       this.prisma.sectorRecord.findMany({
         where,
-        include: AUTHOR,
+        include: INCLUDE,
         orderBy:
           input.expiringWithinDays !== undefined
             ? [{ dueDate: 'asc' }, { createdAt: 'desc' }]
@@ -321,7 +382,7 @@ export class SectorRecordService {
     );
     const row = await this.prisma.sectorRecord.findFirst({
       where: { ...reach(access), id: input.id },
-      include: AUTHOR,
+      include: INCLUDE,
     });
     if (!row) throw new NotFoundError('Voce non trovata');
     return toView(row, access, this.today());
@@ -421,11 +482,16 @@ export class SectorRecordService {
     );
     const existing = await this.prisma.sectorRecord.findFirst({
       where: { ...reach(access), id: input.id },
-      select: { id: true, feature: true, kind: true },
+      select: {
+        id: true,
+        feature: true,
+        kind: true,
+        attachments: { select: { storagePath: true } },
+      },
     });
     if (!existing) throw new NotFoundError('Voce non trovata');
     await withTransaction(this.prisma, async (tx) => {
-      // Its deadline goes with it (ON DELETE CASCADE), reminders included.
+      // Its deadline and its list of files go with it (ON DELETE CASCADE), reminders included.
       await tx.sectorRecord.delete({ where: { id: existing.id } });
       await new AuditService(tx).logEvent({
         tenantId: principal.tenantId,
@@ -439,6 +505,220 @@ export class SectorRecordService {
         },
       });
     });
+    // The files after the commit: a file left behind is an orphan the console reports, never a
+    // row pointing to nothing.
+    for (const file of existing.attachments) {
+      await this.deleteFile(principal.tenantId, file.storagePath);
+    }
+  }
+
+  /**
+   * The register as a file: CSV and Excel with every field, PDF with the main columns for a
+   * check. The same entries the caller reads (members: their own), with the filters of the page;
+   * refused when the organization's exports are off. At most 10,000 entries.
+   */
+  async export(
+    principal: Principal,
+    input: SectorFilters & {
+      feature: string;
+      channel: SectorChannel;
+      format: RegisterExportFormat;
+    },
+  ): Promise<TableFile & { count: number }> {
+    const access = await authorizeSector(
+      this.prisma,
+      principal,
+      input.feature,
+      'read',
+      input.channel,
+    );
+    if (!featureEnabled(principal.disabledFeatures, 'exports')) {
+      throw new FeatureDisabledError('exports', access.grant.permission);
+    }
+    const today = this.today();
+    const where = filterWhere(access, input, today);
+    const total = await this.prisma.sectorRecord.count({ where });
+    if (total > MAX_EXPORT_ROWS) {
+      throw new SectorRecordError(
+        `Troppe voci da esportare (${total}): restringi il periodo, al massimo ${MAX_EXPORT_ROWS}`,
+        409,
+        'EXPORT_TOO_LARGE',
+      );
+    }
+    const rows = await this.prisma.sectorRecord.findMany({
+      where,
+      include: INCLUDE,
+      orderBy: [{ occurredOn: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+    });
+    const file = await registerTable({
+      label: access.definition.label,
+      kinds: access.definition.records,
+      records: rows.map((r) => toView(r, access, today)),
+      format: input.format,
+      today,
+    });
+    await new AuditService(this.prisma).logEvent({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: 'SECTOR_RECORDS_EXPORTED',
+      payload: {
+        feature: access.definition.id,
+        format: input.format,
+        count: rows.length,
+        scope: access.grant.scope,
+        channel: input.channel,
+      },
+    });
+    return { ...file, count: rows.length };
+  }
+
+  private async deleteFile(tenantId: string, storagePath: string): Promise<void> {
+    await this.options.storage?.delete(tenantId, storagePath).catch(() => undefined);
+  }
+
+  /** The entry the caller reaches for this operation, or NotFoundError. */
+  private async reachable(
+    principal: Principal,
+    input: { feature: string; channel: SectorChannel; id: string },
+    operation: 'read' | 'manage',
+  ) {
+    const access = await authorizeSector(
+      this.prisma,
+      principal,
+      input.feature,
+      operation,
+      input.channel,
+    );
+    const record = await this.prisma.sectorRecord.findFirst({
+      where: { ...reach(access), id: input.id },
+      select: { id: true, feature: true, kind: true, _count: { select: { attachments: true } } },
+    });
+    if (!record) throw new NotFoundError('Voce non trovata');
+    return { access, record };
+  }
+
+  /**
+   * Attaches a file to an entry: a PDF or a photo (JPEG, PNG, WEBP), recognized from its content
+   * whatever its name says, within the size limit and at most 10 per entry.
+   */
+  async addAttachment(
+    principal: Principal,
+    input: {
+      feature: string;
+      channel: SectorChannel;
+      id: string;
+      fileName: string;
+      content: Buffer;
+    },
+  ): Promise<SectorRecordView> {
+    // Access first: nothing about the server is told to someone who cannot reach the entry.
+    const { record } = await this.reachable(principal, input, 'manage');
+    const storage = this.options.storage;
+    if (!storage) throw new SectorRecordError('Archivio dei file non configurato', 409);
+    const max = this.options.maxAttachmentBytes ?? DEFAULT_MAX_BYTES;
+    if (input.content.length === 0) throw new SectorRecordError('Il file è vuoto');
+    if (input.content.length > max) {
+      throw new SectorRecordError(
+        `Il file supera il limite di ${Math.round((max / 1024 / 1024) * 10) / 10} MB`,
+        400,
+        'ATTACHMENT_TOO_LARGE',
+      );
+    }
+    const kind = detectFileKind(input.content);
+    const mimeType = kind ? ATTACHMENT_MIME[kind] : undefined;
+    if (!mimeType) {
+      throw new SectorRecordError(
+        'Formato non ammesso: carica un PDF o una foto (JPEG, PNG, WEBP)',
+        400,
+        'UNSUPPORTED_MEDIA_TYPE',
+      );
+    }
+    if (record._count.attachments >= MAX_ATTACHMENTS_PER_RECORD) {
+      throw new SectorRecordError(
+        `Una voce può avere al massimo ${MAX_ATTACHMENTS_PER_RECORD} file`,
+        409,
+        'TOO_MANY_ATTACHMENTS',
+      );
+    }
+    const fileName = (input.fileName.trim() || 'documento').slice(0, 255);
+    const saved = await storage.save(principal.tenantId, fileName, input.content, mimeType);
+    try {
+      await withTransaction(this.prisma, async (tx) => {
+        const row = await tx.sectorRecordAttachment.create({
+          data: {
+            orgId: principal.tenantId,
+            recordId: record.id,
+            fileName,
+            mimeType,
+            fileSize: input.content.length,
+            storagePath: saved.storagePath,
+            contentHash: createHash('sha256').update(input.content).digest('hex'),
+            uploadedBy: principal.userId,
+          },
+        });
+        await new AuditService(tx).logEvent({
+          tenantId: principal.tenantId,
+          userId: principal.userId,
+          eventType: 'SECTOR_RECORD_FILE_ADDED',
+          payload: {
+            recordId: record.id,
+            attachmentId: row.id,
+            feature: record.feature,
+            mimeType,
+            fileSize: input.content.length,
+            channel: input.channel,
+          },
+        });
+      });
+    } catch (err) {
+      // No row: the file just written would be an orphan.
+      await this.deleteFile(principal.tenantId, saved.storagePath);
+      throw err;
+    }
+    return this.get(principal, input);
+  }
+
+  /** The file of an entry, with the same access as the entry itself. */
+  async downloadAttachment(
+    principal: Principal,
+    input: { feature: string; channel: SectorChannel; id: string; attachmentId: string },
+  ): Promise<{ fileName: string; mimeType: string; content: Buffer }> {
+    const { record } = await this.reachable(principal, input, 'read');
+    const storage = this.options.storage;
+    if (!storage) throw new NotFoundError('File non trovato');
+    const file = await this.prisma.sectorRecordAttachment.findFirst({
+      where: { id: input.attachmentId, recordId: record.id, orgId: principal.tenantId },
+    });
+    if (!file) throw new NotFoundError('File non trovato');
+    const content = await storage.read(principal.tenantId, file.storagePath);
+    return { fileName: file.fileName, mimeType: file.mimeType, content };
+  }
+
+  async removeAttachment(
+    principal: Principal,
+    input: { feature: string; channel: SectorChannel; id: string; attachmentId: string },
+  ): Promise<SectorRecordView> {
+    const { record } = await this.reachable(principal, input, 'manage');
+    const file = await this.prisma.sectorRecordAttachment.findFirst({
+      where: { id: input.attachmentId, recordId: record.id, orgId: principal.tenantId },
+    });
+    if (!file) throw new NotFoundError('File non trovato');
+    await withTransaction(this.prisma, async (tx) => {
+      await tx.sectorRecordAttachment.delete({ where: { id: file.id } });
+      await new AuditService(tx).logEvent({
+        tenantId: principal.tenantId,
+        userId: principal.userId,
+        eventType: 'SECTOR_RECORD_FILE_REMOVED',
+        payload: {
+          recordId: record.id,
+          attachmentId: file.id,
+          feature: record.feature,
+          channel: input.channel,
+        },
+      });
+    });
+    await this.deleteFile(principal.tenantId, file.storagePath);
+    return this.get(principal, input);
   }
 
   /**

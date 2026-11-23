@@ -24,13 +24,17 @@ function write(file: string, content = 'x') {
   writeFileSync(file, content);
 }
 
-/** Only the two queries the storage check makes. */
-function fakePrisma(paths: string[], bytes: number): PrismaClient {
+/** Only the queries the storage check makes. */
+function fakePrisma(paths: string[], bytes: number, sectorPaths: string[] = []): PrismaClient {
   return {
     practiceAttachment: {
       aggregate: () =>
         Promise.resolve({ _count: { _all: paths.length }, _sum: { fileSize: bytes } }),
       findMany: () => Promise.resolve(paths.map((storagePath) => ({ storagePath }))),
+    },
+    // Files of the entries of the sector registers are referenced too.
+    sectorRecordAttachment: {
+      findMany: () => Promise.resolve(sectorPaths.map((storagePath) => ({ storagePath }))),
     },
   } as unknown as PrismaClient;
 }
@@ -42,15 +46,18 @@ describe('attachment storage', () => {
     const dir = path.join(root, 'storage');
     write(path.join(dir, 'org-a', 'fattura-mario-rossi.pdf'));
     write(path.join(dir, 'org-a', 'avanzo.pdf'));
+    write(path.join(dir, 'org-a', 'patentino.jpg'));
     const health = await storageHealth(
-      fakePrisma(['org-a/fattura-mario-rossi.pdf', 'org-b/sparito.pdf'], 2048),
+      fakePrisma(['org-a/fattura-mario-rossi.pdf', 'org-b/sparito.pdf'], 2048, [
+        'org-a/patentino.jpg',
+      ]),
       dir,
     );
     expect(health).toMatchObject({
       driver: 'local',
       attachments: 2,
       bytes: 2048,
-      disk: { files: 2, orphanFiles: 1, missingFiles: 1 },
+      disk: { files: 3, orphanFiles: 1, missingFiles: 1 },
     });
     expect(JSON.stringify(health)).not.toContain('mario');
   });

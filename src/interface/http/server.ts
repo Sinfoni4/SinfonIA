@@ -226,6 +226,8 @@ export function buildServer(config: AppConfig, logger: AppLogger, deps: ServerDe
     void app.register(sectorRoutes, {
       prisma: deps.prisma,
       ...(deps.complianceService ? { complianceService: deps.complianceService } : {}),
+      ...(storage ? { storage } : {}),
+      maxAttachmentBytes: config.ATTACHMENT_MAX_BYTES,
     });
     void app.register(delegationRoutes, {
       prisma: deps.prisma,

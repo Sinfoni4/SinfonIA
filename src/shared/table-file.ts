@@ -204,7 +204,16 @@ export async function tableFile(input: {
   csv: string;
   format: TableFormat;
 }): Promise<TableFile> {
-  const rows = parseCsv(input.csv);
+  return tableFileFromRows({ title: input.title, rows: parseCsv(input.csv), format: input.format });
+}
+
+/** A table (a header row and the data rows) as an Excel or PDF file, named after its title. */
+export async function tableFileFromRows(input: {
+  title: string;
+  rows: string[][];
+  format: TableFormat;
+}): Promise<TableFile> {
+  const { rows } = input;
   return input.format === 'xlsx'
     ? {
         fileName: tableFileName(input.title, 'xlsx'),

@@ -16,6 +16,11 @@ import {
   type SectorRecord,
   type SectorRecordKind,
   type SectorRegisterPage,
+  saveBlob,
+  sectorExportPath,
+  sectorFilePath,
+  fileSizeLabel,
+  type SectorExportFormat,
 } from '../api/sector';
 import { DataTable, type DataColumn } from '../components/DataTable';
 import { useSession } from '../session/session';
@@ -212,11 +217,16 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
           </h1>
           {register && <p className="m-0 text-muted-foreground">{register.feature.description}</p>}
         </div>
-        {register?.canManage && kinds.length > 0 && (
-          <Button type="button" onClick={() => setEditing({ mode: 'new', kind: kinds[0].kind })}>
-            Nuova voce
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {register && register.total > 0 && (
+            <ExportButtons featureId={featureId} filters={filters} />
+          )}
+          {register?.canManage && kinds.length > 0 && (
+            <Button type="button" onClick={() => setEditing({ mode: 'new', kind: kinds[0].kind })}>
+              Nuova voce
+            </Button>
+          )}
+        </div>
       </div>
 
       {query.isError && (
@@ -240,6 +250,17 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
             await queryClient.invalidateQueries({ queryKey: key });
           }}
           onCancel={() => setEditing(null)}
+        />
+      )}
+      {editing?.mode === 'edit' && register && (
+        <EntryFiles
+          featureId={featureId}
+          record={editing.record}
+          canManage={register.canManage}
+          onChange={async (record) => {
+            setEditing({ mode: 'edit', record });
+            await queryClient.invalidateQueries({ queryKey: key });
+          }}
         />
       )}
 
@@ -355,7 +376,14 @@ function EntrySummary({
     .filter(([, v]) => v !== '');
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium">{record.title}</span>
+      <span className="font-medium">
+        {record.title}
+        {record.attachments.length > 0 && (
+          <span className="ml-2 text-sm font-normal text-muted-foreground" title="File allegati">
+            📎 {record.attachments.length}
+          </span>
+        )}
+      </span>
       {details.length > 0 && (
         <span className="text-sm text-muted-foreground">
           {details.map(([label, value]) => `${label}: ${value}`).join(' · ')}
@@ -520,5 +548,183 @@ function FieldInput({
         onChange={(e) => onChange(e.target.value)}
       />
     </Label>
+  );
+}
+
+const FORMATS: Array<{ format: SectorExportFormat; label: string }> = [
+  { format: 'csv', label: 'CSV' },
+  { format: 'xlsx', label: 'Excel' },
+  { format: 'pdf', label: 'PDF' },
+];
+
+/** The register as a file, with the filters of the page; saved, never opened in the page. */
+function ExportButtons({ featureId, filters }: { featureId: string; filters: SectorFilters }) {
+  const { download } = useSession();
+  const [busy, setBusy] = useState<SectorExportFormat | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (format: SectorExportFormat) => {
+    setBusy(format);
+    setError(null);
+    try {
+      const { blob, fileName } = await download(
+        sectorExportPath('dashboard', featureId, format, filters),
+      );
+      saveBlob(blob, fileName);
+    } catch (err: unknown) {
+      setError(describeError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1"
+      role="group"
+      aria-label="Esporta il registro"
+    >
+      <span className="text-sm text-muted-foreground">Esporta:</span>
+      {FORMATS.map(({ format, label }) => (
+        <Button
+          key={format}
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy !== null}
+          aria-label={`Esporta in ${label}`}
+          onClick={() => void run(format)}
+        >
+          {busy === format ? '…' : label}
+        </Button>
+      ))}
+      {error && (
+        <p className="error m-0 w-full" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The files of an entry: download, add (PDF or photo), remove. */
+function EntryFiles({
+  featureId,
+  record,
+  canManage,
+  onChange,
+}: {
+  featureId: string;
+  record: SectorRecord;
+  canManage: boolean;
+  onChange: (record: SectorRecord) => Promise<void>;
+}) {
+  const { api, download } = useSession();
+  const [file, setFile] = useState<File | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const upload = useMutation({
+    mutationFn: (chosen: File) => {
+      const form = new FormData();
+      form.append('file', chosen);
+      return api<SectorRecord>(sectorFilePath('dashboard', featureId, record.id), {
+        method: 'POST',
+        form,
+      });
+    },
+    onSuccess: async (updated) => {
+      setFile(null);
+      setInputKey((k) => k + 1);
+      await onChange(updated);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (attachmentId: string) =>
+      api<SectorRecord>(sectorFilePath('dashboard', featureId, record.id, attachmentId), {
+        method: 'DELETE',
+      }),
+    onSuccess: onChange,
+  });
+  const save = async (attachmentId: string) => {
+    setError(null);
+    try {
+      const { blob, fileName } = await download(
+        `${sectorFilePath('dashboard', featureId, record.id, attachmentId)}/download`,
+      );
+      saveBlob(blob, fileName);
+    } catch (err: unknown) {
+      setError(describeError(err));
+    }
+  };
+  const failure =
+    error ??
+    (upload.isError ? describeError(upload.error) : null) ??
+    (remove.isError ? describeError(remove.error) : null);
+
+  return (
+    <section
+      aria-labelledby="entry-files"
+      className="flex max-w-3xl flex-col gap-3 rounded-lg border p-4"
+    >
+      <h2 id="entry-files" className="m-0 text-lg font-semibold">
+        File allegati
+      </h2>
+      {record.attachments.length === 0 ? (
+        <p className="m-0 text-muted-foreground">Nessun file allegato a questa voce.</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {record.attachments.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{a.fileName}</span>
+              <span className="text-sm text-muted-foreground">{fileSizeLabel(a.fileSize)}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={`Scarica ${a.fileName}`}
+                onClick={() => void save(a.id)}
+              >
+                Scarica
+              </Button>
+              {canManage && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Rimuovi ${a.fileName}`}
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(a.id)}
+                >
+                  Rimuovi
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canManage && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Label>
+            Aggiungi un file (PDF o foto)
+            <Input
+              key={inputKey}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </Label>
+          <Button
+            type="button"
+            disabled={!file || upload.isPending}
+            onClick={() => file && upload.mutate(file)}
+          >
+            {upload.isPending ? 'Caricamento…' : 'Carica'}
+          </Button>
+        </div>
+      )}
+      {failure && (
+        <p className="error m-0" role="alert">
+          {failure}
+        </p>
+      )}
+    </section>
   );
 }
