@@ -1,6 +1,24 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
+const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+/** One TRUST_PROXY entry: an IPv4 or IPv6 address, optionally with a CIDR prefix, or a name. */
+function isProxyAddress(entry: string): boolean {
+  if (['loopback', 'linklocal', 'uniquelocal'].includes(entry)) return true;
+  const [address = '', prefix, ...rest] = entry.split('/');
+  if (rest.length > 0) return false;
+  if (IPV4.test(address)) return prefix === undefined || /^(3[0-2]|[12]?\d)$/.test(prefix);
+  const ipv6 = address.includes(':') && /^[0-9a-f:.]+$/i.test(address);
+  return ipv6 && (prefix === undefined || /^(12[0-8]|1[01]\d|[1-9]?\d)$/.test(prefix));
+}
+
+/** The trusted proxies for Fastify's trustProxy option; false when none is configured. */
+export function trustedProxies(config: { TRUST_PROXY?: string }): string[] | false {
+  if (!config.TRUST_PROXY) return false;
+  return config.TRUST_PROXY.split(',').map((p) => p.trim());
+}
+
 /** An empty environment variable counts as not set. */
 function unsetIfEmpty<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess((v) => (v === '' ? undefined : v), schema);
@@ -52,6 +70,20 @@ const ConfigSchema = z
     // Network address of the HTTP server. Absent: this PC only (127.0.0.1) when login codes are
     // shown on screen (AUTH_DEV_SHOW_CODE), otherwise every interface (0.0.0.0).
     HOST: z.string().trim().min(1).optional(),
+    // Reverse proxies in front of the server (nginx on the same machine: 127.0.0.1), comma-separated
+    // IP addresses or CIDR ranges, or loopback / linklocal / uniquelocal. Only their
+    // X-Forwarded-For is believed, so rate limits count the real client address. Absent: none (the
+    // address of the connection is the client's).
+    TRUST_PROXY: unsetIfEmpty(
+      z
+        .string()
+        .trim()
+        .refine((v) => v.split(',').every((p) => isProxyAddress(p.trim())), {
+          message:
+            'TRUST_PROXY must list IP addresses, CIDR ranges, loopback, linklocal or uniquelocal',
+        })
+        .optional(),
+    ),
     // Public address of the dashboard, for the links in emails (invitations); absent: code only.
     WEB_PUBLIC_URL: z
       .string()
