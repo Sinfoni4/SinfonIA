@@ -69,6 +69,11 @@ const IssueBodySchema = z
     ]),
     operations: z.array(z.enum(OPERATIONS)).min(1).max(6),
     validUntil: DateSchema,
+    /** Registers of sector functions covered besides the practices. */
+    registers: z
+      .array(z.string().regex(/^[a-z_]{2,40}$/))
+      .max(20)
+      .optional(),
   })
   .strict();
 const IdSchema = z.object({ id: z.string().uuid() });
@@ -135,6 +140,7 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
         grantee: body.grantee,
         operations: body.operations,
         validUntil: body.validUntil,
+        registers: body.registers,
       });
       return reply.status(201).send(ok(created));
     } catch (err: unknown) {

@@ -149,7 +149,12 @@ export async function authorizeSector(
       'SECTOR_FEATURE_NOT_READY',
     );
   }
-  const grant = authorize(principal, `${feature as SectorFeature}.${operation}`);
+  const permission = `${feature as SectorFeature}.${operation}` as const;
+  // Through a delegation the route already checked the operation and the register (MF8): the
+  // whole register of the grantor, as for its staff.
+  const grant: Grant = principal.delegation
+    ? { principal, permission, scope: 'tenant' }
+    : authorize(principal, permission);
   return {
     grant,
     definition: { ...definition, records: definition.records },
@@ -431,6 +436,8 @@ export class SectorRecordService {
     feature: string,
     channel: SectorChannel,
   ): Promise<SectorPerson[]> {
+    // Who works through a delegation never sees the people of the grantor.
+    if (principal.delegation) return [];
     let manage: Access;
     try {
       manage = await authorizeSector(this.prisma, principal, feature, 'manage', channel);
@@ -460,6 +467,12 @@ export class SectorRecordService {
     const id = notifyOf(data);
     if (!id) return;
     const { principal } = access.grant;
+    if (principal.delegation) {
+      throw new SectorRecordError(
+        'Con una delega non si indicano persone dell’organizzazione da avvisare',
+        403,
+      );
+    }
     if (access.grant.scope !== 'tenant' && id !== principal.userId) {
       throw new SectorRecordError('Come persona da avvisare puoi indicare solo te stesso', 403);
     }
@@ -475,6 +488,10 @@ export class SectorRecordService {
   }
 
   private async canManage(principal: Principal, feature: string, channel: SectorChannel) {
+    // Through a delegation: writing only when the delegation includes it.
+    if (principal.delegation) {
+      return principal.delegation.operations.some((o) => o === 'CREATE' || o === 'UPDATE');
+    }
     try {
       await authorizeSector(this.prisma, principal, feature, 'manage', channel);
       return true;

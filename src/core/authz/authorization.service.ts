@@ -12,7 +12,7 @@ import {
   type PermissionScope,
 } from './permissions.js';
 
-import type { PrismaClient, UserRole } from '@prisma/client';
+import type { GrantOperation, PrismaClient, UserRole } from '@prisma/client';
 
 /** Who is acting: always resolved by the backend, never taken from what the client says. */
 export type Principal = {
@@ -29,6 +29,13 @@ export type Principal = {
    * whole base role on that channel.
    */
   customPermissions: CustomPermissions | null;
+  /**
+   * Set only by the routes of a delegation (MF8), after checking it: the person works for the
+   * grantor (`tenantId`) without being one of its members. The sector registers then give the
+   * whole register to them, the route having checked the operation and the register first, and
+   * never show them the people of the grantor.
+   */
+  delegation?: { grantId: string; operations: readonly GrantOperation[] };
 };
 
 /**

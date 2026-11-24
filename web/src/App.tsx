@@ -26,7 +26,7 @@ import { PracticesPage } from './pages/PracticesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RequestsPage } from './pages/RequestsPage';
 import { ReviewPage } from './pages/ReviewPage';
-import { SectorFeaturePage } from './pages/SectorFeaturePage';
+import { DelegatedRegisterPage, SectorFeaturePage } from './pages/SectorFeaturePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { OrganizationUsagePage } from './pages/UsagePages';
 import { useSession } from './session/session';
@@ -66,6 +66,10 @@ export function App() {
         <Route path="adesioni" element={<MembershipsPage me={me} />} />
         <Route path="deleghe" element={<DelegationsPage me={me} />} />
         <Route path="deleghe/:grantId" element={<DelegatedPracticesPage />} />
+        <Route
+          path="deleghe/:grantId/registri/:featureId"
+          element={<DelegatedRegisterPage me={me} />}
+        />
         <Route
           path="deleghe/:grantId/pratiche/:practiceId"
           element={<DelegatedPracticeDetailPage />}

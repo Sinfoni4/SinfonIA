@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type FormEvent } from 'react';
-import { Navigate, useParams } from 'react-router';
+import { Link, Navigate, useParams } from 'react-router';
 
 import { dashboardSectorFeatures, describeError, type Me } from '../api/client';
 import { daysLabel, isoToItalian } from '../api/compliance';
@@ -23,6 +23,7 @@ import {
   type SectorExportFormat,
   NOTIFY_KEY,
   type SectorPerson,
+  type SectorChannel,
 } from '../api/sector';
 import { DataTable, type DataColumn } from '../components/DataTable';
 import { useSession } from '../session/session';
@@ -60,9 +61,38 @@ export function SectorFeaturePage({ me }: { me: Me }) {
   );
 }
 
+/**
+ * MF8: a register of another organization through a delegation received, with the name of that
+ * organization always in view and only the delegated operations offered.
+ */
+export function DelegatedRegisterPage({ me }: { me: Me }) {
+  const { grantId = '', featureId = '' } = useParams();
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="m-0">
+        <Link to="/deleghe">← Deleghe</Link>
+      </p>
+      <SectorRegister
+        key={`${grantId}:${featureId}`}
+        me={me}
+        featureId={featureId}
+        channel={{ grantId }}
+      />
+    </div>
+  );
+}
+
 type Editing = { mode: 'new'; kind: string } | { mode: 'edit'; record: SectorRecord } | null;
 
-function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
+function SectorRegister({
+  me,
+  featureId,
+  channel = 'dashboard',
+}: {
+  me: Me;
+  featureId: string;
+  channel?: SectorChannel;
+}) {
   const { api } = useSession();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<
@@ -70,27 +100,40 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
   >({ page: 1, limit: 20, kind: '', search: '', from: '', to: '' });
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const key = ['sector', me.current.orgId, featureId];
+  const key = [
+    'sector',
+    me.current.orgId,
+    featureId,
+    typeof channel === 'object' ? `grant:${channel.grantId}` : channel,
+  ];
 
   const query = useQuery({
     queryKey: [...key, filters],
-    queryFn: () => api<SectorRegisterPage>(sectorRecordsQuery('dashboard', featureId, filters)),
+    queryFn: () => api<SectorRegisterPage>(sectorRecordsQuery(channel, featureId, filters)),
     placeholderData: keepPreviousData,
   });
   const register = query.data;
   const kinds = register?.kinds ?? [];
+  // Through a delegation, only what it allows; entries are never deleted there.
+  const ops = register?.delegation?.operations;
+  const can = {
+    create: ops ? ops.includes('CREATE') : register?.canManage === true,
+    edit: ops ? ops.includes('UPDATE') : register?.canManage === true,
+    remove: ops ? false : register?.canManage === true,
+    export: ops ? ops.includes('EXPORT') : true,
+  };
   const hasExpiry = kinds.some((k) => k.dueField);
   const expiring = useQuery({
     queryKey: [...key, 'expiring'],
     queryFn: () =>
       api<SectorRegisterPage>(
-        sectorRecordsQuery('dashboard', featureId, { expiringWithinDays: 60, limit: 5 }),
+        sectorRecordsQuery(channel, featureId, { expiringWithinDays: 60, limit: 5 }),
       ),
     enabled: hasExpiry,
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => api(sectorPath('dashboard', featureId, id), { method: 'DELETE' }),
+    mutationFn: (id: string) => api(sectorPath(channel, featureId, id), { method: 'DELETE' }),
     onSuccess: async () => {
       setDeleting(null);
       await queryClient.invalidateQueries({ queryKey: key });
@@ -151,7 +194,7 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
         meta: { label: 'Inserita da' },
         cell: ({ row }) => row.original.author?.email ?? '—',
       },
-      ...(register?.canManage
+      ...(can.edit || can.remove
         ? [
             {
               id: 'actions',
@@ -181,49 +224,61 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
                   </span>
                 ) : (
                   <span className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      aria-label={`Modifica ${row.original.title}`}
-                      onClick={() => setEditing({ mode: 'edit', record: row.original })}
-                    >
-                      Modifica
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Elimina ${row.original.title}`}
-                      onClick={() => setDeleting(row.original.id)}
-                    >
-                      Elimina
-                    </Button>
+                    {can.edit && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-label={`Modifica ${row.original.title}`}
+                        onClick={() => setEditing({ mode: 'edit', record: row.original })}
+                      >
+                        Modifica
+                      </Button>
+                    )}
+                    {can.remove && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Elimina ${row.original.title}`}
+                        onClick={() => setDeleting(row.original.id)}
+                      >
+                        Elimina
+                      </Button>
+                    )}
                   </span>
                 ),
             } satisfies DataColumn<SectorRecord>,
           ]
         : []),
     ],
-    [deleting, hasExpiry, kinds, register?.canManage, remove],
+    [deleting, hasExpiry, kinds, can.edit, can.remove, remove],
   );
 
   const set = (patch: Partial<SectorFilters>) => setFilters((f) => ({ ...f, page: 1, ...patch }));
 
   return (
     <div className="flex flex-col gap-4">
+      {register?.delegation && (
+        <p className="notice banner m-0" role="note">
+          Stai lavorando sul registro di <strong>{register.delegation.grantorName}</strong> per
+          delega, fino al {isoToItalian(register.delegation.validUntil.slice(0, 10))}. Ogni
+          operazione resta nel suo registro attività.
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="m-0 text-2xl font-semibold tracking-tight">
             {register?.feature.label ?? 'Registro'}
+            {register?.delegation ? ` di ${register.delegation.grantorName}` : ''}
           </h1>
           {register && <p className="m-0 text-muted-foreground">{register.feature.description}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {register && register.total > 0 && (
-            <ExportButtons featureId={featureId} filters={filters} />
+          {register && register.total > 0 && can.export && (
+            <ExportButtons channel={channel} featureId={featureId} filters={filters} />
           )}
-          {register?.canManage && kinds.length > 0 && (
+          {can.create && kinds.length > 0 && (
             <Button type="button" onClick={() => setEditing({ mode: 'new', kind: kinds[0].kind })}>
               Nuova voce
             </Button>
@@ -244,6 +299,7 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
 
       {editing && register && (
         <EntryForm
+          channel={channel}
           featureId={featureId}
           kinds={kinds}
           people={register.people}
@@ -257,9 +313,11 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
       )}
       {editing?.mode === 'edit' && register && (
         <EntryFiles
+          channel={channel}
           featureId={featureId}
           record={editing.record}
-          canManage={register.canManage}
+          canManage={can.edit}
+          canRemove={can.remove}
           onChange={async (record) => {
             setEditing({ mode: 'edit', record });
             await queryClient.invalidateQueries({ queryKey: key });
@@ -400,6 +458,7 @@ function EntrySummary({
 }
 
 function EntryForm({
+  channel,
   featureId,
   kinds,
   people,
@@ -407,6 +466,7 @@ function EntryForm({
   onDone,
   onCancel,
 }: {
+  channel: SectorChannel;
   featureId: string;
   kinds: readonly SectorRecordKind[];
   people: readonly SectorPerson[];
@@ -428,11 +488,11 @@ function EntryForm({
     mutationFn: () => {
       const data = formToData(kind, values);
       return editing.mode === 'edit'
-        ? api(sectorPath('dashboard', featureId, editing.record.id), {
+        ? api(sectorPath(channel, featureId, editing.record.id), {
             method: 'PATCH',
             body: { data },
           })
-        : api(sectorPath('dashboard', featureId), {
+        : api(sectorPath(channel, featureId), {
             method: 'POST',
             body: { kind: kind.kind, data },
           });
@@ -582,7 +642,15 @@ const FORMATS: Array<{ format: SectorExportFormat; label: string }> = [
 ];
 
 /** The register as a file, with the filters of the page; saved, never opened in the page. */
-function ExportButtons({ featureId, filters }: { featureId: string; filters: SectorFilters }) {
+function ExportButtons({
+  channel,
+  featureId,
+  filters,
+}: {
+  channel: SectorChannel;
+  featureId: string;
+  filters: SectorFilters;
+}) {
   const { download } = useSession();
   const [busy, setBusy] = useState<SectorExportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -591,7 +659,7 @@ function ExportButtons({ featureId, filters }: { featureId: string; filters: Sec
     setError(null);
     try {
       const { blob, fileName } = await download(
-        sectorExportPath('dashboard', featureId, format, filters),
+        sectorExportPath(channel, featureId, format, filters),
       );
       saveBlob(blob, fileName);
     } catch (err: unknown) {
@@ -631,14 +699,19 @@ function ExportButtons({ featureId, filters }: { featureId: string; filters: Sec
 
 /** The files of an entry: download, add (PDF or photo), remove. */
 function EntryFiles({
+  channel,
   featureId,
   record,
   canManage,
+  canRemove = canManage,
   onChange,
 }: {
+  channel: SectorChannel;
   featureId: string;
   record: SectorRecord;
   canManage: boolean;
+  /** Whether files can be removed (never through a delegation). */
+  canRemove?: boolean;
   onChange: (record: SectorRecord) => Promise<void>;
 }) {
   const { api, download } = useSession();
@@ -649,7 +722,7 @@ function EntryFiles({
     mutationFn: (chosen: File) => {
       const form = new FormData();
       form.append('file', chosen);
-      return api<SectorRecord>(sectorFilePath('dashboard', featureId, record.id), {
+      return api<SectorRecord>(sectorFilePath(channel, featureId, record.id), {
         method: 'POST',
         form,
       });
@@ -662,7 +735,7 @@ function EntryFiles({
   });
   const remove = useMutation({
     mutationFn: (attachmentId: string) =>
-      api<SectorRecord>(sectorFilePath('dashboard', featureId, record.id, attachmentId), {
+      api<SectorRecord>(sectorFilePath(channel, featureId, record.id, attachmentId), {
         method: 'DELETE',
       }),
     onSuccess: onChange,
@@ -671,7 +744,7 @@ function EntryFiles({
     setError(null);
     try {
       const { blob, fileName } = await download(
-        `${sectorFilePath('dashboard', featureId, record.id, attachmentId)}/download`,
+        `${sectorFilePath(channel, featureId, record.id, attachmentId)}/download`,
       );
       saveBlob(blob, fileName);
     } catch (err: unknown) {
@@ -708,7 +781,7 @@ function EntryFiles({
               >
                 Scarica
               </Button>
-              {canManage && (
+              {canRemove && (
                 <Button
                   type="button"
                   size="sm"

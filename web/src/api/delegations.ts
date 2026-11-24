@@ -10,11 +10,16 @@ export type BeneficiaryStatus = 'PROPOSED' | 'ACTIVE' | 'REVOKED';
 
 export type Beneficiary = { userId: string; email: string | null; status: BeneficiaryStatus };
 
+/** A register of a sector function a delegation covers besides the practices. */
+export type GrantRegister = { id: string; label: string };
+
 export type IssuedGrant = {
   id: string;
   granteeType: 'USER' | 'ORGANIZATION';
   grantee: { orgId?: string; name: string; type?: OrganizationType };
   operations: GrantOperation[];
+  /** Missing on older APIs: none. */
+  registers?: GrantRegister[];
   validFrom: string;
   validUntil: string;
   state: GrantState;
@@ -27,6 +32,7 @@ export type ReceivedGrant = {
   grantor: { orgId: string; name: string };
   granteeType: 'USER' | 'ORGANIZATION';
   operations: GrantOperation[];
+  registers?: GrantRegister[];
   validUntil: string;
   state: GrantState;
   usable: boolean;
