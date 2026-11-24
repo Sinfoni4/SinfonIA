@@ -57,6 +57,37 @@ function columnsOf(kinds: readonly SectorRecordKind[]): FieldDefinition[] {
   return [...seen.values()];
 }
 
+/**
+ * The «Dettagli» of an entry in the PDF: the fields not already in the other columns, as
+ * «Label: value», an amount with its unit («Quantità: 30 tonnellate»).
+ */
+export function entryDetails(
+  kind: SectorRecordKind | undefined,
+  data: Record<string, unknown>,
+): string {
+  if (!kind) return '';
+  const units = kind.units ?? {};
+  const unitFields = new Set(Object.values(units));
+  return kind.fields
+    .filter(
+      (f) =>
+        f.key !== kind.dateField &&
+        f.key !== kind.dueField &&
+        !kind.titleFields.includes(f.key) &&
+        // A unit is written after its amount, never on its own.
+        !unitFields.has(f.key),
+    )
+    .map((f) => {
+      const text = valueText(f, data[f.key]);
+      const unitField = units[f.key] ? kind.fields.find((u) => u.key === units[f.key]) : undefined;
+      const unit = unitField ? valueText(unitField, data[unitField.key]) : '';
+      return [f.label, text && unit ? `${text} ${unit}` : text] as const;
+    })
+    .filter(([, v]) => v !== '')
+    .map(([label, v]) => `${label}: ${v}`)
+    .join(' · ');
+}
+
 export async function registerTable(input: {
   label: string;
   kinds: readonly SectorRecordKind[];
@@ -72,18 +103,7 @@ export async function registerTable(input: {
     const rows = [
       ['Data', 'Tipo', 'Voce', 'Dettagli', ...(hasExpiry ? ['Scadenza'] : [])],
       ...input.records.map((r) => {
-        const kind = kindOf.get(r.kind);
-        const details = (kind?.fields ?? [])
-          .filter(
-            (f) =>
-              f.key !== kind?.dateField &&
-              f.key !== kind?.dueField &&
-              !kind?.titleFields.includes(f.key),
-          )
-          .map((f) => [f.label, valueText(f, r.data[f.key])] as const)
-          .filter(([, v]) => v !== '')
-          .map(([label, v]) => `${label}: ${v}`)
-          .join(' · ');
+        const details = entryDetails(kindOf.get(r.kind), r.data);
         return [
           italianDate(r.occurredOn),
           r.kindLabel,

@@ -1,4 +1,13 @@
-import { FIELD_BOOK_RECORDS, LICENSE_RECORDS, type SectorRecordKind } from './sector-records.js';
+import {
+  CAP_FILE_RECORDS,
+  FARM_FUEL_RECORDS,
+  FIELD_BOOK_RECORDS,
+  LICENSE_RECORDS,
+  ORGANIC_RECORDS,
+  RISK_ASSESSMENT_RECORDS,
+  TRAINING_RECORDS,
+  type SectorRecordKind,
+} from './sector-records.js';
 
 import type { ModuleId } from '../core/modules/module.contract.js';
 
@@ -34,7 +43,8 @@ export const SECTOR_FEATURES = [
     description:
       'Il DVR dell’azienda con i suoi aggiornamenti, le figure della sicurezza e i documenti collegati.',
     modules: ['agri', 'artisan'],
-    ready: false,
+    ready: true,
+    records: RISK_ASSESSMENT_RECORDS,
   },
   {
     id: 'field_book',
@@ -50,21 +60,24 @@ export const SECTOR_FEATURES = [
     label: 'Fascicolo e scadenze PAC',
     description: 'Fascicolo aziendale, domanda unica PAC e le relative scadenze.',
     modules: ['agri'],
-    ready: false,
+    ready: true,
+    records: CAP_FILE_RECORDS,
   },
   {
     id: 'farm_fuel',
     label: 'Carburante agricolo',
     description: 'Assegnazione UMA del gasolio agevolato: richieste, consumi e fatture.',
     modules: ['agri'],
-    ready: false,
+    ready: true,
+    records: FARM_FUEL_RECORDS,
   },
   {
     id: 'organic_certification',
     label: 'Certificazioni BIO',
     description: 'Certificazioni biologiche e di qualità, con documenti e rinnovi.',
     modules: ['agri'],
-    ready: false,
+    ready: true,
+    records: ORGANIC_RECORDS,
   },
   {
     id: 'training_safety',
@@ -72,7 +85,8 @@ export const SECTOR_FEATURES = [
     description:
       'Corsi obbligatori (sicurezza, primo soccorso, antincendio) e attestati in scadenza per ogni addetto.',
     modules: ['agri', 'artisan'],
-    ready: false,
+    ready: true,
+    records: TRAINING_RECORDS,
   },
   {
     id: 'trade_licenses',
