@@ -31,7 +31,15 @@ export type SectorRecordKind = {
    * of the unit. CSV and Excel keep them in two columns, for calculations.
    */
   units?: Readonly<Record<string, string>>;
+  /**
+   * The label of an optional person of the organization to remind of the expiry (e.g. the holder
+   * of a licence): the deadline is theirs too, so the reminders reach them in chat and they see it
+   * among their deadlines. Stored as `notify` (a user id) beside the declared fields.
+   */
+  notify?: string;
 };
+
+const NOTIFY = 'Persona da avvisare in SinfonIA';
 
 const NOTES: FieldDefinition = { key: 'notes', label: 'Note', type: 'text', maxLength: 1000 };
 
@@ -136,6 +144,7 @@ export const LICENSE_RECORDS: readonly SectorRecordKind[] = [
     dateField: 'issuedOn',
     dueField: 'expiresOn',
     deadlineCategory: 'PATENTINO',
+    notify: NOTIFY,
     fields: [
       { key: 'holder', label: 'Titolare', type: 'text', required: true, maxLength: 120 },
       {
@@ -483,6 +492,7 @@ export const TRAINING_RECORDS: readonly SectorRecordKind[] = [
     dateField: 'completedOn',
     dueField: 'expiresOn',
     deadlineCategory: 'SICUREZZA_LAVORO',
+    notify: NOTIFY,
     fields: [
       PERSON('Partecipante'),
       {
@@ -516,6 +526,7 @@ export const TRAINING_RECORDS: readonly SectorRecordKind[] = [
     dateField: 'date',
     dueField: 'nextVisit',
     deadlineCategory: 'VISITA_MEDICA',
+    notify: NOTIFY,
     fields: [
       PERSON('Lavoratore'),
       { key: 'date', label: 'Data', type: 'date', required: true },

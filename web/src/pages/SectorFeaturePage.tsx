@@ -21,6 +21,8 @@ import {
   sectorFilePath,
   fileSizeLabel,
   type SectorExportFormat,
+  NOTIFY_KEY,
+  type SectorPerson,
 } from '../api/sector';
 import { DataTable, type DataColumn } from '../components/DataTable';
 import { useSession } from '../session/session';
@@ -244,6 +246,7 @@ function SectorRegister({ me, featureId }: { me: Me; featureId: string }) {
         <EntryForm
           featureId={featureId}
           kinds={kinds}
+          people={register.people}
           editing={editing}
           onDone={async () => {
             setEditing(null);
@@ -389,6 +392,9 @@ function EntrySummary({
           {details.map(([label, value]) => `${label}: ${value}`).join(' · ')}
         </span>
       )}
+      {record.notify && (
+        <span className="text-sm text-muted-foreground">Avvisa: {record.notify.label}</span>
+      )}
     </div>
   );
 }
@@ -396,12 +402,14 @@ function EntrySummary({
 function EntryForm({
   featureId,
   kinds,
+  people,
   editing,
   onDone,
   onCancel,
 }: {
   featureId: string;
   kinds: readonly SectorRecordKind[];
+  people: readonly SectorPerson[];
   editing: Exclude<Editing, null>;
   onDone: () => Promise<void>;
   onCancel: () => void;
@@ -480,6 +488,22 @@ function EntryForm({
             onChange={(v) => setValues((old) => ({ ...old, [field.key]: v }))}
           />
         ))}
+        {kind.notify && people.length > 0 && (
+          <Label>
+            {kind.notify}
+            <NativeSelect
+              value={values[NOTIFY_KEY] ?? ''}
+              onChange={(e) => setValues((old) => ({ ...old, [NOTIFY_KEY]: e.target.value }))}
+            >
+              <option value="">Nessuna (solo gli amministratori)</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </Label>
+        )}
       </div>
       {(problem || save.isError) && (
         <p className="error m-0" role="alert">

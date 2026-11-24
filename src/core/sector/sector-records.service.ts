@@ -64,6 +64,8 @@ export type SectorRecordView = {
   /** Days to the expiry (negative: past); null without one. */
   daysLeft: number | null;
   author: { id: string; email: string } | null;
+  /** The person of the organization the expiry is reminded to (kinds that declare `notify`). */
+  notify: SectorPerson | null;
   mine: boolean;
   attachments: SectorAttachmentView[];
   createdAt: string;
@@ -78,10 +80,18 @@ export type SectorAttachmentView = {
   createdAt: string;
 };
 
+/** A person of the organization, as shown in a register (email, or a chat-only account). */
+export type SectorPerson = { id: string; label: string };
+
 export type SectorRegisterPage = {
   feature: { id: string; label: string; description: string };
   kinds: readonly SectorRecordKind[];
   canManage: boolean;
+  /**
+   * Who the writer may name as the person to remind: the active people of the organization for
+   * staff, only themselves for a member; empty when no kind of entry names one.
+   */
+  people: SectorPerson[];
   items: SectorRecordView[];
   page: number;
   limit: number;
@@ -169,7 +179,40 @@ function dateOf(data: Record<string, unknown>, key: string | undefined): Date | 
   return parseIsoDate(data[key]);
 }
 
-function validate(kind: SectorRecordKind, data: unknown): Record<string, unknown> {
+/** The key of the person to remind in the data of an entry, apart from the declared fields. */
+const NOTIFY_KEY = 'notify';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** How a person shows in a register: the email, or a chat-only account (no email of its own). */
+export function personLabel(user: { id: string; email: string }): string {
+  return user.email.endsWith('@local.invalid')
+    ? `Account solo chat (…${user.id.slice(-4)})`
+    : user.email;
+}
+
+/** The person to remind, taken out of the data: only for kinds that declare it, as an id. */
+function splitNotify(
+  kind: SectorRecordKind,
+  data: unknown,
+): { fields: unknown; notify: string | null } {
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !(NOTIFY_KEY in data)) {
+    return { fields: data, notify: null };
+  }
+  const { [NOTIFY_KEY]: raw, ...fields } = data as Record<string, unknown>;
+  if (raw === null || raw === undefined || raw === '') return { fields, notify: null };
+  if (!kind.notify || typeof raw !== 'string' || !UUID.test(raw)) {
+    throw new SectorRecordError(`Campo «${kind.notify ?? 'Persona da avvisare'}» non valido`);
+  }
+  return { fields, notify: raw.toLowerCase() };
+}
+
+function notifyOf(data: unknown): string | null {
+  const value = (data as Record<string, unknown> | null)?.[NOTIFY_KEY];
+  return typeof value === 'string' ? value : null;
+}
+
+function validate(kind: SectorRecordKind, input: unknown): Record<string, unknown> {
+  const { fields: data, notify } = splitNotify(kind, input);
   const parsed = fieldListSchema(kind.fields).safeParse(data ?? {});
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -187,7 +230,7 @@ function validate(kind: SectorRecordKind, data: unknown): Record<string, unknown
       throw new SectorRecordError(`Campo «${label}»: data inesistente`);
     }
   }
-  return parsed.data;
+  return notify ? { ...parsed.data, [NOTIFY_KEY]: notify } : parsed.data;
 }
 
 function kindOf(access: Access, kind: string): SectorRecordKind {
@@ -206,8 +249,14 @@ const INCLUDE = {
 
 type RecordRow = Prisma.SectorRecordGetPayload<{ include: typeof INCLUDE }>;
 
-function toView(row: RecordRow, access: Access, today: string): SectorRecordView {
+function toView(
+  row: RecordRow,
+  access: Access,
+  today: string,
+  people: ReadonlyMap<string, string>,
+): SectorRecordView {
   const kind = access.definition.records.find((r) => r.kind === row.kind);
+  const notify = kind?.notify ? notifyOf(row.data) : null;
   return {
     id: row.id,
     feature: row.feature,
@@ -219,6 +268,9 @@ function toView(row: RecordRow, access: Access, today: string): SectorRecordView
     dueDate: row.dueDate ? toIsoDate(row.dueDate) : null,
     daysLeft: row.dueDate ? daysUntil(row.dueDate, today) : null,
     author: row.author ? { id: row.author.id, email: row.author.email } : null,
+    notify: notify
+      ? { id: notify, label: people.get(notify) ?? 'Persona non più nell’organizzazione' }
+      : null,
     mine: row.createdBy === access.grant.principal.userId,
     attachments: row.attachments.map((a) => ({
       id: a.id,
@@ -344,6 +396,7 @@ export class SectorRecordService {
         take: limit,
       }),
     ]);
+    const labels = await this.labelsOf(rows);
     return {
       feature: {
         id: access.definition.id,
@@ -352,12 +405,73 @@ export class SectorRecordService {
       },
       kinds: access.definition.records,
       canManage,
-      items: rows.map((r) => toView(r, access, today)),
+      people: await this.people(principal, input.feature, input.channel),
+      items: rows.map((r) => toView(r, access, today, labels)),
       page,
       limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  /** The labels of the people named in these entries. */
+  private async labelsOf(rows: ReadonlyArray<{ data: unknown }>): Promise<Map<string, string>> {
+    const ids = [...new Set(rows.map((r) => notifyOf(r.data)).filter((v) => v !== null))];
+    if (ids.length === 0) return new Map();
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, email: true },
+    });
+    return new Map(users.map((u) => [u.id, personLabel(u)]));
+  }
+
+  /** Who the writer may name as the person to remind (see SectorRegisterPage.people). */
+  private async people(
+    principal: Principal,
+    feature: string,
+    channel: SectorChannel,
+  ): Promise<SectorPerson[]> {
+    let manage: Access;
+    try {
+      manage = await authorizeSector(this.prisma, principal, feature, 'manage', channel);
+    } catch {
+      return [];
+    }
+    if (!manage.definition.records.some((k) => k.notify)) return [];
+    const rows = await this.prisma.membership.findMany({
+      where: {
+        orgId: principal.tenantId,
+        status: 'ACTIVE',
+        ...(manage.grant.scope === 'tenant' ? {} : { userId: principal.userId }),
+      },
+      select: { user: { select: { id: true, email: true } } },
+      take: 1000,
+    });
+    return rows
+      .map((r) => ({ id: r.user.id, label: personLabel(r.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'it'));
+  }
+
+  /**
+   * The person to remind must be an active person of the organization, and a member writing
+   * their own entries can name only themselves.
+   */
+  private async checkNotify(access: Access, data: Record<string, unknown>): Promise<void> {
+    const id = notifyOf(data);
+    if (!id) return;
+    const { principal } = access.grant;
+    if (access.grant.scope !== 'tenant' && id !== principal.userId) {
+      throw new SectorRecordError('Come persona da avvisare puoi indicare solo te stesso', 403);
+    }
+    const member = await this.prisma.membership.findFirst({
+      where: { orgId: principal.tenantId, userId: id, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!member) {
+      throw new SectorRecordError(
+        'La persona da avvisare non è tra le persone dell’organizzazione',
+      );
+    }
   }
 
   private async canManage(principal: Principal, feature: string, channel: SectorChannel) {
@@ -385,7 +499,7 @@ export class SectorRecordService {
       include: INCLUDE,
     });
     if (!row) throw new NotFoundError('Voce non trovata');
-    return toView(row, access, this.today());
+    return toView(row, access, this.today(), await this.labelsOf([row]));
   }
 
   async create(
@@ -401,6 +515,7 @@ export class SectorRecordService {
     );
     const kind = kindOf(access, input.kind);
     const data = validate(kind, input.data);
+    await this.checkNotify(access, data);
     const { deadlineId, id } = await withTransaction(this.prisma, async (tx) => {
       const row = await tx.sectorRecord.create({
         data: {
@@ -445,6 +560,7 @@ export class SectorRecordService {
     if (!existing) throw new NotFoundError('Voce non trovata');
     const kind = kindOf(access, existing.kind);
     const data = validate(kind, input.data);
+    await this.checkNotify(access, data);
     const deadlineId = await withTransaction(this.prisma, async (tx) => {
       const row = await tx.sectorRecord.update({
         where: { id: existing.id },
@@ -550,10 +666,11 @@ export class SectorRecordService {
       include: INCLUDE,
       orderBy: [{ occurredOn: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
     });
+    const labels = await this.labelsOf(rows);
     const file = await registerTable({
       label: access.definition.label,
       kinds: access.definition.records,
-      records: rows.map((r) => toView(r, access, today)),
+      records: rows.map((r) => toView(r, access, today, labels)),
       format: input.format,
       today,
     });
@@ -735,8 +852,11 @@ export class SectorRecordService {
       title: string;
       dueDate: Date | null;
       createdBy: string | null;
+      data: unknown;
     },
   ): Promise<string | null> {
+    // The person named in the entry gets the reminders too, and sees the deadline as theirs.
+    const userId = kind.notify ? notifyOf(row.data) : null;
     const existing = await tx.complianceDeadline.findUnique({
       where: { sectorRecordId: row.id },
       select: { id: true, dueDate: true },
@@ -758,7 +878,7 @@ export class SectorRecordService {
         data: {
           tenantId: row.orgId,
           createdBy: access.grant.principal.userId,
-          userId: null,
+          userId,
           category,
           title,
           dueDate: row.dueDate,
@@ -778,6 +898,7 @@ export class SectorRecordService {
       data: {
         title,
         category,
+        userId,
         dueDate: row.dueDate,
         ...(moved ? { status: 'OPEN', closedAt: null } : {}),
       },

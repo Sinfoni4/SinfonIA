@@ -98,6 +98,7 @@ export async function registerTable(input: {
   const title = `${input.label} al ${italianDate(input.today)}`;
   const kindOf = new Map(input.kinds.map((k) => [k.kind, k]));
   const hasExpiry = input.kinds.some((k) => k.dueField);
+  const hasNotify = input.kinds.some((k) => k.notify);
 
   if (input.format === 'pdf') {
     const rows = [
@@ -124,6 +125,7 @@ export async function registerTable(input: {
       'Voce',
       ...columns.map((c) => c.label),
       ...(hasExpiry ? ['Scadenza'] : []),
+      ...(hasNotify ? ['Persona da avvisare'] : []),
       'File allegati',
       'Inserita da',
       'Inserita il',
@@ -137,6 +139,7 @@ export async function registerTable(input: {
         return own ? valueText(own, r.data[c.key]) : '';
       }),
       ...(hasExpiry ? [italianDate(r.dueDate)] : []),
+      ...(hasNotify ? [r.notify?.label ?? ''] : []),
       String(r.attachments.length),
       r.author?.email ?? '',
       italianDate(r.createdAt.slice(0, 10)),
