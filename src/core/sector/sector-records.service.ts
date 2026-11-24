@@ -184,6 +184,11 @@ function dateOf(data: Record<string, unknown>, key: string | undefined): Date | 
   return parseIsoDate(data[key]);
 }
 
+/** The title of the deadline of an entry: its kind of entry, then its title. */
+export function deadlineTitle(kind: SectorRecordKind, title: string): string {
+  return `${kind.label}: ${title}`;
+}
+
 /** The key of the person to remind in the data of an entry, apart from the declared fields. */
 const NOTIFY_KEY = 'notify';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -882,7 +887,9 @@ export class SectorRecordService {
       if (existing) await tx.complianceDeadline.delete({ where: { id: existing.id } });
       return null;
     }
-    const full = `${access.definition.label}: ${row.title}`;
+    // The kind of entry says what expires («Visita medica: Marco T. · Idoneo»), even when the
+    // title alone is short («Assegnazione UMA: 2026»).
+    const full = deadlineTitle(kind, row.title);
     const title =
       full.length > DEADLINE_TITLE_MAX ? `${full.slice(0, DEADLINE_TITLE_MAX - 1)}…` : full;
     const allowed = deadlineCategoriesOf(access.module);

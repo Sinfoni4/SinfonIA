@@ -313,7 +313,7 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
     const deadline = () => prisma.complianceDeadline.findUnique({ where: { sectorRecordId: id } });
     expect(await deadline()).toMatchObject({
       category: 'PATENTINO',
-      title: `Abilitazioni e patentini: Patentino prodotti fitosanitari · Mario ${run}`,
+      title: `Abilitazione o patentino: Patentino prodotti fitosanitari · Mario ${run}`,
       status: 'OPEN',
     });
 
