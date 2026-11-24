@@ -23,7 +23,15 @@ export type SectorRecordKind = {
   titleFields: readonly string[];
   dateField?: string;
   dueField?: string;
+  /** Label of the optional person of the organization to remind of the expiry. */
+  notify?: string;
 };
+
+/** A person of the organization: email, or a chat-only account. */
+export type SectorPerson = { id: string; label: string };
+
+/** The form value holding the person to remind (beside the declared fields). */
+export const NOTIFY_KEY = 'notify';
 
 export type SectorRecord = {
   id: string;
@@ -36,6 +44,7 @@ export type SectorRecord = {
   dueDate: string | null;
   daysLeft: number | null;
   author: { id: string; email: string } | null;
+  notify: SectorPerson | null;
   mine: boolean;
   attachments: SectorAttachment[];
   createdAt: string;
@@ -54,6 +63,8 @@ export type SectorRegisterPage = {
   feature: { id: string; label: string; description: string };
   kinds: readonly SectorRecordKind[];
   canManage: boolean;
+  /** Who may be named as the person to remind (all people for staff, oneself for a member). */
+  people: SectorPerson[];
   items: SectorRecord[];
   page: number;
   limit: number;
@@ -108,6 +119,8 @@ export function formToData(
     if (raw === '') continue;
     data[field.key] = field.type === 'number' ? Number(raw.replace(',', '.')) : raw;
   }
+  // No person sent clears it on the server.
+  if (kind.notify && values[NOTIFY_KEY]) data[NOTIFY_KEY] = values[NOTIFY_KEY];
   return data;
 }
 
@@ -121,6 +134,7 @@ export function dataToForm(
     const value = data[field.key];
     values[field.key] = asText(value);
   }
+  if (kind.notify) values[NOTIFY_KEY] = asText(data[NOTIFY_KEY]);
   return values;
 }
 

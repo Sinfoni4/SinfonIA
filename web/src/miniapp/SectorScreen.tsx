@@ -14,6 +14,8 @@ import {
   type SectorRegisterPage,
   fileSizeLabel,
   sectorFilePath,
+  NOTIFY_KEY,
+  type SectorPerson,
 } from '../api/sector';
 import { useSession } from '../session/session';
 
@@ -109,6 +111,7 @@ function SectorRegisterScreen({ me, featureId }: { me: Me; featureId: string }) 
           <EntryForm
             featureId={featureId}
             kinds={register.kinds}
+            people={register.people}
             record={view.mode === 'edit' ? view.record : undefined}
             canManage={register.canManage}
             onDone={saved}
@@ -195,12 +198,14 @@ const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/R
 function EntryForm({
   featureId,
   kinds,
+  people,
   record,
   canManage,
   onDone,
 }: {
   featureId: string;
   kinds: readonly SectorRecordKind[];
+  people: readonly SectorPerson[];
   record?: SectorRecord;
   canManage: boolean;
   onDone: () => Promise<void>;
@@ -299,6 +304,23 @@ function EntryForm({
           </label>
         );
       })}
+      {kind.notify && people.length > 0 && (
+        <label>
+          {kind.notify}
+          <select
+            value={values[NOTIFY_KEY] ?? ''}
+            disabled={!canManage}
+            onChange={(e) => setValues((old) => ({ ...old, [NOTIFY_KEY]: e.target.value }))}
+          >
+            <option value="">Nessuna (solo gli amministratori)</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {(problem || save.isError || remove.isError) && (
         <p className="ma-message error" role="alert">
           {problem ?? describeError(save.error ?? remove.error)}

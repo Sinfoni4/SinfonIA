@@ -8,7 +8,7 @@ import { BrowserRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { auditQuery, describeEvent, type AuditEvent } from '../api/organization';
-import { fieldBookPage, TREATMENT } from '../api/sector.fixture';
+import { fieldBookPage, licensePage, TREATMENT } from '../api/sector.fixture';
 import { App } from '../App';
 import { SessionProvider } from '../session/session';
 
@@ -355,6 +355,61 @@ describe('home (P11)', () => {
           product: 'Zolfo',
           quantity: 3.5,
           unit: 'kg_ha',
+        },
+      }),
+    );
+  });
+
+  it('names the person of the organization to remind of an expiry', async () => {
+    const sectorFeatures = [
+      {
+        id: 'trade_licenses',
+        label: 'Abilitazioni e patentini',
+        description: 'Patentini e abilitazioni delle persone.',
+        ready: true,
+        dashboard: true,
+        miniApp: false,
+      },
+    ];
+    api('ADMIN', {
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'anna@collio.it',
+          organizations: [{ orgId: ORG, name: 'Azienda', role: 'ADMIN' }],
+          current: { orgId: ORG, role: 'ADMIN', sectorFeatures },
+        }),
+      'GET /sector/trade_licenses/records': () => ok(licensePage()),
+      'POST /sector/trade_licenses/records': () => ({
+        status: 201,
+        body: { success: true, data: licensePage().items[0] },
+      }),
+    });
+    openAt('/settore/trade_licenses');
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Avvisa: marco@collio.it')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Nuova voce' }));
+    const form = screen.getByRole('form', { name: 'Nuova voce' });
+    await userEvent.type(within(form).getByLabelText('Titolare *'), 'Elisa P.');
+    await userEvent.selectOptions(within(form).getByLabelText('Tipo *'), 'plant_protection');
+    await userEvent.type(within(form).getByLabelText('Scadenza'), '2029-03-04');
+    const person = within(form).getByLabelText('Persona da avvisare in SinfonIA');
+    expect(
+      within(person).getByRole('option', { name: 'Nessuna (solo gli amministratori)' }),
+    ).toBeTruthy();
+    await userEvent.selectOptions(person, 'u-1');
+    await userEvent.click(within(form).getByRole('button', { name: 'Salva' }));
+    await waitFor(() =>
+      expect(
+        requested('/sector/trade_licenses/records').find((c) => c.method === 'POST')?.body,
+      ).toEqual({
+        kind: 'license',
+        data: {
+          holder: 'Elisa P.',
+          licenseType: 'plant_protection',
+          expiresOn: '2029-03-04',
+          notify: 'u-1',
         },
       }),
     );
