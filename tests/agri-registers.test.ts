@@ -189,8 +189,8 @@ describe.runIf(Boolean(DATABASE_URL))('agricultural registers with PostgreSQL', 
       const entry = await create('agri', feature, kind, data);
       const deadline = await deadlineOf(entry.id);
       expect(deadline?.category, `${feature}/${kind}`).toBe(category);
-      const label = SECTOR_FEATURES.find((f) => f.id === feature)?.label;
-      expect(deadline?.title).toBe(`${label}: ${entry.title}`);
+      // The kind of entry says what expires.
+      expect(deadline?.title).toBe(`${entry.kindLabel}: ${entry.title}`);
     }
   });
 
