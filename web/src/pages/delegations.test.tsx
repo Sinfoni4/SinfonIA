@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { endDateIn, maxMonths } from '../api/delegations';
 import { FALLBACK_MODULE } from '../api/modules';
+import { fieldBookPage, TREATMENT } from '../api/sector.fixture';
 import { App } from '../App';
 import { SessionProvider } from '../session/session';
 
@@ -164,6 +165,103 @@ describe('delegations (MF8)', () => {
         validUntil: endDateIn(3),
       }),
     );
+  });
+
+  it('names the registers a delegation covers, among those of the sector', async () => {
+    api('ADMIN', 'COMPANY', {
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'anna@terre.it',
+          organizations: [{ orgId: ORG, name: 'Collio', role: 'ADMIN', type: 'COMPANY' }],
+          platform: false,
+          current: {
+            orgId: ORG,
+            role: 'ADMIN',
+            sectorFeatures: [
+              {
+                id: 'field_book',
+                label: 'Quaderno di campagna',
+                description: 'Registro.',
+                ready: true,
+                dashboard: true,
+                miniApp: false,
+              },
+              {
+                id: 'farm_fuel',
+                label: 'Carburante agricolo',
+                description: 'UMA.',
+                ready: true,
+                dashboard: false,
+                miniApp: true,
+              },
+            ],
+          },
+        }),
+      'POST /grants': () => ({ status: 201, body: { success: true, data: { id: 'g-9' } } }),
+    });
+    openAt('/deleghe');
+    await userEvent.type(await screen.findByLabelText("Codice dell'organizzazione"), COMPANY);
+    // Only the registers on in the dashboard.
+    expect(screen.queryByLabelText('Carburante agricolo')).toBeNull();
+    await userEvent.click(screen.getByLabelText('Quaderno di campagna'));
+    await userEvent.click(screen.getByRole('button', { name: 'Concedi la delega' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'POST' && c.path === '/grants')?.body).toMatchObject({
+        operations: ['READ'],
+        registers: ['field_book'],
+      }),
+    );
+  });
+
+  it('opens a register of the grantor, offering only what the delegation allows', async () => {
+    const delegation = {
+      grantorName: 'Azienda Agricola Collio',
+      operations: ['READ', 'UPDATE'],
+      validUntil: '2027-05-01T10:00:00Z',
+    };
+    api('OPERATOR', 'NETWORK', {
+      'GET /grants/received': () =>
+        ok([
+          {
+            id: 'g-2',
+            grantor: { orgId: COMPANY, name: 'Azienda Agricola Collio' },
+            granteeType: 'ORGANIZATION',
+            operations: ['READ', 'UPDATE'],
+            registers: [{ id: 'field_book', label: 'Quaderno di campagna' }],
+            validUntil: '2027-05-01T10:00:00Z',
+            state: 'ACTIVE',
+            usable: true,
+            beneficiaries: [],
+          },
+        ]),
+      'GET /grants/g-2/sector/field_book/records': () =>
+        ok({ ...fieldBookPage([TREATMENT], true), delegation }),
+      [`PATCH /grants/g-2/sector/field_book/records/${TREATMENT.id}`]: () => ok(TREATMENT),
+    });
+    openAt('/deleghe');
+    await userEvent.click(await screen.findByRole('link', { name: 'Quaderno di campagna' }));
+    expect(await screen.findByText(/Stai lavorando sul registro di/)).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Quaderno di campagna di Azienda Agricola Collio' }),
+    ).toBeTruthy();
+    // UPDATE without CREATE or EXPORT, and never a deletion.
+    expect(screen.queryByRole('button', { name: 'Nuova voce' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Esporta il registro' })).toBeNull();
+    expect(screen.queryByRole('button', { name: `Elimina ${TREATMENT.title}` })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: `Modifica ${TREATMENT.title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await waitFor(() =>
+      expect(
+        calls.find(
+          (c) =>
+            c.method === 'PATCH' &&
+            c.path === `/grants/g-2/sector/field_book/records/${TREATMENT.id}`,
+        ),
+      ).toBeTruthy(),
+    );
+    // Nothing went to the registers of the person's own organization.
+    expect(calls.some((c) => c.path.startsWith('/sector/'))).toBe(false);
   });
 
   it('opens the practices of the grantor with its name always in view', async () => {

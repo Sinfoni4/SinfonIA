@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Fragment, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 
-import { describeError, type Me } from '../api/client';
+import { dashboardSectorFeatures, describeError, type Me } from '../api/client';
 import {
   BENEFICIARY_NAMES,
   DURATIONS,
@@ -101,6 +101,7 @@ function IssuedTab({ me }: { me: Me }) {
   return (
     <>
       <NewGrantForm
+        me={me}
         onDone={async () => {
           setNotice('Delega concessa.');
           await refresh();
@@ -137,6 +138,9 @@ function IssuedTab({ me }: { me: Me }) {
             <p className="muted">
               Può {opsText(g.operations)} · fino al {formatDate(g.validUntil)}
             </p>
+            {(g.registers?.length ?? 0) > 0 && (
+              <p className="muted">Registri: {g.registers?.map((r) => r.label).join(', ')}</p>
+            )}
             {g.granteeType === 'ORGANIZATION' && (
               <div>
                 <strong>Persone che possono usarla</strong>
@@ -225,8 +229,11 @@ function IssuedTab({ me }: { me: Me }) {
   );
 }
 
-function NewGrantForm({ onDone }: { onDone: () => Promise<void> }) {
+function NewGrantForm({ me, onDone }: { me: Me; onDone: () => Promise<void> }) {
   const { api } = useSession();
+  // The registers of the organization's sector functions, built and on in the dashboard.
+  const offeredRegisters = dashboardSectorFeatures(me).filter((f) => f.ready);
+  const [registers, setRegisters] = useState<string[]>([]);
   const [kind, setKind] = useState<'org' | 'person'>('org');
   const [target, setTarget] = useState('');
   const [operations, setOperations] = useState<GrantOperation[]>(['READ']);
@@ -241,6 +248,7 @@ function NewGrantForm({ onDone }: { onDone: () => Promise<void> }) {
           grantee: kind === 'org' ? { orgId: target.trim() } : { email: target.trim() },
           operations,
           validUntil: endDateIn(chosenMonths),
+          ...(registers.length > 0 ? { registers } : {}),
         },
       }),
     onSuccess: async () => {
@@ -296,6 +304,25 @@ function NewGrantForm({ onDone }: { onDone: () => Promise<void> }) {
           </label>
         ))}
       </fieldset>
+      {offeredRegisters.length > 0 && (
+        <fieldset className="plain-fieldset">
+          <legend>Registri compresi, oltre alle pratiche</legend>
+          {offeredRegisters.map((f) => (
+            <label key={f.id} className="check">
+              <input
+                type="checkbox"
+                checked={registers.includes(f.id)}
+                onChange={() =>
+                  setRegisters((list) =>
+                    list.includes(f.id) ? list.filter((r) => r !== f.id) : [...list, f.id],
+                  )
+                }
+              />
+              {f.label}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <label htmlFor="grant-months">Durata</label>
       <select
         id="grant-months"
@@ -382,9 +409,20 @@ function ReceivedTab({ me }: { me: Me }) {
                 {opsText(g.operations)} · fino al {formatDate(g.validUntil)}
               </p>
               {g.usable ? (
-                <Link to={`/deleghe/${g.id}`} className="button">
-                  Apri le pratiche di {g.grantor.name}
-                </Link>
+                <div className="actions">
+                  <Link to={`/deleghe/${g.id}`} className="button">
+                    Apri le pratiche di {g.grantor.name}
+                  </Link>
+                  {g.registers?.map((r) => (
+                    <Link
+                      key={r.id}
+                      to={`/deleghe/${g.id}/registri/${r.id}`}
+                      className="button secondary"
+                    >
+                      {r.label}
+                    </Link>
+                  ))}
+                </div>
               ) : (
                 g.state === 'ACTIVE' &&
                 g.granteeType === 'ORGANIZATION' && (

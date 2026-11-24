@@ -65,6 +65,8 @@ export type SectorRegisterPage = {
   canManage: boolean;
   /** Who may be named as the person to remind (all people for staff, oneself for a member). */
   people: SectorPerson[];
+  /** Through a delegation: whose register it is and what the delegation allows. */
+  delegation?: { grantorName: string; operations: string[]; validUntil: string };
   items: SectorRecord[];
   page: number;
   limit: number;
@@ -72,7 +74,8 @@ export type SectorRegisterPage = {
   totalPages: number;
 };
 
-export type SectorChannel = 'dashboard' | 'miniapp';
+/** Where a register is reached: the dashboard, the Mini App, or a delegation received (MF8). */
+export type SectorChannel = 'dashboard' | 'miniapp' | { grantId: string };
 
 export type SectorFilters = {
   kind?: string;
@@ -86,7 +89,13 @@ export type SectorFilters = {
 
 /** The base path of a register for the channel. */
 export function sectorPath(channel: SectorChannel, feature: string, id?: string): string {
-  const base = `${channel === 'miniapp' ? '/miniapp/sector' : '/sector'}/${encodeURIComponent(feature)}/records`;
+  const root =
+    typeof channel === 'object'
+      ? `/grants/${encodeURIComponent(channel.grantId)}/sector`
+      : channel === 'miniapp'
+        ? '/miniapp/sector'
+        : '/sector';
+  const base = `${root}/${encodeURIComponent(feature)}/records`;
   return id ? `${base}/${encodeURIComponent(id)}` : base;
 }
 

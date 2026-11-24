@@ -1,6 +1,7 @@
 import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
+import { getModule, sectorFeature, sectorFeatureApplies } from '../../modules/registry.js';
 
 import type { PrismaLike } from '../../data/types/prisma.js';
 import type {
@@ -120,6 +121,27 @@ export function grantState(
   return g.validUntil <= now ? 'EXPIRED' : 'ACTIVE';
 }
 
+/**
+ * The registers of sector functions a delegation covers besides the practices, stored in its
+ * scope as `sector:<function>` (e.g. `sector:field_book`).
+ */
+const REGISTER_PREFIX = 'sector:';
+
+export function registersOf(scope: unknown): string[] {
+  const types = (scope as { types?: unknown } | null)?.types;
+  return Array.isArray(types)
+    ? types
+        .filter((t): t is string => typeof t === 'string' && t.startsWith(REGISTER_PREFIX))
+        .map((t) => t.slice(REGISTER_PREFIX.length))
+    : [];
+}
+
+export type GrantRegister = { id: string; label: string };
+
+function registerViews(scope: unknown): GrantRegister[] {
+  return registersOf(scope).map((id) => ({ id, label: sectorFeature(id)?.label ?? id }));
+}
+
 const PLACEHOLDER_EMAIL = /@local\.invalid$/i;
 const emailOf = (email: string) => (PLACEHOLDER_EMAIL.test(email) ? null : email);
 
@@ -128,6 +150,8 @@ export type IssuedGrant = {
   granteeType: GranteeType;
   grantee: { orgId?: string; name: string; type?: OrganizationType };
   operations: GrantOperation[];
+  /** Registers of sector functions covered besides the practices. */
+  registers: GrantRegister[];
   validFrom: Date;
   validUntil: Date;
   state: GrantState;
@@ -142,6 +166,7 @@ const GRANT_SELECT = {
   granteeOrgId: true,
   granteeUserId: true,
   operations: true,
+  scope: true,
   validFrom: true,
   validUntil: true,
   status: true,
@@ -165,6 +190,7 @@ function toIssued(g: GrantRow, now: Date): IssuedGrant {
       ? { orgId: g.granteeOrg.id, name: g.granteeOrg.name, type: g.granteeOrg.type }
       : { name: emailOf(g.granteeUser?.email ?? '') ?? 'persona senza email' },
     operations: g.operations,
+    registers: registerViews(g.scope),
     validFrom: g.validFrom,
     validUntil: g.validUntil,
     state: grantState(g, now),
@@ -201,14 +227,22 @@ export async function issueGrant(
     grantee: GranteeInput;
     operations: GrantOperation[];
     validUntil: Date;
+    /** Registers of sector functions to cover besides the practices (built, of its sector). */
+    registers?: readonly string[];
   },
 ): Promise<{ id: string }> {
   const operations = checkDelegation(input.operations, input.validUntil);
+  const registers = [...new Set(input.registers ?? [])];
   return withTransaction(prisma, async (tx) => {
     const grantor = await tx.tenant.findUniqueOrThrow({
       where: { id: input.grantorOrgId },
-      select: { name: true },
+      select: { name: true, module: true },
     });
+    for (const id of registers) {
+      if (!sectorFeature(id)?.ready || !sectorFeatureApplies(id, getModule(grantor.module).id)) {
+        throw new DelegationError(`Registro non disponibile per la delega: ${id}`);
+      }
+    }
     let grantee: { granteeType: GranteeType; granteeOrgId?: string; granteeUserId?: string };
     let granteeName: string;
     if ('orgId' in input.grantee) {
@@ -247,7 +281,7 @@ export async function issueGrant(
       data: {
         grantorOrgId: input.grantorOrgId,
         ...grantee,
-        scope: { types: ['practices'] },
+        scope: { types: ['practices', ...registers.map((r) => `${REGISTER_PREFIX}${r}`)] },
         operations,
         validUntil: input.validUntil,
         createdBy: input.actorUserId,
@@ -412,6 +446,8 @@ export type ReceivedGrant = {
   grantor: { orgId: string; name: string };
   granteeType: GranteeType;
   operations: GrantOperation[];
+  /** Registers of sector functions covered besides the practices. */
+  registers: GrantRegister[];
   validUntil: Date;
   state: GrantState;
   /** Whether the person asking can use it now. */
@@ -446,6 +482,7 @@ export async function listReceivedGrants(
       grantor: { orgId: g.grantor.id, name: g.grantor.name },
       granteeType: g.granteeType,
       operations: g.operations,
+      registers: registerViews(g.scope),
       validUntil: g.validUntil,
       state,
       usable,
@@ -529,6 +566,8 @@ export type DelegatedAccess = {
   grantorOrgId: string;
   grantorName: string;
   operations: GrantOperation[];
+  /** Registers of sector functions the delegation covers besides the practices. */
+  registers: string[];
   validUntil: Date;
 };
 
@@ -567,6 +606,7 @@ export async function resolveDelegatedAccess(
       id: true,
       grantorOrgId: true,
       operations: true,
+      scope: true,
       validUntil: true,
       grantor: { select: { name: true } },
     },
@@ -584,6 +624,7 @@ export async function resolveDelegatedAccess(
     grantorOrgId: grant.grantorOrgId,
     grantorName: grant.grantor.name,
     operations: grant.operations,
+    registers: registersOf(grant.scope),
     validUntil: grant.validUntil,
   };
 }

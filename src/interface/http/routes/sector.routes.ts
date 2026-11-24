@@ -1,17 +1,25 @@
 import { z } from 'zod';
 
-import { SectorRecordService } from '../../../core/sector/sector-records.service.js';
-import { requirePrincipal } from '../auth/guards.js';
+import {
+  auditDelegatedUse,
+  resolveDelegatedAccess,
+} from '../../../core/delegation/delegation.service.js';
+import {
+  SectorRecordError,
+  SectorRecordService,
+} from '../../../core/sector/sector-records.service.js';
+import { requirePermission, requirePrincipal } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 
 import { attachmentBodyLimit, readAttachmentUpload } from './attachment-upload.js';
 
+import type { Principal } from '../../../core/authz/authorization.service.js';
 import type { ComplianceService } from '../../../core/compliance/compliance.service.js';
 import type { StorageService } from '../../../data/storage/storage.service.js';
 import type { SectorChannel } from '../../../modules/registry.js';
-import type { PrismaClient } from '@prisma/client';
-import type { FastifyPluginCallback, FastifyReply } from 'fastify';
+import type { GrantOperation, PrismaClient } from '@prisma/client';
+import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 
 export type SectorRoutesDeps = {
   prisma: PrismaClient;
@@ -26,6 +34,9 @@ const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 const FeatureParams = z.object({ feature: z.string().regex(/^[a-z_]{2,40}$/) });
 const RecordParams = FeatureParams.extend({ id: z.string().uuid() });
 const FileParams = RecordParams.extend({ attachmentId: z.string().uuid() });
+const GrantFeatureParams = FeatureParams.extend({ grantId: z.string().uuid() });
+const GrantRecordParams = GrantFeatureParams.extend({ id: z.string().uuid() });
+const GrantFileParams = GrantRecordParams.extend({ attachmentId: z.string().uuid() });
 const ExportQuery = z
   .object({
     format: z.enum(['csv', 'xlsx', 'pdf']),
@@ -228,6 +239,162 @@ export const sectorRoutes: FastifyPluginCallback<SectorRoutesDeps> = (app, deps,
       }
     });
   }
+
+  // --- through a delegation (MF8) -------------------------------------------------------------
+  // The registers a delegation covers, of the grantor, on the dashboard: every request checks the
+  // delegation, its operation and the register, then works as the grantor's staff would, without
+  // ever showing its people; every use goes in the grantor's log.
+  const delegated = async (
+    req: FastifyRequest,
+    grantId: string,
+    feature: string,
+    operation: Extract<GrantOperation, 'READ' | 'CREATE' | 'UPDATE' | 'EXPORT'>,
+  ) => {
+    const own = requirePermission(req, 'grant.use').principal;
+    const access = await resolveDelegatedAccess(deps.prisma, {
+      grantId,
+      userId: own.userId,
+      currentOrgId: own.tenantId,
+      operation,
+    });
+    if (!access.registers.includes(feature)) {
+      throw new SectorRecordError(
+        'Questo registro non è compreso nella delega',
+        403,
+        'REGISTER_NOT_DELEGATED',
+      );
+    }
+    const grantor = await deps.prisma.tenant.findUniqueOrThrow({
+      where: { id: access.grantorOrgId },
+      select: { disabledFeatures: true },
+    });
+    const principal: Principal = {
+      tenantId: access.grantorOrgId,
+      userId: own.userId,
+      role: 'OPERATOR',
+      customPermissions: null,
+      disabledFeatures: grantor.disabledFeatures,
+      delegation: { grantId: access.grantId, operations: access.operations },
+    };
+    const audit = (action: string, extra: Record<string, string> = {}) =>
+      auditDelegatedUse(deps.prisma, access, own.userId, action, { register: feature, ...extra });
+    return {
+      principal,
+      audit,
+      delegation: {
+        grantorName: access.grantorName,
+        operations: access.operations,
+        validUntil: access.validUntil,
+      },
+    };
+  };
+  const grantConfig = { permission: 'grant.use' as const };
+  const grantBase = '/grants/:grantId/sector/:feature/records';
+  const channel: SectorChannel = 'dashboard';
+
+  app.get(grantBase, { config: grantConfig }, async (req, reply) => {
+    try {
+      const { grantId, feature } = GrantFeatureParams.parse(req.params);
+      const query = ListQuery.parse(req.query);
+      const d = await delegated(req, grantId, feature, 'READ');
+      const page = await service.list(d.principal, { feature, channel, ...query });
+      await d.audit('list');
+      return reply.send(ok({ ...page, delegation: d.delegation }));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.get(`${grantBase}/export`, { config: grantConfig }, async (req, reply) => {
+    try {
+      const { grantId, feature } = GrantFeatureParams.parse(req.params);
+      const query = ExportQuery.parse(req.query);
+      const d = await delegated(req, grantId, feature, 'EXPORT');
+      const file = await service.export(d.principal, { feature, channel, ...query });
+      await d.audit('export');
+      return sendFile(reply, file);
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post(grantBase, { config: grantConfig }, async (req, reply) => {
+    try {
+      const { grantId, feature } = GrantFeatureParams.parse(req.params);
+      const d = await delegated(req, grantId, feature, 'CREATE');
+      const body = CreateBody.parse(req.body);
+      const created = await service.create(d.principal, {
+        feature,
+        channel,
+        kind: body.kind,
+        data: body.data,
+      });
+      await d.audit('create', { recordId: created.id });
+      return reply.status(201).send(ok(created));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.patch(`${grantBase}/:id`, { config: grantConfig }, async (req, reply) => {
+    try {
+      const { grantId, feature, id } = GrantRecordParams.parse(req.params);
+      const d = await delegated(req, grantId, feature, 'UPDATE');
+      const body = UpdateBody.parse(req.body);
+      const updated = await service.update(d.principal, { feature, channel, id, data: body.data });
+      await d.audit('update', { recordId: id });
+      return reply.send(ok(updated));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post(
+    `${grantBase}/:id/attachments`,
+    {
+      config: grantConfig,
+      bodyLimit: attachmentBodyLimit(deps.maxAttachmentBytes ?? DEFAULT_MAX_BYTES),
+    },
+    async (req, reply) => {
+      try {
+        const { grantId, feature, id } = GrantRecordParams.parse(req.params);
+        const d = await delegated(req, grantId, feature, 'UPDATE');
+        const upload = await readAttachmentUpload(req);
+        const record = await service.addAttachment(d.principal, {
+          feature,
+          channel,
+          id,
+          fileName: upload.fileName,
+          content: upload.content,
+        });
+        await d.audit('upload', { recordId: id });
+        return reply.status(201).send(ok(record));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.get(
+    `${grantBase}/:id/attachments/:attachmentId/download`,
+    { config: grantConfig },
+    async (req, reply) => {
+      try {
+        const { grantId, feature, id, attachmentId } = GrantFileParams.parse(req.params);
+        const d = await delegated(req, grantId, feature, 'READ');
+        const file = await service.downloadAttachment(d.principal, {
+          feature,
+          channel,
+          id,
+          attachmentId,
+        });
+        await d.audit('download', { recordId: id });
+        return sendFile(reply, file);
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   done();
 };
