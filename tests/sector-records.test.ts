@@ -146,10 +146,28 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
     expect(off.status).toBe(403);
     expect(off.body.error?.code).toBe('SECTOR_FEATURE_OFF');
 
-    await turnOn(['field_book', 'trade_licenses', 'cap_file'], []);
+    await turnOn(['field_book', 'trade_licenses'], []);
     expect((await call('GET', '/sector/grants/records', admin())).status).toBe(404);
     expect((await call('GET', '/sector/unknown_thing/records', admin())).status).toBe(404);
-    const building = await call('GET', '/sector/cap_file/records', admin());
+    // Every agricultural function is built: a crafts organization has one still in preparation.
+    const crafts = (
+      await new TenantRepository(prisma).createTenant({
+        name: `Artigiani ${run}`,
+        module: 'artisan',
+      })
+    ).id;
+    await prisma.tenant.update({ where: { id: crafts }, data: { enabledFeatures: ['grants'] } });
+    const craftsAdmin = (
+      await new UserRepository(prisma).createUser(crafts, {
+        email: `crafts-${run}@sector.local`,
+        role: 'ADMIN',
+      })
+    ).id;
+    const building = await call(
+      'GET',
+      '/sector/grants/records',
+      authHeaders(crafts, craftsAdmin, 'ADMIN'),
+    );
     expect(building.status).toBe(409);
     expect(building.body.error?.code).toBe('SECTOR_FEATURE_NOT_READY');
   });
@@ -552,10 +570,16 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
         'field_book.manage',
         'trade_licenses.read',
         'trade_licenses.manage',
+        'cap_file.read',
+        'farm_fuel.manage',
+        'organic_certification.read',
+        'training_safety.manage',
+        'risk_assessment.read',
         'practice.read',
       ]),
     );
-    for (const hidden of ['cap_file.read', 'grants.read', 'waste_records.manage']) {
+    // Functions of the crafts sector only.
+    for (const hidden of ['grants.read', 'business_startup.read', 'waste_records.manage']) {
       expect(operator).not.toContain(hidden);
     }
   });
