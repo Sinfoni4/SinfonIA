@@ -234,9 +234,20 @@ describe.runIf(Boolean(DATABASE_URL))('history of the register entries with Post
 
   it('never lets the database change a version, but clears its author when asked by the FK', async () => {
     const entry = await create(license({ holder: `Db ${run}` }));
+    // With the application role (as in the CI) the privilege is missing; with the owner, the
+    // trigger refuses: either way the version does not change.
+    const [{ app }] = await prisma.$queryRaw<Array<{ app: boolean }>>`
+      SELECT NOT has_table_privilege(current_user, 'sector_record_version', 'UPDATE') AS app`;
     await expect(
       prisma.$executeRaw`UPDATE sector_record_version SET reason = 'cambiata' WHERE record_id = ${entry.id}::uuid`,
-    ).rejects.toThrow(/updates are not allowed/);
+    ).rejects.toThrow(app ? /permission denied/ : /updates are not allowed/);
+    if (app) {
+      // Nor deleted by the application: only with its entry or its organization (cascade).
+      await expect(
+        prisma.$executeRaw`DELETE FROM sector_record_version WHERE record_id = ${entry.id}::uuid`,
+      ).rejects.toThrow(/permission denied/);
+      return;
+    }
     // What ON DELETE SET NULL does when the author's account goes: allowed, nothing else changes.
     expect(
       await prisma.$executeRaw`UPDATE sector_record_version SET changed_by = NULL WHERE record_id = ${entry.id}::uuid`,
