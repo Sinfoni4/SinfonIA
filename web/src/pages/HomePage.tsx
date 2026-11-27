@@ -158,6 +158,8 @@ export function HomePage({ me }: { me: Me }) {
                       </span>
                       <span className="text-sm text-muted-foreground">
                         {CATEGORY_LABELS[d.category]} · {isoToItalian(d.dueDate)}
+                        {d.certainty === 'TO_VERIFY' && ' · da verificare'}
+                        {d.certainty === 'INFORMATIONAL' && ' · informativa'}
                       </span>
                     </li>
                   ))}

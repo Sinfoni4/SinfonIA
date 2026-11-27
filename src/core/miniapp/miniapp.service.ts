@@ -59,6 +59,8 @@ export type MiniAppSummary = {
     category: string;
     dueDate: string;
     daysLeft: number;
+    /** Fase 1B: the Mini App labels what is not confirmed and counts no information-only one. */
+    certainty: 'CONFIRMED' | 'TO_VERIFY' | 'INFORMATIONAL';
   }>;
   feed: Array<{
     type: string;
@@ -228,6 +230,7 @@ export async function miniAppSummary(
       category: d.category,
       dueDate: d.dueDate,
       daysLeft: d.daysLeft,
+      certainty: d.certainty,
     })),
     feed,
   };

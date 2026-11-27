@@ -1,8 +1,12 @@
 import { z } from 'zod';
 
-import { COMPLIANCE_CATEGORIES } from '../../../core/compliance/compliance.service.js';
+import {
+  COMPLIANCE_CATEGORIES,
+  DEADLINE_CERTAINTIES,
+} from '../../../core/compliance/compliance.service.js';
 
 export const ComplianceCategorySchema = z.enum(COMPLIANCE_CATEGORIES);
+export const DeadlineCertaintySchema = z.enum(DEADLINE_CERTAINTIES);
 
 export const ComplianceDeadlineParamsSchema = z.object({
   id: z.string().uuid(),
@@ -15,11 +19,18 @@ export const ComplianceDeadlineCreateBodySchema = z.object({
   // Member the deadline refers to (e.g. a medical check); omitted = the cooperative.
   userId: z.string().uuid().optional(),
   notes: z.string().trim().max(2000).optional(),
+  // Fase 1B: confirmed when omitted.
+  certainty: DeadlineCertaintySchema.optional(),
 });
+
+export const ComplianceDeadlineCertaintyBodySchema = z
+  .object({ certainty: DeadlineCertaintySchema })
+  .strict();
 
 export const ComplianceDeadlineListQuerySchema = z.object({
   status: z.enum(['OPEN', 'CLOSED']).optional(),
   category: ComplianceCategorySchema.optional(),
+  certainty: DeadlineCertaintySchema.optional(),
   userId: z.string().uuid().optional(),
   withinDays: z.coerce.number().int().min(0).max(3650).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),

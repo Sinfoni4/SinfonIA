@@ -31,6 +31,8 @@ export type DashboardSummary = {
       category: string;
       dueDate: string;
       daysLeft: number;
+      /** Fase 1B: information-only deadlines are listed but not counted. */
+      certainty: 'CONFIRMED' | 'TO_VERIFY' | 'INFORMATIONAL';
     }>;
   };
   documents: {
@@ -148,14 +150,16 @@ export async function dashboardSummary(
   return {
     practices: { total: STATES.reduce((sum, s) => sum + byStatus[s], 0), byStatus },
     deadlines: {
-      overdue: deadlines.filter((d) => d.daysLeft < 0).length,
-      dueSoon: deadlines.filter((d) => d.daysLeft >= 0).length,
+      // Fase 1B: deadlines for information only are listed, never counted as late or due.
+      overdue: deadlines.filter((d) => d.certainty !== 'INFORMATIONAL' && d.daysLeft < 0).length,
+      dueSoon: deadlines.filter((d) => d.certainty !== 'INFORMATIONAL' && d.daysLeft >= 0).length,
       upcoming: deadlines.slice(0, LIST_SIZE).map((d) => ({
         id: d.id,
         title: d.title,
         category: d.category,
         dueDate: d.dueDate,
         daysLeft: d.daysLeft,
+        certainty: d.certainty,
       })),
     },
     documents: {

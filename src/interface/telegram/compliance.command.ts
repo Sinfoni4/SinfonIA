@@ -4,7 +4,10 @@ import {
   parseIsoDate,
   REMINDER_THRESHOLDS,
 } from '../../core/compliance/compliance.dates.js';
-import { COMPLIANCE_CATEGORY_LABELS } from '../../core/compliance/compliance.service.js';
+import {
+  COMPLIANCE_CATEGORY_LABELS,
+  DEADLINE_CERTAINTY_LABELS,
+} from '../../core/compliance/compliance.service.js';
 import { ComplianceValidationError } from '../../core/errors/compliance.errors.js';
 import { featureEnabled } from '../../core/features/features.js';
 import { NotFoundError } from '../../data/errors/errors.js';
@@ -47,7 +50,9 @@ export function formatDeadlineList(deadlines: ComplianceDeadlineView[]): string 
   }
   const lines = deadlines.map((d) => {
     const icon = d.daysLeft <= 7 ? '⚠️' : '📅';
-    return `${icon} ${d.title}\n   ${COMPLIANCE_CATEGORY_LABELS[d.category]} · ${dueText(d)} · codice ${d.shortId}`;
+    // Fase 1B: only what is not confirmed is labelled.
+    const sure = d.certainty === 'CONFIRMED' ? '' : ` · ${DEADLINE_CERTAINTY_LABELS[d.certainty]}`;
+    return `${icon} ${d.title}\n   ${COMPLIANCE_CATEGORY_LABELS[d.category]} · ${dueText(d)}${sure} · codice ${d.shortId}`;
   });
   return ['🗓️ Scadenze aperte', '', ...lines].join('\n');
 }

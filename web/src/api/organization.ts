@@ -1,7 +1,12 @@
 /** Home numbers, activity log, assistant usage and settings of the organization (FE6). */
 
 import { ROLE_LABELS, type Role } from './client';
-import { CATEGORY_LABELS, type DeadlineCategory } from './compliance';
+import {
+  CATEGORY_LABELS,
+  CERTAINTY_LABELS,
+  type DeadlineCategory,
+  type DeadlineCertainty,
+} from './compliance';
 import { STATE_LABELS, type PracticeState } from './practices';
 
 export type Summary = {
@@ -15,6 +20,8 @@ export type Summary = {
       category: DeadlineCategory;
       dueDate: string;
       daysLeft: number;
+      /** Fase 1B; missing on older APIs: confirmed. */
+      certainty?: DeadlineCertainty;
     }>;
   };
   documents: {
@@ -166,6 +173,7 @@ export const EVENT_GROUPS: Record<string, { label: string; types: string[] }> = 
     types: [
       'COMPLIANCE_DEADLINE_CREATED',
       'COMPLIANCE_DEADLINE_CLOSED',
+      'COMPLIANCE_DEADLINE_CERTAINTY_CHANGED',
       'COMPLIANCE_DEADLINE_REMINDER',
     ],
   },
@@ -391,6 +399,10 @@ export function describeEvent(event: AuditEvent): string {
       return `Nuova scadenza: ${category}`;
     case 'COMPLIANCE_DEADLINE_CLOSED':
       return 'Scadenza chiusa';
+    case 'COMPLIANCE_DEADLINE_CERTAINTY_CHANGED': {
+      const to = typeof d.to === 'string' ? CERTAINTY_LABELS[d.to as DeadlineCertainty] : null;
+      return to ? `Scadenza segnata come «${to.toLowerCase()}»` : 'Scadenza modificata';
+    }
     case 'COMPLIANCE_DEADLINE_REMINDER':
       return `Promemoria inviato: ${category}`;
     case 'EXPORT_GENERATED':

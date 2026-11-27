@@ -3,6 +3,7 @@ import { requirePermission } from '../auth/guards.js';
 import { mapErrorToHttp } from '../errors/error-mapper.js';
 import { fail, ok } from '../errors/http.errors.js';
 import {
+  ComplianceDeadlineCertaintyBodySchema,
   ComplianceDeadlineCreateBodySchema,
   ComplianceDeadlineListQuerySchema,
   ComplianceDeadlineParamsSchema,
@@ -33,6 +34,7 @@ export const complianceRoutes: FastifyPluginCallback<ComplianceRoutesDeps> = (ap
           title: body.title,
           dueDate: body.dueDate,
           notes: body.notes ?? null,
+          ...(body.certainty ? { certainty: body.certainty } : {}),
         });
 
         return reply.status(201).send(ok(created));
@@ -60,6 +62,7 @@ export const complianceRoutes: FastifyPluginCallback<ComplianceRoutesDeps> = (ap
           tenantId: auth.tenantId,
           status: query.status,
           category: query.category,
+          certainty: query.certainty,
           userId,
           withinDays: query.withinDays,
           limit: query.limit,
@@ -89,6 +92,29 @@ export const complianceRoutes: FastifyPluginCallback<ComplianceRoutesDeps> = (ap
         });
 
         return reply.send(ok(closed));
+      } catch (err: unknown) {
+        const mapped = mapErrorToHttp(err);
+        return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    },
+  );
+
+  // POST /compliance/deadlines/:id/certainty — Confirmed, to be checked or for information only
+  app.post(
+    '/compliance/deadlines/:id/certainty',
+    { config: { permission: 'compliance.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'compliance.manage').principal;
+        const params = ComplianceDeadlineParamsSchema.parse(req.params);
+        const body = ComplianceDeadlineCertaintyBodySchema.parse(req.body);
+        const changed = await deps.complianceService.setCertainty({
+          tenantId: auth.tenantId,
+          id: params.id,
+          certainty: body.certainty,
+          changedBy: auth.userId,
+        });
+        return reply.send(ok(changed));
       } catch (err: unknown) {
         const mapped = mapErrorToHttp(err);
         return reply.status(mapped.statusCode).send(fail(mapped.code, mapped.message));

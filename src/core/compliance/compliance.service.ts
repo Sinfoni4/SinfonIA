@@ -18,7 +18,12 @@ import {
 } from './compliance.dates.js';
 
 import type { ComplianceDeadlineDTO } from '../../data/repositories/compliance.repository.js';
-import type { ComplianceCategory, ComplianceDeadlineStatus, PrismaClient } from '@prisma/client';
+import type {
+  ComplianceCategory,
+  ComplianceDeadlineStatus,
+  DeadlineCertainty,
+  PrismaClient,
+} from '@prisma/client';
 
 export const COMPLIANCE_CATEGORIES = [
   'DURC',
@@ -38,6 +43,19 @@ export const COMPLIANCE_CATEGORY_LABELS: Record<ComplianceCategory, string> = {
   ALTRO: 'Altro',
 };
 
+export const DEADLINE_CERTAINTIES = [
+  'CONFIRMED',
+  'TO_VERIFY',
+  'INFORMATIONAL',
+] as const satisfies readonly DeadlineCertainty[];
+
+/** How sure a deadline is, for people (Fase 1B). */
+export const DEADLINE_CERTAINTY_LABELS: Record<DeadlineCertainty, string> = {
+  CONFIRMED: 'confermata',
+  TO_VERIFY: 'da verificare',
+  INFORMATIONAL: 'informativa',
+};
+
 export const COMPLIANCE_DEADLINE_REMINDER = 'COMPLIANCE_DEADLINE_REMINDER';
 
 /** Outbox payload of a reminder; the dispatcher turns it into Telegram and webhook messages. */
@@ -49,6 +67,8 @@ export type ComplianceReminderPayload = {
   daysLeft: number;
   thresholdDays: number;
   userId: string | null;
+  /** Missing in reminders enqueued before Fase 1B: confirmed. */
+  certainty?: DeadlineCertainty;
 };
 
 export type ComplianceDeadlineView = {
@@ -59,6 +79,9 @@ export type ComplianceDeadlineView = {
   dueDate: string;
   daysLeft: number;
   status: ComplianceDeadlineStatus;
+  certainty: DeadlineCertainty;
+  /** When it was confirmed after being to check; null otherwise. */
+  verifiedAt: string | null;
   userId: string | null;
   notes: string | null;
   closedAt: string | null;
@@ -78,6 +101,8 @@ export function toDeadlineView(row: ComplianceDeadlineDTO, today: string): Compl
     dueDate: toIsoDate(row.dueDate),
     daysLeft: daysUntil(row.dueDate, today),
     status: row.status,
+    certainty: row.certainty,
+    verifiedAt: row.verifiedAt?.toISOString() ?? null,
     userId: row.userId,
     notes: row.notes,
     closedAt: row.closedAt?.toISOString() ?? null,
@@ -88,6 +113,9 @@ export function toDeadlineView(row: ComplianceDeadlineDTO, today: string): Compl
 /**
  * Compliance deadlines of a cooperative (DURC, safety training, organic certification, medical
  * checks, licences) and their reminders at 30/15/7/1 days and on the due date.
+ *
+ * Fase 1B: a deadline is confirmed (default), to be checked (reminded saying so, until someone
+ * confirms it) or for information only (shown, never reminded).
  */
 export class ComplianceService {
   private readonly repository: ComplianceRepository;
@@ -107,8 +135,15 @@ export class ComplianceService {
     title: string;
     dueDate: string;
     notes?: string | null;
+    certainty?: DeadlineCertainty;
   }): Promise<ComplianceDeadlineView> {
     requireDatabase();
+    const certainty = input.certainty ?? 'CONFIRMED';
+    if (!DEADLINE_CERTAINTIES.includes(certainty)) {
+      throw new ComplianceValidationError(
+        `Unknown certainty: allowed values are ${DEADLINE_CERTAINTIES.join(', ')}`,
+      );
+    }
     const category = input.category.toUpperCase() as ComplianceCategory;
     if (!COMPLIANCE_CATEGORIES.includes(category)) {
       throw new ComplianceValidationError(
@@ -145,12 +180,13 @@ export class ComplianceService {
         title,
         dueDate,
         notes,
+        certainty,
       });
       await new AuditService(tx).logEvent({
         tenantId: input.tenantId,
         userId: input.createdBy,
         eventType: 'COMPLIANCE_DEADLINE_CREATED',
-        payload: { deadlineId: row.id, category, dueDate: input.dueDate },
+        payload: { deadlineId: row.id, category, dueDate: input.dueDate, certainty },
       });
       return row;
     });
@@ -164,6 +200,7 @@ export class ComplianceService {
     tenantId: string;
     status?: ComplianceDeadlineStatus;
     category?: ComplianceCategory;
+    certainty?: DeadlineCertainty;
     userId?: string;
     withinDays?: number;
     limit?: number;
@@ -173,6 +210,7 @@ export class ComplianceService {
     const rows = await this.repository.list(input.tenantId, {
       status: input.status,
       category: input.category,
+      certainty: input.certainty,
       userId: input.userId,
       limit: input.limit,
       ...(input.withinDays !== undefined
@@ -216,6 +254,51 @@ export class ComplianceService {
   }
 
   /**
+   * Changes how sure a deadline is (staff): confirming one to be checked records who and when;
+   * making it for information only stops its reminders. Every change goes in the log.
+   */
+  async setCertainty(input: {
+    tenantId: string;
+    id: string;
+    certainty: DeadlineCertainty;
+    changedBy: string;
+  }): Promise<ComplianceDeadlineView> {
+    requireDatabase();
+    if (!DEADLINE_CERTAINTIES.includes(input.certainty)) {
+      throw new ComplianceValidationError(
+        `Unknown certainty: allowed values are ${DEADLINE_CERTAINTIES.join(', ')}`,
+      );
+    }
+    const existing = await this.repository.getById(input.tenantId, input.id);
+    if (existing.certainty === input.certainty) {
+      return toDeadlineView(existing, todayInRome(this.clock()));
+    }
+    const now = this.clock();
+    const changed = await withTransaction(this.prisma, async (tx) => {
+      const row = await new ComplianceRepository(tx).setCertainty(
+        input.tenantId,
+        input.id,
+        input.certainty,
+        input.changedBy,
+        now,
+      );
+      if (!row) throw new NotFoundError('Compliance deadline not found');
+      await new AuditService(tx).logEvent({
+        tenantId: input.tenantId,
+        userId: input.changedBy,
+        eventType: 'COMPLIANCE_DEADLINE_CERTAINTY_CHANGED',
+        payload: { deadlineId: input.id, from: existing.certainty, to: input.certainty },
+      });
+      return row;
+    });
+    // Back among the reminded ones: what is due now goes out now.
+    if (existing.certainty === 'INFORMATIONAL') {
+      await this.sendDueReminders({ deadlineId: input.id, tenantId: input.tenantId });
+    }
+    return toDeadlineView(changed, todayInRome(now));
+  }
+
+  /**
    * Enqueues the reminders due today: for every open deadline within 30 days, the tightest
    * threshold reached (30, 15, 7, 1, or 0 on/after the due date). Safe to run any number of times
    * and from several workers: each (deadline, threshold) reminder is created once.
@@ -243,6 +326,7 @@ export class ComplianceService {
         daysLeft,
         thresholdDays,
         userId: deadline.userId,
+        certainty: deadline.certainty,
       };
       const created = await this.repository.createReminderOnce({
         tenantId: deadline.tenantId,
