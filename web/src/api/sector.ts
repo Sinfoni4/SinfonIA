@@ -13,6 +13,8 @@ export type SectorField = {
   maxLength?: number;
   min?: number;
   max?: number;
+  /** number: the most decimal places accepted. */
+  decimals?: number;
   options?: ReadonlyArray<{ value: string; label: string }>;
 };
 
@@ -47,9 +49,59 @@ export type SectorRecord = {
   notify: SectorPerson | null;
   mine: boolean;
   attachments: SectorAttachment[];
+  /** The current version: 1 when written, +1 at every correction or voiding (older APIs: none). */
+  version?: number;
+  /** When, why and by whom it was voided; null for an entry in force (older APIs: none). */
+  voided?: { at: string; reason: string; by: string | null } | null;
   createdAt: string;
   updatedAt: string;
 };
+
+/** One version of an entry, as kept in its history. */
+export type SectorRecordVersion = {
+  version: number;
+  action: 'CREATED' | 'CORRECTED' | 'VOIDED';
+  title: string;
+  data: Record<string, unknown>;
+  occurredOn: string | null;
+  dueDate: string | null;
+  reason: string | null;
+  channel: string | null;
+  author: string | null;
+  changedAt: string;
+};
+
+export const VERSION_ACTIONS: Record<SectorRecordVersion['action'], string> = {
+  CREATED: 'Inserita',
+  CORRECTED: 'Rettificata',
+  VOIDED: 'Annullata',
+};
+
+/** The shortest reason the server accepts for a correction or a voiding. */
+export const REASON_MIN = 3;
+
+/** What is wrong with a reason before sending it, or null. */
+export function reasonProblem(reason: string, what: 'rettifica' | 'annullamento'): string | null {
+  return reason.trim().length >= REASON_MIN
+    ? null
+    : `Scrivi il motivo ${what === 'rettifica' ? 'della rettifica' : 'dell’annullamento'} (almeno ${REASON_MIN} caratteri).`;
+}
+
+/** The fields a version changed from the one before, as people read them. */
+export function versionChanges(
+  kind: SectorRecordKind | undefined,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Array<{ label: string; before: string; after: string }> {
+  if (!kind) return [];
+  return kind.fields
+    .map((f) => ({
+      label: f.label,
+      before: fieldValueLabel(f, before[f.key]),
+      after: fieldValueLabel(f, after[f.key]),
+    }))
+    .filter((c) => c.before !== c.after);
+}
 
 export type SectorAttachment = {
   id: string;
@@ -63,6 +115,8 @@ export type SectorRegisterPage = {
   feature: { id: string; label: string; description: string };
   kinds: readonly SectorRecordKind[];
   canManage: boolean;
+  /** Whether entries may be voided (through a delegation: with its DELETE); older APIs: none. */
+  canVoid?: boolean;
   /** Who may be named as the person to remind (all people for staff, oneself for a member). */
   people: SectorPerson[];
   /** Through a delegation: whose register it is and what the delegation allows. */
@@ -77,8 +131,12 @@ export type SectorRegisterPage = {
 /** Where a register is reached: the dashboard, the Mini App, or a delegation received (MF8). */
 export type SectorChannel = 'dashboard' | 'miniapp' | { grantId: string };
 
+/** Entries in force, voided ones, or both. */
+export type SectorRecordState = 'active' | 'voided' | 'all';
+
 export type SectorFilters = {
   kind?: string;
+  state?: SectorRecordState | '';
   search?: string;
   from?: string;
   to?: string;
@@ -110,6 +168,16 @@ export function sectorRecordsQuery(
   }
   const query = params.toString();
   return `${sectorPath(channel, feature)}${query ? `?${query}` : ''}`;
+}
+
+/** Where an entry is voided (POST, with the reason). */
+export function sectorVoidPath(channel: SectorChannel, feature: string, id: string): string {
+  return `${sectorPath(channel, feature, id)}/void`;
+}
+
+/** The history of an entry. */
+export function sectorVersionsPath(channel: SectorChannel, feature: string, id: string): string {
+  return `${sectorPath(channel, feature, id)}/versions`;
 }
 
 /** A stored scalar as text (the server stores only strings and numbers). */

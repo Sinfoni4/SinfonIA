@@ -41,6 +41,7 @@ const ExportQuery = z
   .object({
     format: z.enum(['csv', 'xlsx', 'pdf']),
     kind: z.string().max(40).optional(),
+    state: z.enum(['active', 'voided', 'all']).optional(),
     search: z.string().max(200).optional(),
     from: z.string().max(10).optional(),
     to: z.string().max(10).optional(),
@@ -50,6 +51,7 @@ const ExportQuery = z
 const ListQuery = z
   .object({
     kind: z.string().max(40).optional(),
+    state: z.enum(['active', 'voided', 'all']).optional(),
     search: z.string().max(200).optional(),
     from: z.string().max(10).optional(),
     to: z.string().max(10).optional(),
@@ -61,7 +63,20 @@ const ListQuery = z
 const CreateBody = z
   .object({ kind: z.string().min(1).max(40), data: z.record(z.string(), z.unknown()) })
   .strict();
-const UpdateBody = z.object({ data: z.record(z.string(), z.unknown()) }).strict();
+/** A correction: the whole new content and why (the service checks the reason). */
+const UpdateBody = z
+  .object({
+    data: z.record(z.string(), z.unknown()),
+    reason: z.string().max(2000),
+    expectedVersion: z.number().int().min(1).optional(),
+  })
+  .strict();
+const VoidBody = z
+  .object({
+    reason: z.string().max(2000),
+    expectedVersion: z.number().int().min(1).optional(),
+  })
+  .strict();
 
 /** The dashboard and the Mini App reach the registers on paths of their own (G: channels). */
 const PREFIXES: Record<SectorChannel, string> = {
@@ -153,20 +168,32 @@ export const sectorRoutes: FastifyPluginCallback<SectorRoutesDeps> = (app, deps,
         const { feature, id } = RecordParams.parse(req.params);
         const body = UpdateBody.parse(req.body);
         return reply.send(
-          ok(
-            await service.update(requirePrincipal(req), { feature, channel, id, data: body.data }),
-          ),
+          ok(await service.update(requirePrincipal(req), { feature, channel, id, ...body })),
         );
       } catch (err: unknown) {
         return sendError(reply, err);
       }
     });
 
-    app.delete(`${base}/:id`, { config }, async (req, reply) => {
+    // Entries are never deleted: voided, with the reason, they stay in the register.
+    app.post(`${base}/:id/void`, { config }, async (req, reply) => {
       try {
         const { feature, id } = RecordParams.parse(req.params);
-        await service.remove(requirePrincipal(req), { feature, channel, id });
-        return reply.send(ok({ deleted: true }));
+        const body = VoidBody.parse(req.body);
+        return reply.send(
+          ok(await service.void(requirePrincipal(req), { feature, channel, id, ...body })),
+        );
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    });
+
+    app.get(`${base}/:id/versions`, { config }, async (req, reply) => {
+      try {
+        const { feature, id } = RecordParams.parse(req.params);
+        return reply.send(
+          ok(await service.versions(requirePrincipal(req), { feature, channel, id })),
+        );
       } catch (err: unknown) {
         return sendError(reply, err);
       }
@@ -248,7 +275,7 @@ export const sectorRoutes: FastifyPluginCallback<SectorRoutesDeps> = (app, deps,
     req: FastifyRequest,
     grantId: string,
     feature: string,
-    operation: Extract<GrantOperation, 'READ' | 'CREATE' | 'UPDATE' | 'EXPORT'>,
+    operation: Extract<GrantOperation, 'READ' | 'CREATE' | 'UPDATE' | 'DELETE' | 'EXPORT'>,
   ) => {
     const own = requirePermission(req, 'grant.use').principal;
     const access = await resolveDelegatedAccess(deps.prisma, {
@@ -341,9 +368,35 @@ export const sectorRoutes: FastifyPluginCallback<SectorRoutesDeps> = (app, deps,
       const { grantId, feature, id } = GrantRecordParams.parse(req.params);
       const d = await delegated(req, grantId, feature, 'UPDATE');
       const body = UpdateBody.parse(req.body);
-      const updated = await service.update(d.principal, { feature, channel, id, data: body.data });
+      const updated = await service.update(d.principal, { feature, channel, id, ...body });
       await d.audit('update', { recordId: id });
       return reply.send(ok(updated));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Voiding through a delegation needs its DELETE operation (the entry is never deleted).
+  app.post(`${grantBase}/:id/void`, { config: grantConfig }, async (req, reply) => {
+    try {
+      const { grantId, feature, id } = GrantRecordParams.parse(req.params);
+      const d = await delegated(req, grantId, feature, 'DELETE');
+      const body = VoidBody.parse(req.body);
+      const voided = await service.void(d.principal, { feature, channel, id, ...body });
+      await d.audit('void', { recordId: id });
+      return reply.send(ok(voided));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.get(`${grantBase}/:id/versions`, { config: grantConfig }, async (req, reply) => {
+    try {
+      const { grantId, feature, id } = GrantRecordParams.parse(req.params);
+      const d = await delegated(req, grantId, feature, 'READ');
+      const versions = await service.versions(d.principal, { feature, channel, id });
+      await d.audit('history', { recordId: id });
+      return reply.send(ok(versions));
     } catch (err: unknown) {
       return sendError(reply, err);
     }

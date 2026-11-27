@@ -16,6 +16,8 @@ import {
   sectorFilePath,
   NOTIFY_KEY,
   type SectorPerson,
+  reasonProblem,
+  sectorVoidPath,
 } from '../api/sector';
 import { useSession } from '../session/session';
 
@@ -114,6 +116,7 @@ function SectorRegisterScreen({ me, featureId }: { me: Me; featureId: string }) 
             people={register.people}
             record={view.mode === 'edit' ? view.record : undefined}
             canManage={register.canManage}
+            canVoid={register.canVoid ?? register.canManage}
             onDone={saved}
           />
           {view.mode === 'edit' && (
@@ -201,6 +204,7 @@ function EntryForm({
   people,
   record,
   canManage,
+  canVoid,
   onDone,
 }: {
   featureId: string;
@@ -208,6 +212,7 @@ function EntryForm({
   people: readonly SectorPerson[];
   record?: SectorRecord;
   canManage: boolean;
+  canVoid: boolean;
   onDone: () => Promise<void>;
 }) {
   const { api } = useSession();
@@ -217,13 +222,19 @@ function EntryForm({
     record ? dataToForm(k, record.data) : k.dateField ? { [k.dateField]: today() } : {};
   const [values, setValues] = useState<Record<string, string>>(() => initial(kind));
   const [problem, setProblem] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // A correction and a voiding say why: the entry keeps its history, it is never deleted.
+  const [reason, setReason] = useState('');
+  const [voiding, setVoiding] = useState(false);
+  const expected = record?.version ? { expectedVersion: record.version } : {};
 
   const save = useMutation({
     mutationFn: () => {
       const data = formToData(kind, values);
       return record
-        ? api(sectorPath('miniapp', featureId, record.id), { method: 'PATCH', body: { data } })
+        ? api(sectorPath('miniapp', featureId, record.id), {
+            method: 'PATCH',
+            body: { data, reason: reason.trim(), ...expected },
+          })
         : api(sectorPath('miniapp', featureId), {
             method: 'POST',
             body: { kind: kind.kind, data },
@@ -231,8 +242,12 @@ function EntryForm({
     },
     onSuccess: onDone,
   });
-  const remove = useMutation({
-    mutationFn: () => api(sectorPath('miniapp', featureId, record!.id), { method: 'DELETE' }),
+  const voidIt = useMutation({
+    mutationFn: () =>
+      api(sectorVoidPath('miniapp', featureId, record!.id), {
+        method: 'POST',
+        body: { reason: reason.trim(), ...expected },
+      }),
     onSuccess: onDone,
   });
 
@@ -243,8 +258,18 @@ function EntryForm({
       setProblem(`Compila «${missing.label}».`);
       return;
     }
+    const noReason = record ? reasonProblem(reason, 'rettifica') : null;
+    if (noReason) {
+      setProblem(noReason);
+      return;
+    }
     setProblem(null);
     save.mutate();
+  };
+  const confirmVoid = () => {
+    const noReason = reasonProblem(reason, 'annullamento');
+    setProblem(noReason);
+    if (!noReason) voidIt.mutate();
   };
 
   return (
@@ -321,37 +346,55 @@ function EntryForm({
           </select>
         </label>
       )}
-      {(problem || save.isError || remove.isError) && (
+      {canManage && record && (
+        <label>
+          {voiding ? 'Motivo dell’annullamento *' : 'Motivo della rettifica *'}
+          <textarea value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
+        </label>
+      )}
+      {(problem || save.isError || voidIt.isError) && (
         <p className="ma-message error" role="alert">
-          {problem ?? describeError(save.error ?? remove.error)}
+          {problem ?? describeError(save.error ?? voidIt.error)}
         </p>
       )}
-      {canManage && (
+      {canManage && !voiding && (
         <button type="submit" className="ma-primary" disabled={save.isPending}>
-          {save.isPending ? 'Salvataggio…' : 'Salva'}
+          {save.isPending ? 'Salvataggio…' : record ? 'Salva la rettifica' : 'Salva'}
         </button>
       )}
-      {canManage &&
+      {canVoid &&
         record &&
-        (confirmDelete ? (
+        (voiding ? (
           <div className="ma-actions-row">
             <button
               type="button"
               className="ma-primary danger"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate()}
+              disabled={voidIt.isPending}
+              onClick={confirmVoid}
             >
-              Elimina davvero
+              Annulla la voce
             </button>
-            <button type="button" className="ma-link" onClick={() => setConfirmDelete(false)}>
-              Annulla
+            <button
+              type="button"
+              className="ma-link"
+              onClick={() => {
+                setVoiding(false);
+                setProblem(null);
+              }}
+            >
+              Indietro
             </button>
           </div>
         ) : (
-          <button type="button" className="ma-link" onClick={() => setConfirmDelete(true)}>
-            Elimina questa voce
+          <button type="button" className="ma-link" onClick={() => setVoiding(true)}>
+            Annulla questa voce
           </button>
         ))}
+      {canVoid && record && voiding && (
+        <p className="ma-muted">
+          La voce resta nel registro come annullata, con i suoi file e il suo storico.
+        </p>
+      )}
     </form>
   );
 }

@@ -8,7 +8,7 @@ import type { FieldDefinition } from '../modules/module.contract.js';
  * The register of a sector function as a file. CSV and Excel carry every declared field, one
  * column each (a field shared by several kinds of entry, like «Appezzamento», is one column);
  * the PDF keeps the main columns and puts the other fields in «Dettagli», so it reads on A4 for
- * a check.
+ * a check. Every entry says its version; voided entries, when asked for, say so with the reason.
  */
 
 export type RegisterExportFormat = 'csv' | 'xlsx' | 'pdf';
@@ -99,16 +99,23 @@ export async function registerTable(input: {
   const kindOf = new Map(input.kinds.map((k) => [k.kind, k]));
   const hasExpiry = input.kinds.some((k) => k.dueField);
   const hasNotify = input.kinds.some((k) => k.notify);
+  const hasVoided = input.records.some((r) => r.voided);
 
   if (input.format === 'pdf') {
     const rows = [
       ['Data', 'Tipo', 'Voce', 'Dettagli', ...(hasExpiry ? ['Scadenza'] : [])],
       ...input.records.map((r) => {
-        const details = entryDetails(kindOf.get(r.kind), r.data);
+        const details = [
+          entryDetails(kindOf.get(r.kind), r.data),
+          r.version > 1 ? `Versione ${r.version}` : '',
+          r.voided ? `Motivo dell’annullamento: ${r.voided.reason}` : '',
+        ]
+          .filter((part) => part !== '')
+          .join(' · ');
         return [
           italianDate(r.occurredOn),
           r.kindLabel,
-          r.title,
+          r.voided ? `ANNULLATA — ${r.title}` : r.title,
           details,
           ...(hasExpiry ? [italianDate(r.dueDate)] : []),
         ];
@@ -129,6 +136,9 @@ export async function registerTable(input: {
       'File allegati',
       'Inserita da',
       'Inserita il',
+      'Versione',
+      'Ultima modifica il',
+      ...(hasVoided ? ['Annullata il', 'Motivo dell’annullamento'] : []),
     ],
     ...input.records.map((r) => [
       italianDate(r.occurredOn),
@@ -143,6 +153,11 @@ export async function registerTable(input: {
       String(r.attachments.length),
       r.author?.email ?? '',
       italianDate(r.createdAt.slice(0, 10)),
+      String(r.version),
+      italianDate(r.updatedAt.slice(0, 10)),
+      ...(hasVoided
+        ? [r.voided ? italianDate(r.voided.at.slice(0, 10)) : '', r.voided?.reason ?? '']
+        : []),
     ]),
   ];
   if (input.format === 'xlsx') return tableFileFromRows({ title, rows, format: 'xlsx' });

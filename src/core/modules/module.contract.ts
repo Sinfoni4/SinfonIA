@@ -30,6 +30,11 @@ export type FieldDefinition = {
   /** number: bounds, inclusive. */
   min?: number;
   max?: number;
+  /**
+   * number: the most decimal places accepted (e.g. 2 for litres or euros); without it, any. A
+   * register keeps exact quantities only if they are written with a declared precision.
+   */
+  decimals?: number;
   /** choice: the allowed values. */
   options?: ReadonlyArray<{ value: string; label: string }>;
 };
@@ -102,7 +107,13 @@ export function fieldListSchema(fields: readonly FieldDefinition[]) {
         let n = z.number().finite();
         if (field.min !== undefined) n = n.min(field.min);
         if (field.max !== undefined) n = n.max(field.max);
-        schema = n;
+        const decimals = field.decimals;
+        schema =
+          decimals === undefined
+            ? n
+            : n.refine((v) => Number(v.toFixed(decimals)) === v, {
+                message: `At most ${decimals} decimal places`,
+              });
         break;
       }
       case 'date':

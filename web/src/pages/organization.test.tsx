@@ -468,7 +468,7 @@ describe('home (P11)', () => {
     expect(exported.query.get('search')).toBe('rame');
     expect(exported.query.has('page')).toBe(false);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Modifica Rame · Vite' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Rettifica Rame · Vite' }));
     const files = screen.getByRole('region', { name: 'File allegati' });
     expect(within(files).getByText('Nessun file allegato a questa voce.')).toBeTruthy();
     await userEvent.upload(
@@ -481,6 +481,100 @@ describe('home (P11)', () => {
     expect(
       requested(`/sector/field_book/records/${TREATMENT.id}/attachments`).map((c) => c.method),
     ).toEqual(['POST']);
+  });
+
+  it('corrects an entry with a reason, voids it with a reason and shows its history', async () => {
+    const sectorFeatures = [
+      {
+        id: 'field_book',
+        label: 'Quaderno di campagna',
+        description: 'Registro dei trattamenti e delle lavorazioni.',
+        ready: true,
+        dashboard: true,
+        miniApp: false,
+      },
+    ];
+    const base = `/sector/field_book/records/${TREATMENT.id}`;
+    api('ADMIN', {
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'mario@coop.it',
+          organizations: [{ orgId: ORG, name: 'Azienda', role: 'ADMIN' }],
+          current: { orgId: ORG, role: 'ADMIN', sectorFeatures },
+        }),
+      'GET /sector/field_book/records': () => ok(fieldBookPage()),
+      [`PATCH ${base}`]: () => ok({ ...TREATMENT, version: 2 }),
+      [`POST ${base}/void`]: () =>
+        ok({
+          ...TREATMENT,
+          version: 2,
+          voided: { at: '2026-11-27T09:00:00Z', reason: 'Doppia', by: 'mario@coop.it' },
+        }),
+      [`GET ${base}/versions`]: () =>
+        ok([
+          {
+            version: 1,
+            action: 'CREATED',
+            title: 'Rame · Vite',
+            data: TREATMENT.data,
+            occurredOn: '2026-11-20',
+            dueDate: null,
+            reason: null,
+            channel: 'miniapp',
+            author: 'anna@collio.it',
+            changedAt: '2026-11-20T08:00:00Z',
+          },
+          {
+            version: 2,
+            action: 'CORRECTED',
+            title: 'Rame · Vite',
+            data: { ...TREATMENT.data, quantity: 3 },
+            occurredOn: '2026-11-20',
+            dueDate: null,
+            reason: 'Dose sbagliata',
+            channel: 'dashboard',
+            author: 'mario@coop.it',
+            changedAt: '2026-11-21T08:00:00Z',
+          },
+        ]),
+    });
+    openAt('/settore/field_book');
+    await screen.findByRole('table');
+    // Status filter: in force by default.
+    expect(screen.getByLabelText<HTMLSelectElement>('Stato').value).toBe('');
+
+    // A correction needs its reason.
+    await userEvent.click(screen.getByRole('button', { name: 'Rettifica Rame · Vite' }));
+    const form = screen.getByRole('form', { name: 'Rettifica: Rame · Vite' });
+    await userEvent.click(within(form).getByRole('button', { name: 'Salva' }));
+    expect(within(form).getByRole('alert').textContent).toContain('motivo della rettifica');
+    expect(requested(base)).toEqual([]);
+    await userEvent.type(within(form).getByLabelText('Motivo della rettifica *'), 'Dose sbagliata');
+    await userEvent.click(within(form).getByRole('button', { name: 'Salva' }));
+    await waitFor(() =>
+      expect(requested(base).find((c) => c.method === 'PATCH')?.body).toMatchObject({
+        reason: 'Dose sbagliata',
+        expectedVersion: 1,
+      }),
+    );
+
+    // Voiding, never deleting: with its reason.
+    await userEvent.click(await screen.findByRole('button', { name: 'Annulla Rame · Vite' }));
+    const voidForm = screen.getByRole('form', { name: 'Annulla: Rame · Vite' });
+    await userEvent.type(within(voidForm).getByLabelText('Motivo dell’annullamento *'), 'Doppia');
+    await userEvent.click(within(voidForm).getByRole('button', { name: 'Conferma annullamento' }));
+    await waitFor(() =>
+      expect(requested(`${base}/void`)[0]?.body).toEqual({ reason: 'Doppia', expectedVersion: 1 }),
+    );
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+
+    // The history, with what the correction changed.
+    await userEvent.click(await screen.findByRole('button', { name: 'Storico di Rame · Vite' }));
+    const history = await screen.findByRole('region', { name: 'Storico: Rame · Vite' });
+    expect(await within(history).findByText('Motivo: Dose sbagliata')).toBeTruthy();
+    expect(within(history).getByText('Quantità: 2,5 → 3')).toBeTruthy();
+    expect(within(history).getByText(/Versione 1 · Inserita/)).toBeTruthy();
   });
 
   it('sends home from the page of a sector function that is not on', async () => {

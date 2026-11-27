@@ -67,15 +67,24 @@ export type DelegatedPracticeDetail = Practice & {
   module: CurrentModule;
 };
 
-/** Operations offered in this version (the backend refuses the others). */
-export const OFFERED_OPERATIONS: GrantOperation[] = ['READ', 'CREATE', 'UPDATE', 'EXPORT'];
+/**
+ * Operations offered in this version (the backend refuses the others). DELETE only voids entries
+ * of the registers the delegation covers, so it is offered only with a register.
+ */
+export const OFFERED_OPERATIONS: GrantOperation[] = [
+  'READ',
+  'CREATE',
+  'UPDATE',
+  'DELETE',
+  'EXPORT',
+];
 
 export const OPERATION_LABELS: Record<GrantOperation, string> = {
   READ: 'vedere le pratiche e scaricare i documenti',
   CREATE: 'aprire nuove pratiche',
   UPDATE: 'aggiornare le pratiche (stato, fase, documenti e verifica dei dati)',
   APPROVE: 'approvare',
-  DELETE: 'cancellare',
+  DELETE: 'annullare voci dei registri, con il motivo (nulla viene cancellato)',
   EXPORT: 'esportare le pratiche',
 };
 

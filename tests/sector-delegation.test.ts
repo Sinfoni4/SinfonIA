@@ -171,8 +171,27 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers through a delegation', (
 
     const updated = await call('PATCH', `${records(grantId)}/${entryId}`, consultant(), {
       data: { ...harvest, quantity: 70 },
+      reason: 'Pesata corretta',
     });
     expect(updated.status).toBe(200);
+    expect(updated.body!.data.version).toBe(2);
+    // The history through the delegation; voiding needs its DELETE operation.
+    const history = await call('GET', `${records(grantId)}/${entryId}/versions`, consultant());
+    expect(history.status).toBe(200);
+    expect(
+      (history.body!.data as unknown as Array<{ action: string; reason: string | null }>).map(
+        (v) => [v.action, v.reason],
+      ),
+    ).toEqual([
+      ['CREATED', null],
+      ['CORRECTED', 'Pesata corretta'],
+    ]);
+    expect(list.body!.data.canVoid).toBe(false);
+    const refused = await call('POST', `${records(grantId)}/${entryId}/void`, consultant(), {
+      reason: 'Doppia',
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body!.error?.code).toBe('OPERATION_NOT_DELEGATED');
     // The grantor sees the entry in its own register.
     const own = await call('GET', '/sector/field_book/records', farmAdmin());
     expect((own.body!.data.items as Array<{ id: string }>).map((i) => i.id)).toContain(entryId);
@@ -182,7 +201,46 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers through a delegation', (
       select: { payload: true },
     });
     expect(log.map((l) => (l.payload as { action?: string }).action)).toEqual(
-      expect.arrayContaining(['create', 'list', 'update']),
+      expect.arrayContaining(['create', 'list', 'update', 'history']),
+    );
+  });
+
+  it('voids an entry only through a delegation that includes deleting', async () => {
+    // Voiding is only for register entries: never a delegation of practices alone.
+    const noRegister = await call('POST', '/grants', farmAdmin(), {
+      grantee: { email: `studio-${run}@deleg.local` },
+      operations: ['READ', 'DELETE'],
+      validUntil: isoDay(30),
+    });
+    expect(noRegister.status).toBe(400);
+    const full = await call('POST', '/grants', farmAdmin(), {
+      grantee: { email: `studio-${run}@deleg.local` },
+      operations: ['READ', 'CREATE', 'DELETE'],
+      validUntil: isoDay(30),
+      registers: ['field_book'],
+    });
+    expect(full.status).toBe(201);
+    const id = full.body!.data.id!;
+    const created = await call('POST', records(id), consultant(), {
+      kind: 'harvest',
+      data: { ...harvest, plot: 'Ronc' },
+    });
+    const list = await call('GET', records(id), consultant());
+    expect(list.body!.data.canVoid).toBe(true);
+    const voided = await call(
+      'POST',
+      `${records(id)}/${created.body!.data.id}/void`,
+      consultant(),
+      {
+        reason: 'Raccolta di un altro anno',
+      },
+    );
+    expect(voided.status).toBe(200);
+    expect(voided.body!.data.voided).toMatchObject({ reason: 'Raccolta di un altro anno' });
+    // Still there for the grantor, among the voided entries.
+    const own = await call('GET', '/sector/field_book/records?state=voided', farmAdmin());
+    expect((own.body!.data.items as Array<{ id: string }>).map((i) => i.id)).toContain(
+      created.body!.data.id,
     );
   });
 

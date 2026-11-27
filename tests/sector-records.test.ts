@@ -249,9 +249,13 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
     expect((staffList.body.data.items as Array<{ id: string }>)[0].id).toBe(adminId);
 
     expect((await call('GET', `/sector/field_book/records/${adminId}`, farmer())).status).toBe(404);
-    expect((await call('DELETE', `/sector/field_book/records/${adminId}`, farmer())).status).toBe(
-      404,
-    );
+    expect(
+      (
+        await call('POST', `/sector/field_book/records/${adminId}/void`, farmer(), {
+          reason: 'Non è mia',
+        })
+      ).status,
+    ).toBe(404);
     const search = await call('GET', `/sector/field_book/records?search=zolfo`, admin());
     expect(search.body.data.total).toBe(1);
     const range = await call(
@@ -330,6 +334,7 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
         issuedOn: '2026-11-30',
         expiresOn: '2031-11-30',
       },
+      reason: 'Rinnovo del patentino',
     });
     expect(renewed.status).toBe(200);
     const moved = (await deadline())!;
@@ -340,21 +345,28 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
     // No expiry any more: no deadline.
     await call('PATCH', `/sector/trade_licenses/records/${id}`, admin(), {
       data: { holder: `Mario ${run}`, licenseType: 'tractor' },
+      reason: 'Tipo di abilitazione sbagliato',
     });
     expect(await deadline()).toBeNull();
 
-    // An entry deleted takes its deadline with it.
+    // A voided entry keeps its deadline, closed: no more reminders, still in the history.
     await call('PATCH', `/sector/trade_licenses/records/${id}`, admin(), {
       data: { holder: `Mario ${run}`, licenseType: 'tractor', expiresOn: '2027-01-15' },
+      reason: 'Aggiunta la scadenza',
     });
-    expect(await deadline()).not.toBeNull();
-    expect((await call('DELETE', `/sector/trade_licenses/records/${id}`, admin())).status).toBe(
-      200,
-    );
-    expect(await deadline()).toBeNull();
+    expect((await deadline())?.status).toBe('OPEN');
+    expect(
+      (
+        await call('POST', `/sector/trade_licenses/records/${id}/void`, admin(), {
+          reason: 'Patentino inserito due volte',
+        })
+      ).status,
+    ).toBe(200);
+    expect((await deadline())?.status).toBe('CLOSED');
+    expect(await prisma.sectorRecord.findUnique({ where: { id } })).not.toBeNull();
     expect(
       await prisma.auditLog.count({
-        where: { tenantId: orgId, eventType: 'SECTOR_RECORD_DELETED' },
+        where: { tenantId: orgId, eventType: 'SECTOR_RECORD_VOIDED' },
       }),
     ).toBe(1);
   });
@@ -380,8 +392,11 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
       for (const prefix of ['/sector', '/miniapp/sector']) {
         const url = `${prefix}/field_book/records/${id}`;
         expect((await call('GET', url, headers)).status).toBe(404);
-        expect((await call('PATCH', url, headers, { data: treatment().data })).status).toBe(404);
-        expect((await call('DELETE', url, headers)).status).toBe(404);
+        expect(
+          (await call('PATCH', url, headers, { data: treatment().data, reason: 'Prova' })).status,
+        ).toBe(404);
+        expect((await call('POST', `${url}/void`, headers, { reason: 'Prova' })).status).toBe(404);
+        expect((await call('GET', `${url}/versions`, headers)).status).toBe(404);
         const list = await call('GET', `${prefix}/field_book/records`, headers);
         expect(list.body.data.total).toBe(0);
       }
@@ -461,7 +476,7 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
       expect((await upload(url, farmer(), 'a.pdf', PDF)).status).toBe(404);
     });
 
-    it('removes a file, and the files of a deleted entry, from the storage too', async () => {
+    it('removes a file from the storage, and keeps the files of a voided entry', async () => {
       const entry = await call('GET', `/sector/trade_licenses/records/${licence}`, admin());
       const files = entry.body.data.attachments as Array<{ id: string }>;
       const before = filesOnDisk();
@@ -475,10 +490,24 @@ describe.runIf(Boolean(DATABASE_URL))('sector registers', () => {
       expect(filesOnDisk()).toBe(before - 1);
 
       expect(
-        (await call('DELETE', `/sector/trade_licenses/records/${licence}`, admin())).status,
+        (
+          await call('POST', `/sector/trade_licenses/records/${licence}/void`, admin(), {
+            reason: 'Inserita per errore',
+          })
+        ).status,
       ).toBe(200);
-      expect(filesOnDisk()).toBe(before - 2);
-      expect(await prisma.sectorRecordAttachment.count({ where: { recordId: licence } })).toBe(0);
+      // The evidence stays with the voided entry, and its files can no longer change.
+      expect(filesOnDisk()).toBe(before - 1);
+      expect(await prisma.sectorRecordAttachment.count({ where: { recordId: licence } })).toBe(1);
+      expect(
+        (
+          await call(
+            'DELETE',
+            `/sector/trade_licenses/records/${licence}/attachments/${files[1].id}`,
+            admin(),
+          )
+        ).status,
+      ).toBe(409);
       const audit = await prisma.auditLog.findMany({
         where: { tenantId: orgId, eventType: { startsWith: 'SECTOR_RECORD_FILE' } },
       });

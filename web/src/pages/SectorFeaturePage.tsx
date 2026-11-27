@@ -24,6 +24,13 @@ import {
   NOTIFY_KEY,
   type SectorPerson,
   type SectorChannel,
+  reasonProblem,
+  sectorVersionsPath,
+  sectorVoidPath,
+  versionChanges,
+  VERSION_ACTIONS,
+  type SectorRecordState,
+  type SectorRecordVersion,
 } from '../api/sector';
 import { DataTable, type DataColumn } from '../components/DataTable';
 import { useSession } from '../session/session';
@@ -97,9 +104,11 @@ function SectorRegister({
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<
     Required<Pick<SectorFilters, 'page' | 'limit'>> & SectorFilters
-  >({ page: 1, limit: 20, kind: '', search: '', from: '', to: '' });
+  >({ page: 1, limit: 20, kind: '', state: '', search: '', from: '', to: '' });
   const [editing, setEditing] = useState<Editing>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  // Fase 1A: an entry is voided with a reason, never deleted; its history can always be read.
+  const [voiding, setVoiding] = useState<SectorRecord | null>(null);
+  const [history, setHistory] = useState<SectorRecord | null>(null);
   const key = [
     'sector',
     me.current.orgId,
@@ -114,13 +123,20 @@ function SectorRegister({
   });
   const register = query.data;
   const kinds = register?.kinds ?? [];
-  // Through a delegation, only what it allows; entries are never deleted there.
+  // Through a delegation, only what it allows (voiding with its DELETE); files are never removed
+  // there.
   const ops = register?.delegation?.operations;
   const can = {
     create: ops ? ops.includes('CREATE') : register?.canManage === true,
     edit: ops ? ops.includes('UPDATE') : register?.canManage === true,
-    remove: ops ? false : register?.canManage === true,
+    void: register?.canVoid === true,
+    removeFile: ops ? false : register?.canManage === true,
     export: ops ? ops.includes('EXPORT') : true,
+  };
+  const open = (panel: 'edit' | 'void' | 'history', record: SectorRecord) => {
+    setEditing(panel === 'edit' ? { mode: 'edit', record } : null);
+    setVoiding(panel === 'void' ? record : null);
+    setHistory(panel === 'history' ? record : null);
   };
   const hasExpiry = kinds.some((k) => k.dueField);
   const expiring = useQuery({
@@ -130,14 +146,6 @@ function SectorRegister({
         sectorRecordsQuery(channel, featureId, { expiringWithinDays: 60, limit: 5 }),
       ),
     enabled: hasExpiry,
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => api(sectorPath(channel, featureId, id), { method: 'DELETE' }),
-    onSuccess: async () => {
-      setDeleting(null);
-      await queryClient.invalidateQueries({ queryKey: key });
-    },
   });
 
   const columns = useMemo<Array<DataColumn<SectorRecord>>>(
@@ -194,65 +202,53 @@ function SectorRegister({
         meta: { label: 'Inserita da' },
         cell: ({ row }) => row.original.author?.email ?? '—',
       },
-      ...(can.edit || can.remove
-        ? [
-            {
-              id: 'actions',
-              header: 'Azioni',
-              enableHiding: false,
-              meta: { label: 'Azioni', className: 'whitespace-nowrap' },
-              cell: ({ row }: { row: { original: SectorRecord } }) =>
-                deleting === row.original.id ? (
-                  <span className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={remove.isPending}
-                      onClick={() => remove.mutate(row.original.id)}
-                    >
-                      Conferma eliminazione
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setDeleting(null)}
-                    >
-                      Annulla
-                    </Button>
-                  </span>
-                ) : (
-                  <span className="flex gap-2">
-                    {can.edit && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        aria-label={`Modifica ${row.original.title}`}
-                        onClick={() => setEditing({ mode: 'edit', record: row.original })}
-                      >
-                        Modifica
-                      </Button>
-                    )}
-                    {can.remove && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Elimina ${row.original.title}`}
-                        onClick={() => setDeleting(row.original.id)}
-                      >
-                        Elimina
-                      </Button>
-                    )}
-                  </span>
-                ),
-            } satisfies DataColumn<SectorRecord>,
-          ]
-        : []),
+      {
+        id: 'actions',
+        header: 'Azioni',
+        enableHiding: false,
+        meta: { label: 'Azioni', className: 'whitespace-nowrap' },
+        cell: ({ row }) => {
+          const record = row.original;
+          return (
+            <span className="flex gap-2">
+              {can.edit && !record.voided && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Rettifica ${record.title}`}
+                  onClick={() => open('edit', record)}
+                >
+                  Rettifica
+                </Button>
+              )}
+              {can.void && !record.voided && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Annulla ${record.title}`}
+                  onClick={() => open('void', record)}
+                >
+                  Annulla voce
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={`Storico di ${record.title}`}
+                onClick={() => open('history', record)}
+              >
+                Storico
+              </Button>
+            </span>
+          );
+        },
+      },
     ],
-    [deleting, hasExpiry, kinds, can.edit, can.remove, remove],
+    // `open` only sets state: not a dependency.
+    [hasExpiry, kinds, can.edit, can.void],
   );
 
   const set = (patch: Partial<SectorFilters>) => setFilters((f) => ({ ...f, page: 1, ...patch }));
@@ -291,11 +287,6 @@ function SectorRegister({
           {describeError(query.error)}
         </p>
       )}
-      {remove.isError && (
-        <p className="error m-0" role="alert">
-          {describeError(remove.error)}
-        </p>
-      )}
 
       {editing && register && (
         <EntryForm
@@ -311,13 +302,34 @@ function SectorRegister({
           onCancel={() => setEditing(null)}
         />
       )}
+      {voiding && (
+        <VoidForm
+          channel={channel}
+          featureId={featureId}
+          record={voiding}
+          onDone={async () => {
+            setVoiding(null);
+            await queryClient.invalidateQueries({ queryKey: key });
+          }}
+          onCancel={() => setVoiding(null)}
+        />
+      )}
+      {history && (
+        <EntryHistory
+          channel={channel}
+          featureId={featureId}
+          record={history}
+          kind={kinds.find((k) => k.kind === history.kind)}
+          onClose={() => setHistory(null)}
+        />
+      )}
       {editing?.mode === 'edit' && register && (
         <EntryFiles
           channel={channel}
           featureId={featureId}
           record={editing.record}
           canManage={can.edit}
-          canRemove={can.remove}
+          canRemove={can.removeFile}
           onChange={async (record) => {
             setEditing({ mode: 'edit', record });
             await queryClient.invalidateQueries({ queryKey: key });
@@ -363,6 +375,18 @@ function SectorRegister({
                   value={filters.search}
                   onChange={(e) => set({ search: e.target.value })}
                 />
+              </Label>
+              <Label>
+                Stato
+                <NativeSelect
+                  className="w-auto"
+                  value={filters.state}
+                  onChange={(e) => set({ state: e.target.value as SectorRecordState | '' })}
+                >
+                  <option value="">Valide</option>
+                  <option value="voided">Annullate</option>
+                  <option value="all">Tutte</option>
+                </NativeSelect>
               </Label>
               {kinds.length > 1 && (
                 <Label>
@@ -437,7 +461,15 @@ function EntrySummary({
     .filter(([, v]) => v !== '');
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium">
+      {record.voided && (
+        <span className="text-sm text-destructive">
+          <Badge variant="outline" className="mr-2 px-1.5 text-destructive">
+            Annullata
+          </Badge>
+          il {isoToItalian(record.voided.at.slice(0, 10))}: {record.voided.reason}
+        </span>
+      )}
+      <span className={record.voided ? 'font-medium line-through' : 'font-medium'}>
         {record.title}
         {record.attachments.length > 0 && (
           <span className="ml-2 text-sm font-normal text-muted-foreground" title="File allegati">
@@ -452,6 +484,11 @@ function EntrySummary({
       )}
       {record.notify && (
         <span className="text-sm text-muted-foreground">Avvisa: {record.notify.label}</span>
+      )}
+      {(record.version ?? 1) > 1 && !record.voided && (
+        <span className="text-sm text-muted-foreground">
+          Rettificata (versione {record.version})
+        </span>
       )}
     </div>
   );
@@ -483,6 +520,8 @@ function EntryForm({
     editing.mode === 'edit' ? dataToForm(kind, editing.record.data) : {},
   );
   const [problem, setProblem] = useState<string | null>(null);
+  // A correction says why; the previous content stays in the history of the entry.
+  const [reason, setReason] = useState('');
 
   const save = useMutation({
     mutationFn: () => {
@@ -490,7 +529,11 @@ function EntryForm({
       return editing.mode === 'edit'
         ? api(sectorPath(channel, featureId, editing.record.id), {
             method: 'PATCH',
-            body: { data },
+            body: {
+              data,
+              reason: reason.trim(),
+              ...(editing.record.version ? { expectedVersion: editing.record.version } : {}),
+            },
           })
         : api(sectorPath(channel, featureId), {
             method: 'POST',
@@ -507,11 +550,16 @@ function EntryForm({
       setProblem(`Compila «${missing.label}».`);
       return;
     }
+    const noReason = editing.mode === 'edit' ? reasonProblem(reason, 'rettifica') : null;
+    if (noReason) {
+      setProblem(noReason);
+      return;
+    }
     setProblem(null);
     save.mutate();
   };
 
-  const title = editing.mode === 'edit' ? `Modifica: ${editing.record.title}` : 'Nuova voce';
+  const title = editing.mode === 'edit' ? `Rettifica: ${editing.record.title}` : 'Nuova voce';
   return (
     <form
       className="flex max-w-3xl flex-col gap-3 rounded-lg border p-4"
@@ -565,6 +613,22 @@ function EntryForm({
           </Label>
         )}
       </div>
+      {editing.mode === 'edit' && (
+        <Label>
+          Motivo della rettifica *
+          <textarea
+            className="min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+            maxLength={500}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </Label>
+      )}
+      {editing.mode === 'edit' && (
+        <p className="m-0 text-sm text-muted-foreground">
+          Il contenuto di prima resta nello storico della voce.
+        </p>
+      )}
       {(problem || save.isError) && (
         <p className="error m-0" role="alert">
           {problem ?? describeError(save.error)}
@@ -579,6 +643,164 @@ function EntryForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** Voiding an entry: why, then confirmed. The entry stays in the register, marked as voided. */
+function VoidForm({
+  channel,
+  featureId,
+  record,
+  onDone,
+  onCancel,
+}: {
+  channel: SectorChannel;
+  featureId: string;
+  record: SectorRecord;
+  onDone: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const { api } = useSession();
+  const [reason, setReason] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const voidIt = useMutation({
+    mutationFn: () =>
+      api(sectorVoidPath(channel, featureId, record.id), {
+        method: 'POST',
+        body: {
+          reason: reason.trim(),
+          ...(record.version ? { expectedVersion: record.version } : {}),
+        },
+      }),
+    onSuccess: onDone,
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const noReason = reasonProblem(reason, 'annullamento');
+    setProblem(noReason);
+    if (!noReason) voidIt.mutate();
+  };
+  return (
+    <form
+      className="flex max-w-3xl flex-col gap-3 rounded-lg border p-4"
+      onSubmit={submit}
+      aria-labelledby="void-form"
+    >
+      <h2 id="void-form" className="m-0 text-lg font-semibold">
+        Annulla: {record.title}
+      </h2>
+      <p className="m-0 text-muted-foreground">
+        La voce non viene cancellata: resta nel registro come annullata, con i suoi file e il suo
+        storico, e la sua scadenza viene chiusa.
+      </p>
+      <Label>
+        Motivo dell’annullamento *
+        <textarea
+          className="min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+          maxLength={500}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </Label>
+      {(problem || voidIt.isError) && (
+        <p className="error m-0" role="alert">
+          {problem ?? describeError(voidIt.error)}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button type="submit" variant="destructive" disabled={voidIt.isPending}>
+          {voidIt.isPending ? 'Annullamento…' : 'Conferma annullamento'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Chiudi
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+const dateTime = (iso: string) =>
+  new Date(iso).toLocaleString('it-IT', {
+    timeZone: 'Europe/Rome',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+const CHANNELS: Record<string, string> = { dashboard: 'dashboard', miniapp: 'Mini App' };
+
+/** The history of an entry: every version, who and why, and what each correction changed. */
+function EntryHistory({
+  channel,
+  featureId,
+  record,
+  kind,
+  onClose,
+}: {
+  channel: SectorChannel;
+  featureId: string;
+  record: SectorRecord;
+  kind: SectorRecordKind | undefined;
+  onClose: () => void;
+}) {
+  const { api } = useSession();
+  const versions = useQuery({
+    queryKey: ['sector-versions', channel, featureId, record.id, record.version],
+    queryFn: () => api<SectorRecordVersion[]>(sectorVersionsPath(channel, featureId, record.id)),
+  });
+  return (
+    <section
+      aria-labelledby="entry-history"
+      className="flex max-w-3xl flex-col gap-3 rounded-lg border p-4"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="entry-history" className="m-0 text-lg font-semibold">
+          Storico: {record.title}
+        </h2>
+        <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+          Chiudi
+        </Button>
+      </div>
+      {versions.isPending && <p className="m-0 text-muted-foreground">Caricamento…</p>}
+      {versions.isError && (
+        <p className="error m-0" role="alert">
+          {describeError(versions.error)}
+        </p>
+      )}
+      {versions.data && (
+        <ol className="m-0 flex list-none flex-col gap-3 p-0">
+          {versions.data.map((v, i) => {
+            const changes =
+              i > 0 && v.action === 'CORRECTED'
+                ? versionChanges(kind, versions.data[i - 1].data, v.data)
+                : [];
+            return (
+              <li key={v.version} className="flex flex-col gap-0.5 border-l-2 pl-3">
+                <span className="font-medium">
+                  Versione {v.version} · {VERSION_ACTIONS[v.action]} il {dateTime(v.changedAt)}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {v.author ?? 'persona non più presente'}
+                  {v.channel ? ` · ${CHANNELS[v.channel] ?? v.channel}` : ''}
+                </span>
+                {v.reason && <span className="text-sm">Motivo: {v.reason}</span>}
+                {changes.length > 0 && (
+                  <ul className="m-0 pl-4 text-sm">
+                    {changes.map((c) => (
+                      <li key={c.label}>
+                        {c.label}: {c.before || '—'} → {c.after || '—'}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }
 
