@@ -1,14 +1,14 @@
 # SinfonIA — Elenco completo degli step implementativi mancanti
 
-**Data**: 24/11/2026 · **Base**: `main` dopo la PR #110 · **Fonti**: `docs/PROGETTO_ARCHITETTURA_3_LIVELLI.md` (ondate A–D, decisioni H1–H10), `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (micro-fasi MF, decisioni D), `docs/PROGETTO_FRONTEND_V2.md`, `docs/CRONOPROGRAMMA_EVOLUTIVO.md`, `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`, verifiche sul codice e sullo staging su VPS.
+**Data**: 27/11/2026 · **Base**: `main` dopo la PR #115 · **Fonti**: `docs/PROGETTO_ARCHITETTURA_3_LIVELLI.md` (ondate A–D, decisioni H1–H10), `docs/PROGETTO_FASE1_IDENTITA_SICUREZZA.md` (micro-fasi MF, decisioni D), `docs/PROGETTO_FRONTEND_V2.md`, `docs/CRONOPROGRAMMA_EVOLUTIVO.md`, `docs/CONSULENZA_LEGALE_PRIVACY_DOMANDE.md`, verifiche sul codice e sullo staging su VPS.
 
 Le stime sono in giorni di lavoro, indicative, e non comprendono le attese esterne (fornitori, Meta, consulenza). Ogni migrazione, dipendenza nuova, servizio a pagamento e intervento sullo staging o in produzione richiede un'approvazione separata al momento dell'esecuzione.
 
-Questa versione sostituisce quella del 05/11/2026: le voci fatte nel frattempo sono riassunte nella sezione 0 e non compaiono più tra quelle da fare.
+Questa versione sostituisce quella del 24/11/2026: le voci fatte nel frattempo sono riassunte nella sezione 0 e non compaiono più tra quelle da fare. La sezione 0bis riassume lo stato per settore dell'utilizzatore finale (agricoltura, artigianato, musica).
 
 ---
 
-## 0. Situazione al 24/11/2026
+## 0. Situazione al 27/11/2026
 
 **Fatto e in `main`, attivo sullo staging** (`https://staging.synfonia.it`, VPS Aruba in Italia):
 
@@ -22,18 +22,80 @@ Questa versione sostituisce quella del 05/11/2026: le voci fatte nel frattempo s
 - **B2** ruoli personalizzati (anche «proprie e assegnate»); **B3** eventi di consumo e report (tariffe `USAGE_RATES` non ancora impostate).
 - AGX-01…AGX-12: ricezione sicura dei documenti, identificativi d'impresa, titolare della pratica, deleghe operative, checklist e richieste di documenti, lettura OCR in background con nuovi tentativi, documenti in chat.
 - **Mini App Telegram** (con assistente, logo e colori dell'organizzazione).
-- **Modulo agricolo** (`agri`) e artigiano, funzioni di settore accese a parte per dashboard e Mini App; **registri** «Quaderno di campagna» e «Abilitazioni e patentini» con allegati, export CSV/Excel/PDF e scadenze collegate.
+- **Moduli di settore** musicale, agricolo (`agri`) e artigiano; funzioni di settore accese a parte per dashboard e Mini App, con **registri** (allegati, export CSV/Excel/PDF, scadenze collegate intitolate con il tipo di voce, persona da avvisare, consultazione e compilazione con delega). Dettaglio per settore nella sezione 0bis.
 - Assistente IA su **Mistral** (`mistral-small-latest`, fornitore UE).
 - Export in Excel e PDF accanto al CSV (il PDF va a capo nelle celle lunghe); avvisi OCR in italiano; benvenuto con il nome dell'organizzazione; pulizia del database di test; dashboard installabile; test end-to-end e di accessibilità nella CI; `TRUST_PROXY` dietro nginx.
 
 ---
 
+## 0bis. Stato per settore dell'utilizzatore finale
+
+La **parte comune** (accesso, organizzazioni, reti e deleghe, ruoli, pratiche, documenti e OCR, scadenzario e promemoria, Mini App, assistente IA, export, backup) vale per tutti i settori. Ogni settore aggiunge un **modulo** (tipi di pratica, campi, sotto-stati, documenti attesi, istruzioni per l'IA) e, se previste, **funzioni di settore** (registri con scadenze, allegati, export, persona da avvisare e delega).
+
+| Settore | Modulo pratiche | Funzioni di settore | Pronto per un pilota |
+|---|---|---|---|
+| Agricoltura (TerreFVG) | ✅ | 7 su 7 | Sì, da configurare con i dati reali |
+| Artigianato (Confartigianato) | ✅ | 3 su 6 | In parte |
+| Musica (cooperative musicali) | ✅ | nessuna definita | Solo per le pratiche |
+
+### Agricoltura (TerreFVG) — completo
+
+**Fatto**
+
+- Modulo `agri`: pratica «Agricola» (domanda PAC, bando di sviluppo rurale, certificazione biologica, altro), anno di campagna e termine di presentazione; sotto-stati raccolta documenti, istruttoria, integrazione richiesta; documenti attesi fascicolo aziendale, documento del titolare, visura, certificato BIO (con scadenza).
+- Funzioni di settore, tutte pronte (PR #108, #109, #112):
+
+| Funzione | Contenuto | Stato |
+|---|---|---|
+| Quaderno di campagna | Trattamenti e lavorazioni per appezzamento, quantità con unità | ✅ |
+| Abilitazioni e patentini | Patentini e abilitazioni delle persone con rinnovo | ✅ |
+| Documento di valutazione dei rischi | Revisioni del DVR e figure della sicurezza | ✅ |
+| Fascicolo e scadenze PAC | Aggiornamenti del fascicolo, domande e pagamenti | ✅ |
+| Carburante agricolo (UMA) | Assegnazione annuale e prelievi | ✅ |
+| Certificazioni BIO | Certificato, programma annuale di produzione, visite ispettive | ✅ |
+| Formazione e sicurezza | Corsi, visite mediche, DPI consegnati | ✅ |
+
+- Persona da avvisare (patentini, corsi, visite mediche, PR #113), registri con delega (PR #114), titoli delle scadenze con il tipo di voce (PR #115), PDF con celle a capo (PR #110).
+- Dati dimostrativi in TerreFVG (prova) in tutti i 7 registri.
+
+**Manca**: verifica dei contenuti dei registri con TerreFVG (voce 4), misura dell'OCR sui documenti agricoli reali (36), configurazione reale del pilota e collegamento delle persone (37–39), connettore al gestionale (29, bloccato da H8).
+
+### Artigianato (Confartigianato) — a metà
+
+**Fatto**
+
+- Modulo `artisan`: pratica «Artigiana» (avvio o variazione d'impresa, abilitazione o patentino, formazione obbligatoria, bando o contributo, rifiuti e ambiente, altro) con termine di presentazione; stessi sotto-stati dell'agricoltura; documenti attesi documento del titolare, visura, DURC (con scadenza).
+- Funzioni di settore pronte, condivise con l'agricoltura: Documento di valutazione dei rischi, Formazione e sicurezza, Abilitazioni e patentini (anche impianti e F-gas).
+
+| Funzione | Stato |
+|---|---|
+| Documento di valutazione dei rischi | ✅ |
+| Formazione e sicurezza | ✅ |
+| Abilitazioni e patentini | ✅ |
+| Bandi e contributi | ❌ in preparazione (voce 1) |
+| Avvio e variazioni d'impresa (SCIA, albo delle imprese artigiane, pratiche camerali) | ❌ in preparazione (voce 1) |
+| Rifiuti: registri e MUD (carico e scarico, formulari, RENTRI) | ❌ in preparazione (voce 1) |
+
+**Manca**: le 3 funzioni proprie (1), un'organizzazione di prova artigiana con dati dimostrativi (3), WhatsApp come canale principale (8, bloccato da Meta e costi).
+
+### Musica (cooperative musicali) — solo pratiche
+
+**Fatto**
+
+- Modulo `music`, il settore da cui SinfonIA è partito: pratica «Musicale» (data e luogo dell'evento, sotto-stati «Contratto da firmare» e «In attesa del pagamento», documenti attesi contratto di scrittura e certificato di agibilità) e pratica «Artista» (nome d'arte, documento d'identità).
+
+**Manca**: le funzioni di settore, oggi nessuna nemmeno «in preparazione» (2); un'organizzazione di prova musicale con dati dimostrativi (3); i connettori INPS ex-ENPALS, SIAE e fatturazione SDI (30, bloccati da accordi e accessi agli enti).
+
+---
+
 ## 1. Funzioni di settore
 
-1. **Le 8 funzioni ancora «in preparazione»**: agricoltura — valutazione dei rischi, fascicolo e scadenze PAC, carburante agricolo, certificazioni BIO, formazione e sicurezza (anche artigiani); artigianato — bandi e contributi, avvio e variazioni d'impresa, registri rifiuti e MUD. Contenuti da raccogliere con il pilota.
-2. **Promemoria al titolare della voce** (es. la scadenza del patentino avvisa anche la persona indicata, non solo gli amministratori).
-3. **Registri con delega**: un consulente o una rete delegata vede o compila i registri di un'azienda entro i limiti della delega (D3).
-4. Rifinitura del PDF dei registri: quantità e unità in un solo campo (es. «30 tonnellate»).
+Fatti nel frattempo e tolti dall'elenco: le 5 funzioni agricole già «in preparazione», il promemoria alla persona indicata nella voce, i registri con delega, quantità e unità in un solo campo nel PDF.
+
+1. **Artigianato — le 3 funzioni ancora «in preparazione»**: bandi e contributi (bandi segnalati alle imprese e raccolta delle adesioni), avvio e variazioni d'impresa (SCIA, albo delle imprese artigiane, pratiche camerali), rifiuti (registro di carico e scarico, formulari, RENTRI, MUD annuale). Contenuti da raccogliere con Confartigianato. (2–3 gg ciascuna)
+2. **Musica — definire le funzioni di settore** con una cooperativa: per esempio calendario degli eventi, agibilità INPS ex-ENPALS per evento, borderò e programmi SIAE, contratti e compensi per artista. Poi costruirle come registri, come per gli altri settori. (da stimare dopo la definizione)
+3. **Organizzazioni di prova** artigiana e musicale su staging, con dati dimostrativi come TerreFVG (prova).
+4. **Agricoltura — verifica dei contenuti** dei 7 registri con TerreFVG (campi, scelte, scadenze), con le correzioni che ne escono.
 
 ## 2. Canali per documenti e messaggi
 
@@ -98,8 +160,8 @@ Questa versione sostituisce quella del 05/11/2026: le voci fatte nel frattempo s
 
 ## 10. Ordine consigliato
 
-1. Lavori senza blocchi utili al pilota: funzioni di settore (1–3), caricamento via email (5) e link (6), messaggi vocali (7), backup fuori dal server e prova di ripristino (23–24), script di installazione (25).
-2. Rifiniture brevi: 4, 11, 12, 13 (dopo la decisione), 14.
-3. Pilota (35–39), con le funzioni di settore completate secondo i contenuti raccolti.
+1. Lavori senza blocchi utili al pilota: funzioni artigiane (1) e organizzazioni di prova (3), caricamento via email (5) e link (6), messaggi vocali (7), backup fuori dal server e prova di ripristino (23–24), script di installazione (25).
+2. Rifiniture brevi: 11, 12, 13 (dopo la decisione), 14.
+3. Pilota (35–39) con la verifica dei registri agricoli (4); in parallelo la definizione delle funzioni musicali con una cooperativa (2).
 4. Decisioni da prendere per sbloccare: consulenza legale (19, 21), produzione (27), WhatsApp (8), gestionale (29).
 5. Dopo il pilota: secondo fattore (15), monitoraggio (26), ondata C e D secondo gli sblocchi.
