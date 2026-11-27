@@ -122,6 +122,7 @@ describe.runIf(Boolean(DATABASE_URL))('person to remind with PostgreSQL', () => 
       channel: 'dashboard',
       id: entry.id,
       data: license(),
+      reason: 'Nessuna persona da avvisare',
     });
     expect((await deadlineOf(entry.id)).userId).toBeNull();
   });

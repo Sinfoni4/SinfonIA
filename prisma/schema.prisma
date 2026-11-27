@@ -62,6 +62,7 @@ model Tenant {
   complianceReminders ComplianceReminder[]
   sectorRecords       SectorRecord[]
   sectorAttachments   SectorRecordAttachment[]
+  sectorVersions      SectorRecordVersion[]
   whatsappIdentities  WhatsappIdentity[]
   aiTraces            AiTrace[]
   conversationStates  ConversationState[]
@@ -128,6 +129,7 @@ model User {
   complianceDeadlines ComplianceDeadline[]
   sectorRecords       SectorRecord[]
   sectorAttachments   SectorRecordAttachment[]
+  sectorVersions      SectorRecordVersion[]
   whatsappIdentity    WhatsappIdentity?
   conversationState   ConversationState?
   memberships         Membership[]
@@ -899,15 +901,56 @@ model SectorRecord {
   updatedBy  String?   @map("updated_by") @db.Uuid
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
+  /// The number of the current version: 1 when written, +1 at every correction or voiding.
+  version    Int       @default(1)
+  /// Voided entries stay in the register, out of the lists unless asked for (never deleted).
+  voidedAt   DateTime? @map("voided_at")
+  voidedBy   String?   @map("voided_by") @db.Uuid
+  voidReason String?   @map("void_reason")
 
   org         Tenant                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   author      User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
   deadline    ComplianceDeadline?
   attachments SectorRecordAttachment[]
+  versions    SectorRecordVersion[]
 
   @@index([orgId, feature, occurredOn])
   @@index([orgId, feature, createdBy])
   @@map("sector_record")
+}
+
+enum SectorRecordAction {
+  CREATED
+  CORRECTED
+  VOIDED
+}
+
+/// The history of an entry of a sector register: one row per version, written with the change and
+/// never changed afterwards (append-only for the application, UPDATE refused by a trigger).
+model SectorRecordVersion {
+  id         String             @id @default(uuid()) @db.Uuid
+  recordId   String             @map("record_id") @db.Uuid
+  orgId      String             @map("org_id") @db.Uuid
+  version    Int
+  action     SectorRecordAction
+  title      String
+  data       Json               @default("{}")
+  occurredOn DateTime?          @map("occurred_on") @db.Date
+  dueDate    DateTime?          @map("due_date") @db.Date
+  /// Why the entry was corrected or voided; null when it was written.
+  reason     String?
+  /// dashboard, miniapp; null for the versions recorded when the history was introduced.
+  channel    String?
+  changedBy  String?            @map("changed_by") @db.Uuid
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  record SectorRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  org    Tenant       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  author User?        @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@unique([recordId, version])
+  @@index([orgId])
+  @@map("sector_record_version")
 }
 
 /// A file attached to an entry of a sector register; the content is in the attachment storage.

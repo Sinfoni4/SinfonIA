@@ -39,6 +39,10 @@ import type { Prisma, PrismaClient } from '@prisma/client';
  *
  * An entry with an expiry (e.g. a licence) keeps one deadline of the organization in step, so the
  * usual reminders (30, 15, 7, 1 days and the day itself) work without anything new.
+ *
+ * Fase 1A: an entry is never overwritten nor deleted. Every change is a correction with its reason
+ * and a new version kept in `sector_record_version`; an entry is voided, with its reason, and
+ * stays in the register (out of the lists unless asked for) with its files and its history.
  */
 
 export class SectorRecordError extends Error {
@@ -68,8 +72,26 @@ export type SectorRecordView = {
   notify: SectorPerson | null;
   mine: boolean;
   attachments: SectorAttachmentView[];
+  /** The number of the current version (1 when written, +1 at every correction or voiding). */
+  version: number;
+  /** When, why and by whom the entry was voided; null for an entry in force. */
+  voided: { at: string; reason: string; by: string | null } | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** One version of an entry, as kept in its history. */
+export type SectorRecordVersionView = {
+  version: number;
+  action: 'CREATED' | 'CORRECTED' | 'VOIDED';
+  title: string;
+  data: Record<string, unknown>;
+  occurredOn: string | null;
+  dueDate: string | null;
+  reason: string | null;
+  channel: string | null;
+  author: string | null;
+  changedAt: string;
 };
 
 export type SectorAttachmentView = {
@@ -87,6 +109,8 @@ export type SectorRegisterPage = {
   feature: { id: string; label: string; description: string };
   kinds: readonly SectorRecordKind[];
   canManage: boolean;
+  /** Whether the caller may void entries (through a delegation: only with its DELETE operation). */
+  canVoid: boolean;
   /**
    * Who the writer may name as the person to remind: the active people of the organization for
    * staff, only themselves for a member; empty when no kind of entry names one.
@@ -106,6 +130,8 @@ type Access = {
 };
 
 const MAX_TITLE = 300;
+const REASON_MIN = 3;
+const REASON_MAX = 500;
 const DEADLINE_TITLE_MAX = 200;
 const SEARCH_MAX = 100;
 
@@ -243,10 +269,81 @@ function validate(kind: SectorRecordKind, input: unknown): Record<string, unknow
   return notify ? { ...parsed.data, [NOTIFY_KEY]: notify } : parsed.data;
 }
 
+/** The reason of a correction or a voiding: required, 3 to 500 characters. */
+function reasonOf(value: unknown, what: 'rettifica' | 'annullamento'): string {
+  const reason = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+  if (reason.length < REASON_MIN) {
+    throw new SectorRecordError(
+      `Indica il motivo ${what === 'rettifica' ? 'della rettifica' : 'dell’annullamento'} (almeno ${REASON_MIN} caratteri)`,
+      400,
+      'REASON_REQUIRED',
+    );
+  }
+  if (reason.length > REASON_MAX) {
+    throw new SectorRecordError(`Il motivo può avere al massimo ${REASON_MAX} caratteri`);
+  }
+  return reason;
+}
+
+/** The same JSON whatever the order of the keys (PostgreSQL reorders them in jsonb). */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function conflict(): SectorRecordError {
+  return new SectorRecordError(
+    'La voce è stata modificata nel frattempo: ricarica la pagina e riprova',
+    409,
+    'VERSION_CONFLICT',
+  );
+}
+
+function voidedError(): SectorRecordError {
+  return new SectorRecordError('La voce è annullata: non si può più modificare', 409, 'VOIDED');
+}
+
 function kindOf(access: Access, kind: string): SectorRecordKind {
   const found = sectorRecordKind(access.definition.id, kind);
   if (!found) throw new SectorRecordError(`Tipo di voce sconosciuto: ${kind}`);
   return found;
+}
+
+/** The row of the history for the entry as it is now. */
+function versionOf(
+  row: {
+    id: string;
+    orgId: string;
+    version: number;
+    title: string;
+    data: unknown;
+    occurredOn: Date | null;
+    dueDate: Date | null;
+  },
+  action: 'CREATED' | 'CORRECTED' | 'VOIDED',
+  reason: string | null,
+  channel: SectorChannel,
+  userId: string,
+): Prisma.SectorRecordVersionUncheckedCreateInput {
+  return {
+    recordId: row.id,
+    orgId: row.orgId,
+    version: row.version,
+    action,
+    title: row.title,
+    data: row.data ?? {},
+    occurredOn: row.occurredOn,
+    dueDate: row.dueDate,
+    reason,
+    channel,
+    changedBy: userId,
+  };
 }
 
 const INCLUDE = {
@@ -282,6 +379,15 @@ function toView(
       ? { id: notify, label: people.get(notify) ?? 'Persona non più nell’organizzazione' }
       : null,
     mine: row.createdBy === access.grant.principal.userId,
+    version: row.version,
+    voided:
+      row.voidedAt && row.voidReason
+        ? {
+            at: row.voidedAt.toISOString(),
+            reason: row.voidReason,
+            by: row.voidedBy ? (people.get(row.voidedBy) ?? null) : null,
+          }
+        : null,
     attachments: row.attachments.map((a) => ({
       id: a.id,
       fileName: a.fileName,
@@ -306,6 +412,8 @@ function reach(access: Access): Prisma.SectorRecordWhereInput {
 
 export type SectorFilters = {
   kind?: string;
+  /** Entries in force (default), voided ones, or both. */
+  state?: 'active' | 'voided' | 'all';
   search?: string;
   from?: string;
   to?: string;
@@ -319,6 +427,9 @@ function filterWhere(
   today: string,
 ): Prisma.SectorRecordWhereInput {
   const where: Prisma.SectorRecordWhereInput = { ...reach(access) };
+  const state = input.state ?? 'active';
+  if (state === 'active') where.voidedAt = null;
+  if (state === 'voided') where.voidedAt = { not: null };
   if (input.kind) where.kind = kindOf(access, input.kind).kind;
   const from = input.from ? parseIsoDate(input.from) : null;
   const to = input.to ? parseIsoDate(input.to) : null;
@@ -372,6 +483,7 @@ export class SectorRecordService {
       feature: string;
       channel: SectorChannel;
       kind?: string;
+      state?: 'active' | 'voided' | 'all';
       search?: string;
       from?: string;
       to?: string;
@@ -415,6 +527,9 @@ export class SectorRecordService {
       },
       kinds: access.definition.records,
       canManage,
+      canVoid: principal.delegation
+        ? principal.delegation.operations.includes('DELETE')
+        : canManage,
       people: await this.people(principal, input.feature, input.channel),
       items: rows.map((r) => toView(r, access, today, labels)),
       page,
@@ -424,9 +539,15 @@ export class SectorRecordService {
     };
   }
 
-  /** The labels of the people named in these entries. */
-  private async labelsOf(rows: ReadonlyArray<{ data: unknown }>): Promise<Map<string, string>> {
-    const ids = [...new Set(rows.map((r) => notifyOf(r.data)).filter((v) => v !== null))];
+  /** The labels of the people named in these entries, or who voided them. */
+  private async labelsOf(
+    rows: ReadonlyArray<{ data: unknown; voidedBy?: string | null }>,
+  ): Promise<Map<string, string>> {
+    const ids = [
+      ...new Set(
+        rows.flatMap((r) => [notifyOf(r.data), r.voidedBy ?? null]).filter((v) => v !== null),
+      ),
+    ];
     if (ids.length === 0) return new Map();
     const users = await this.prisma.user.findMany({
       where: { id: { in: ids } },
@@ -552,6 +673,9 @@ export class SectorRecordService {
           updatedBy: principal.userId,
         },
       });
+      await tx.sectorRecordVersion.create({
+        data: versionOf(row, 'CREATED', null, input.channel, principal.userId),
+      });
       const deadline = await this.syncDeadline(tx, access, kind, row);
       await new AuditService(tx).logEvent({
         tenantId: principal.tenantId,
@@ -565,9 +689,20 @@ export class SectorRecordService {
     return this.get(principal, { feature: input.feature, channel: input.channel, id });
   }
 
+  /**
+   * A correction: the new content, with its reason, becomes a new version; the previous ones stay
+   * in the history. `expectedVersion`, when given, must be the current one (no lost update).
+   */
   async update(
     principal: Principal,
-    input: { feature: string; channel: SectorChannel; id: string; data: unknown },
+    input: {
+      feature: string;
+      channel: SectorChannel;
+      id: string;
+      data: unknown;
+      reason: unknown;
+      expectedVersion?: number;
+    },
   ): Promise<SectorRecordView> {
     const access = await authorizeSector(
       this.prisma,
@@ -580,26 +715,47 @@ export class SectorRecordService {
       where: { ...reach(access), id: input.id },
     });
     if (!existing) throw new NotFoundError('Voce non trovata');
+    if (existing.voidedAt) throw voidedError();
+    if (input.expectedVersion !== undefined && input.expectedVersion !== existing.version) {
+      throw conflict();
+    }
     const kind = kindOf(access, existing.kind);
     const data = validate(kind, input.data);
+    const reason = reasonOf(input.reason, 'rettifica');
+    if (canonical(data) === canonical(existing.data)) {
+      throw new SectorRecordError('Nessuna modifica da registrare', 400, 'NO_CHANGE');
+    }
     await this.checkNotify(access, data);
     const deadlineId = await withTransaction(this.prisma, async (tx) => {
-      const row = await tx.sectorRecord.update({
-        where: { id: existing.id },
+      // Only from the version just read: a change made meanwhile is never overwritten.
+      const done = await tx.sectorRecord.updateMany({
+        where: { id: existing.id, version: existing.version, voidedAt: null },
         data: {
           title: recordTitle(kind, data),
           data: data as Prisma.InputJsonObject,
           occurredOn: dateOf(data, kind.dateField),
           dueDate: dateOf(data, kind.dueField),
           updatedBy: principal.userId,
+          version: existing.version + 1,
         },
+      });
+      if (done.count !== 1) throw conflict();
+      const row = await tx.sectorRecord.findUniqueOrThrow({ where: { id: existing.id } });
+      await tx.sectorRecordVersion.create({
+        data: versionOf(row, 'CORRECTED', reason, input.channel, principal.userId),
       });
       const deadline = await this.syncDeadline(tx, access, kind, row);
       await new AuditService(tx).logEvent({
         tenantId: principal.tenantId,
         userId: principal.userId,
         eventType: 'SECTOR_RECORD_UPDATED',
-        payload: { recordId: row.id, feature: row.feature, kind: row.kind, channel: input.channel },
+        payload: {
+          recordId: row.id,
+          feature: row.feature,
+          kind: row.kind,
+          version: row.version,
+          channel: input.channel,
+        },
       });
       return deadline;
     });
@@ -607,10 +763,20 @@ export class SectorRecordService {
     return this.get(principal, { feature: input.feature, channel: input.channel, id: existing.id });
   }
 
-  async remove(
+  /**
+   * Voids an entry, with its reason: it stays in the register with its files and history, out of
+   * the lists and exports unless asked for, and its deadline is closed (no more reminders).
+   */
+  async void(
     principal: Principal,
-    input: { feature: string; channel: SectorChannel; id: string },
-  ): Promise<void> {
+    input: {
+      feature: string;
+      channel: SectorChannel;
+      id: string;
+      reason: unknown;
+      expectedVersion?: number;
+    },
+  ): Promise<SectorRecordView> {
     const access = await authorizeSector(
       this.prisma,
       principal,
@@ -620,34 +786,76 @@ export class SectorRecordService {
     );
     const existing = await this.prisma.sectorRecord.findFirst({
       where: { ...reach(access), id: input.id },
-      select: {
-        id: true,
-        feature: true,
-        kind: true,
-        attachments: { select: { storagePath: true } },
-      },
     });
     if (!existing) throw new NotFoundError('Voce non trovata');
+    if (existing.voidedAt) {
+      throw new SectorRecordError('La voce è già annullata', 409, 'VOIDED');
+    }
+    if (input.expectedVersion !== undefined && input.expectedVersion !== existing.version) {
+      throw conflict();
+    }
+    const reason = reasonOf(input.reason, 'annullamento');
+    const now = this.options.clock?.() ?? new Date();
     await withTransaction(this.prisma, async (tx) => {
-      // Its deadline and its list of files go with it (ON DELETE CASCADE), reminders included.
-      await tx.sectorRecord.delete({ where: { id: existing.id } });
+      const done = await tx.sectorRecord.updateMany({
+        where: { id: existing.id, version: existing.version, voidedAt: null },
+        data: {
+          voidedAt: now,
+          voidedBy: principal.userId,
+          voidReason: reason,
+          updatedBy: principal.userId,
+          version: existing.version + 1,
+        },
+      });
+      if (done.count !== 1) throw conflict();
+      const row = await tx.sectorRecord.findUniqueOrThrow({ where: { id: existing.id } });
+      await tx.sectorRecordVersion.create({
+        data: versionOf(row, 'VOIDED', reason, input.channel, principal.userId),
+      });
+      // The deadline stays, closed: what was due is still among the closed deadlines.
+      await tx.complianceDeadline.updateMany({
+        where: { sectorRecordId: row.id, status: 'OPEN' },
+        data: { status: 'CLOSED', closedAt: now },
+      });
       await new AuditService(tx).logEvent({
         tenantId: principal.tenantId,
         userId: principal.userId,
-        eventType: 'SECTOR_RECORD_DELETED',
+        eventType: 'SECTOR_RECORD_VOIDED',
         payload: {
-          recordId: existing.id,
-          feature: existing.feature,
-          kind: existing.kind,
+          recordId: row.id,
+          feature: row.feature,
+          kind: row.kind,
+          version: row.version,
           channel: input.channel,
         },
       });
     });
-    // The files after the commit: a file left behind is an orphan the console reports, never a
-    // row pointing to nothing.
-    for (const file of existing.attachments) {
-      await this.deleteFile(principal.tenantId, file.storagePath);
-    }
+    return this.get(principal, { feature: input.feature, channel: input.channel, id: existing.id });
+  }
+
+  /** The history of an entry, oldest first, with the same access as the entry itself. */
+  async versions(
+    principal: Principal,
+    input: { feature: string; channel: SectorChannel; id: string },
+  ): Promise<SectorRecordVersionView[]> {
+    const { record } = await this.reachable(principal, input, 'read');
+    const rows = await this.prisma.sectorRecordVersion.findMany({
+      where: { recordId: record.id, orgId: principal.tenantId },
+      include: { author: { select: { id: true, email: true } } },
+      orderBy: { version: 'asc' },
+    });
+    return rows.map((v) => ({
+      version: v.version,
+      action: v.action,
+      title: v.title,
+      data: (v.data ?? {}) as Record<string, unknown>,
+      occurredOn: v.occurredOn ? toIsoDate(v.occurredOn) : null,
+      dueDate: v.dueDate ? toIsoDate(v.dueDate) : null,
+      reason: v.reason,
+      channel: v.channel,
+      author: v.author ? personLabel(v.author) : null,
+      changedAt: v.createdAt.toISOString(),
+    }));
   }
 
   /**
@@ -704,6 +912,7 @@ export class SectorRecordService {
         feature: access.definition.id,
         format: input.format,
         count: rows.length,
+        state: input.state ?? 'active',
         scope: access.grant.scope,
         channel: input.channel,
       },
@@ -730,7 +939,13 @@ export class SectorRecordService {
     );
     const record = await this.prisma.sectorRecord.findFirst({
       where: { ...reach(access), id: input.id },
-      select: { id: true, feature: true, kind: true, _count: { select: { attachments: true } } },
+      select: {
+        id: true,
+        feature: true,
+        kind: true,
+        voidedAt: true,
+        _count: { select: { attachments: true } },
+      },
     });
     if (!record) throw new NotFoundError('Voce non trovata');
     return { access, record };
@@ -752,6 +967,7 @@ export class SectorRecordService {
   ): Promise<SectorRecordView> {
     // Access first: nothing about the server is told to someone who cannot reach the entry.
     const { record } = await this.reachable(principal, input, 'manage');
+    if (record.voidedAt) throw voidedError();
     const storage = this.options.storage;
     if (!storage) throw new SectorRecordError('Archivio dei file non configurato', 409);
     const max = this.options.maxAttachmentBytes ?? DEFAULT_MAX_BYTES;
@@ -838,6 +1054,7 @@ export class SectorRecordService {
     input: { feature: string; channel: SectorChannel; id: string; attachmentId: string },
   ): Promise<SectorRecordView> {
     const { record } = await this.reachable(principal, input, 'manage');
+    if (record.voidedAt) throw voidedError();
     const file = await this.prisma.sectorRecordAttachment.findFirst({
       where: { id: input.attachmentId, recordId: record.id, orgId: principal.tenantId },
     });

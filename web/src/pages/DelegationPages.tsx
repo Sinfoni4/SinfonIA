@@ -292,7 +292,7 @@ function NewGrantForm({ me, onDone }: { me: Me; onDone: () => Promise<void> }) {
       />
       <fieldset className="plain-fieldset">
         <legend>Che cosa può fare</legend>
-        {OFFERED_OPERATIONS.map((op) => (
+        {OFFERED_OPERATIONS.filter((op) => op !== 'DELETE' || registers.length > 0).map((op) => (
           <label key={op} className="check">
             <input
               type="checkbox"
@@ -312,11 +312,14 @@ function NewGrantForm({ me, onDone }: { me: Me; onDone: () => Promise<void> }) {
               <input
                 type="checkbox"
                 checked={registers.includes(f.id)}
-                onChange={() =>
-                  setRegisters((list) =>
-                    list.includes(f.id) ? list.filter((r) => r !== f.id) : [...list, f.id],
-                  )
-                }
+                onChange={() => {
+                  const next = registers.includes(f.id)
+                    ? registers.filter((r) => r !== f.id)
+                    : [...registers, f.id];
+                  setRegisters(next);
+                  // Voiding entries needs a register to void them in.
+                  if (next.length === 0) setOperations((ops) => ops.filter((o) => o !== 'DELETE'));
+                }}
               />
               {f.label}
             </label>

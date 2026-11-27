@@ -67,7 +67,7 @@ describe('D3 durations', () => {
       /12 mesi/,
     );
     expect(() => checkDelegation(['UPDATE'], at(30), now)).toThrow(/lettura/);
-    expect(() => checkDelegation(['READ', 'DELETE'], at(30), now)).toThrow(
+    expect(() => checkDelegation(['READ', 'APPROVE'], at(30), now)).toThrow(
       /non ancora disponibili/,
     );
     expect(() => checkDelegation(['READ'], at(0), now)).toThrow(/domani/);

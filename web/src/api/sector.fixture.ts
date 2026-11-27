@@ -58,6 +58,8 @@ export const TREATMENT: SectorRecord = {
   notify: null,
   mine: true,
   attachments: [],
+  version: 1,
+  voided: null,
   createdAt: '2026-11-20T08:00:00.000Z',
   updatedAt: '2026-11-20T08:00:00.000Z',
 };
@@ -74,6 +76,7 @@ export function fieldBookPage(
     },
     kinds: FIELD_BOOK_KINDS,
     canManage,
+    canVoid: canManage,
     people: [],
     items,
     page: 1,

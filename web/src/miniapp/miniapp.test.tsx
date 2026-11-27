@@ -396,6 +396,59 @@ describe('Telegram Mini App', () => {
     ).toEqual([`POST /miniapp/sector/trade_licenses/records/${licence.id}/attachments`]);
   });
 
+  it('corrects and voids an entry from the phone, always with a reason', async () => {
+    const sectorFeatures = [
+      {
+        id: 'field_book',
+        label: 'Quaderno di campagna',
+        description: 'Registro dei trattamenti.',
+        ready: true,
+        dashboard: false,
+        miniApp: true,
+      },
+    ];
+    const base = `/miniapp/sector/field_book/records/${TREATMENT.id}`;
+    api({
+      'GET /auth/me': () =>
+        ok({
+          userId: 'u-1',
+          email: 'anna@collio.it',
+          organizations: [
+            { orgId: ORG, name: 'Azienda Agricola Collio', role: 'MEMBER', type: 'COMPANY' },
+          ],
+          platform: false,
+          current: { orgId: ORG, role: 'MEMBER', sectorFeatures },
+        }),
+      'GET /miniapp/sector/field_book/records': () => ok(fieldBookPage()),
+      [`PATCH ${base}`]: () => ok({ ...TREATMENT, version: 2 }),
+      [`POST ${base}/void`]: () => ok({ ...TREATMENT, version: 2 }),
+    });
+    openFromTelegram('/tg/settore/field_book');
+    await userEvent.click(await screen.findByRole('button', { name: /Rame · Vite/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva la rettifica' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('motivo della rettifica');
+    await userEvent.type(screen.getByLabelText('Motivo della rettifica *'), 'Dose sbagliata');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva la rettifica' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'PATCH' && c.path === base)?.body).toMatchObject({
+        reason: 'Dose sbagliata',
+        expectedVersion: 1,
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Rame · Vite/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Annulla questa voce' }));
+    await userEvent.type(screen.getByLabelText('Motivo dell’annullamento *'), 'Inserita due volte');
+    await userEvent.click(screen.getByRole('button', { name: 'Annulla la voce' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.path === `${base}/void`)?.body).toEqual({
+        reason: 'Inserita due volte',
+        expectedVersion: 1,
+      }),
+    );
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+  });
+
   it('keeps the home without the functions of the sector', async () => {
     api();
     openFromTelegram();

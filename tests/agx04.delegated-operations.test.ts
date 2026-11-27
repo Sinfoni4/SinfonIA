@@ -32,11 +32,11 @@ const isoDay = (offsetDays: number) =>
   new Date(Date.now() + offsetDays * DAY_MS).toISOString().slice(0, 10);
 
 describe('AGX-04 operations', () => {
-  it('offers CREATE, still not APPROVE or DELETE', () => {
+  it('offers CREATE and DELETE (voiding register entries), still not APPROVE', () => {
     const until = new Date(Date.now() + 30 * DAY_MS);
     expect(checkDelegation(['READ', 'CREATE'], until)).toEqual(['READ', 'CREATE']);
+    expect(checkDelegation(['READ', 'DELETE'], until)).toEqual(['READ', 'DELETE']);
     expect(() => checkDelegation(['READ', 'APPROVE'], until)).toThrow(/non ancora disponibili/);
-    expect(() => checkDelegation(['READ', 'DELETE'], until)).toThrow(/non ancora disponibili/);
   });
 });
 

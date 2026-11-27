@@ -236,7 +236,7 @@ describe('delegations (MF8)', () => {
           },
         ]),
       'GET /grants/g-2/sector/field_book/records': () =>
-        ok({ ...fieldBookPage([TREATMENT], true), delegation }),
+        ok({ ...fieldBookPage([TREATMENT], true), canVoid: false, delegation }),
       [`PATCH /grants/g-2/sector/field_book/records/${TREATMENT.id}`]: () => ok(TREATMENT),
     });
     openAt('/deleghe');
@@ -245,11 +245,12 @@ describe('delegations (MF8)', () => {
     expect(
       screen.getByRole('heading', { name: 'Quaderno di campagna di Azienda Agricola Collio' }),
     ).toBeTruthy();
-    // UPDATE without CREATE or EXPORT, and never a deletion.
+    // UPDATE without CREATE, EXPORT or DELETE: no voiding.
     expect(screen.queryByRole('button', { name: 'Nuova voce' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Esporta il registro' })).toBeNull();
-    expect(screen.queryByRole('button', { name: `Elimina ${TREATMENT.title}` })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: `Modifica ${TREATMENT.title}` }));
+    expect(screen.queryByRole('button', { name: `Annulla ${TREATMENT.title}` })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: `Rettifica ${TREATMENT.title}` }));
+    await userEvent.type(screen.getByLabelText('Motivo della rettifica *'), 'Dose corretta');
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }));
     await waitFor(() =>
       expect(

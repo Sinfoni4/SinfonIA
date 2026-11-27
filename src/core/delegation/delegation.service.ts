@@ -29,11 +29,14 @@ import type {
  * Operations available in this version; the others are refused until their rules exist.
  * AGX-04: READ also covers listing and downloading documents; UPDATE covers the state, the step
  * (sub-state), uploading documents and confirming the data read from them; CREATE opens practices.
+ * Fase 1A: DELETE only voids entries of the registers the delegation covers (with a reason; an
+ * entry is never deleted), so it needs at least one register.
  */
 export const AVAILABLE_OPERATIONS: readonly GrantOperation[] = [
   'READ',
   'CREATE',
   'UPDATE',
+  'DELETE',
   'EXPORT',
 ];
 /** Operations that shorten the maximum duration to 3 months (D3.7). */
@@ -233,6 +236,11 @@ export async function issueGrant(
 ): Promise<{ id: string }> {
   const operations = checkDelegation(input.operations, input.validUntil);
   const registers = [...new Set(input.registers ?? [])];
+  if (operations.includes('DELETE') && registers.length === 0) {
+    throw new DelegationError(
+      'L’annullamento vale solo per le voci dei registri: scegli almeno un registro',
+    );
+  }
   return withTransaction(prisma, async (tx) => {
     const grantor = await tx.tenant.findUniqueOrThrow({
       where: { id: input.grantorOrgId },
