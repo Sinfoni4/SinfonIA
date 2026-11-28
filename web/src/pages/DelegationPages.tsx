@@ -29,6 +29,7 @@ import {
   type Practice,
   type PracticeState,
 } from '../api/practices';
+import { hasCompanyProfile } from '../api/profile';
 import { DocumentChecklist } from '../components/DocumentChecklist';
 import { DocumentRequests } from '../components/DocumentRequests';
 import { FormatSelect } from '../components/ExportFormat';
@@ -141,6 +142,7 @@ function IssuedTab({ me }: { me: Me }) {
             {(g.registers?.length ?? 0) > 0 && (
               <p className="muted">Registri: {g.registers?.map((r) => r.label).join(', ')}</p>
             )}
+            {g.profile && <p className="muted">Comprende il profilo aziendale</p>}
             {g.granteeType === 'ORGANIZATION' && (
               <div>
                 <strong>Persone che possono usarla</strong>
@@ -234,6 +236,11 @@ function NewGrantForm({ me, onDone }: { me: Me; onDone: () => Promise<void> }) {
   // The registers of the organization's sector functions, built and on in the dashboard.
   const offeredRegisters = dashboardSectorFeatures(me).filter((f) => f.ready);
   const [registers, setRegisters] = useState<string[]>([]);
+  // Fase 1C: the company profile, for the organizations that have one.
+  const offersProfile = hasCompanyProfile(
+    me.organizations.find((o) => o.orgId === me.current.orgId),
+  );
+  const [profile, setProfile] = useState(false);
   const [kind, setKind] = useState<'org' | 'person'>('org');
   const [target, setTarget] = useState('');
   const [operations, setOperations] = useState<GrantOperation[]>(['READ']);
@@ -249,6 +256,7 @@ function NewGrantForm({ me, onDone }: { me: Me; onDone: () => Promise<void> }) {
           operations,
           validUntil: endDateIn(chosenMonths),
           ...(registers.length > 0 ? { registers } : {}),
+          ...(profile ? { profile: true } : {}),
         },
       }),
     onSuccess: async () => {
@@ -325,6 +333,12 @@ function NewGrantForm({ me, onDone }: { me: Me; onDone: () => Promise<void> }) {
             </label>
           ))}
         </fieldset>
+      )}
+      {offersProfile && (
+        <label className="check">
+          <input type="checkbox" checked={profile} onChange={() => setProfile((p) => !p)} />
+          Comprende il profilo aziendale (con «aggiornare» può anche modificarlo e verificarlo)
+        </label>
       )}
       <label htmlFor="grant-months">Durata</label>
       <select
@@ -425,6 +439,11 @@ function ReceivedTab({ me }: { me: Me }) {
                       {r.label}
                     </Link>
                   ))}
+                  {g.profile && (
+                    <Link to={`/deleghe/${g.id}/profilo`} className="button secondary">
+                      Profilo aziendale
+                    </Link>
+                  )}
                 </div>
               ) : (
                 g.state === 'ACTIVE' &&

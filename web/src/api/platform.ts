@@ -67,6 +67,8 @@ export type OrganizationDetail = OrganizationRow & {
   };
   /** When the logo of the Mini App last changed; null without one (absent: older server). */
   logoUpdatedAt?: string | null;
+  /** Fase 1C: the activities declared in the company profile, never the details; null: none. */
+  profileActivities?: Array<{ id: string; label: string }> | null;
 };
 
 export type PlatformAuditRow = {

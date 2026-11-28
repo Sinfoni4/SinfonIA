@@ -4,6 +4,7 @@ import {
   CalendarClock,
   ChartColumn,
   CirclePlus,
+  ClipboardList,
   Download,
   FileSearch,
   FolderOpen,
@@ -26,6 +27,7 @@ import { Link } from 'react-router';
 
 import { dashboardSectorFeatures, describeError, ROLE_LABELS, type Me } from '../api/client';
 import { NETWORK_TYPES } from '../api/organization';
+import { hasCompanyProfile } from '../api/profile';
 import { useSession } from '../session/session';
 
 import { AppFrame, type NavGroup, type NavItem } from './AppFrame';
@@ -110,6 +112,11 @@ function sections(me: Me): NavGroup[] {
         }),
         ...item(admin, { to: '/adesioni', label: 'Adesioni', icon: <Building2 aria-hidden /> }),
         ...item(admin, { to: '/attivita', label: 'Attività', icon: <History aria-hidden /> }),
+        ...item(admin && hasCompanyProfile(current), {
+          to: '/profilo-aziendale',
+          label: 'Profilo aziendale',
+          icon: <ClipboardList aria-hidden />,
+        }),
         ...item(admin, {
           to: '/impostazioni',
           label: 'Impostazioni',

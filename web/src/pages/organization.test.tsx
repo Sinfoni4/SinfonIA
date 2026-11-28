@@ -585,6 +585,89 @@ describe('home (P11)', () => {
   });
 });
 
+describe('company profile (Fase 1C)', () => {
+  const DEFINITION = {
+    edition: 'prova',
+    common: [{ key: 'units', label: 'Unità produttive e sedi', type: 'text', required: true }],
+    activities: [
+      {
+        id: 'crops',
+        label: 'Coltivazioni e seminativi',
+        description: 'Cereali.',
+        fields: [
+          { key: 'area', label: 'Superficie coltivata (ha)', type: 'number', required: true },
+        ],
+      },
+      { id: 'brewery', label: 'Birrificio', description: 'Birra.', fields: [] },
+    ],
+  };
+  const agriMe = () =>
+    ok({
+      userId: 'u-1',
+      email: 'mario@coop.it',
+      organizations: [
+        { orgId: ORG, name: 'Azienda', role: 'ADMIN', type: 'COMPANY', module: 'agri' },
+      ],
+      current: { orgId: ORG, role: 'ADMIN' },
+    });
+
+  it('shows what is missing, saves a new version and shows the history', async () => {
+    let current: Record<string, unknown> | null = null;
+    api('ADMIN', {
+      'GET /auth/me': agriMe,
+      'GET /organization/profile': () =>
+        ok({
+          definition: DEFINITION,
+          current,
+          missing: current ? [] : ['Attività dell’azienda'],
+          complete: current !== null,
+          review: null,
+        }),
+      'PUT /organization/profile': (c) => {
+        const body = c.body as { activities: string[]; data: object };
+        current = {
+          version: 1,
+          activities: body.activities,
+          data: body.data,
+          source: 'ORGANIZATION',
+          author: 'mario@coop.it',
+          createdAt: '2026-11-28T09:00:00Z',
+        };
+        return ok({});
+      },
+      'GET /organization/profile/versions': () => ok([{ ...current, reviews: [] }]),
+    });
+    openAt('/profilo-aziendale');
+    expect(await screen.findByText('incompleto')).toBeTruthy();
+    expect(screen.getByText('Attività dell’azienda')).toBeTruthy();
+    const sidebar = screen.getByRole('complementary', { name: 'Menu della dashboard' });
+    expect(within(sidebar).getByRole('link', { name: 'Profilo aziendale' })).toBeTruthy();
+
+    await userEvent.click(screen.getByLabelText(/Coltivazioni e seminativi/));
+    await userEvent.type(screen.getByLabelText('Unità produttive e sedi *'), 'Cormons');
+    await userEvent.type(screen.getByLabelText('Superficie coltivata (ha) *'), '12,5');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva una nuova versione' }));
+    await waitFor(() =>
+      expect(requested('/organization/profile').find((c) => c.method === 'PUT')?.body).toEqual({
+        activities: ['crops'],
+        data: { common: { units: 'Cormons' }, activities: { crops: { area: 12.5 } } },
+        expectedVersion: 0,
+      }),
+    );
+    expect(await screen.findByText('completo')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Mostra lo storico' }));
+    const history = await screen.findByRole('region', { name: 'Storico delle versioni' });
+    expect(await within(history).findByText(/Versione 1 · scritta dall’azienda/)).toBeTruthy();
+  });
+
+  it('is not in the menu of an organization without a profile', async () => {
+    api('ADMIN', {});
+    openAt('/');
+    const sidebar = await screen.findByRole('complementary', { name: 'Menu della dashboard' });
+    expect(within(sidebar).queryByRole('link', { name: 'Profilo aziendale' })).toBeNull();
+  });
+});
+
 describe('settings (P12)', () => {
   it('saves name and scheduled export, then shows the new name in the header', async () => {
     api('ADMIN', {});

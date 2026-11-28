@@ -265,6 +265,72 @@ describe('delegations (MF8)', () => {
     expect(calls.some((c) => c.path.startsWith('/sector/'))).toBe(false);
   });
 
+  it('checks the company profile of the grantor through a delegation that covers it', async () => {
+    const profile = {
+      definition: {
+        edition: 'prova',
+        common: [{ key: 'units', label: 'Unità produttive e sedi', type: 'text' }],
+        activities: [
+          { id: 'crops', label: 'Coltivazioni e seminativi', description: '', fields: [] },
+        ],
+      },
+      current: {
+        version: 2,
+        activities: ['crops'],
+        data: { common: { units: 'Cormons' }, activities: {} },
+        source: 'ORGANIZATION',
+        author: 'anna@collio.it',
+        createdAt: '2026-11-28T09:00:00Z',
+      },
+      missing: [],
+      complete: true,
+      review: null,
+      delegation: {
+        grantorName: 'Azienda Agricola Collio',
+        operations: ['READ', 'UPDATE'],
+        validUntil: '2027-05-01T10:00:00Z',
+      },
+    };
+    api('OPERATOR', 'NETWORK', {
+      'GET /grants/received': () =>
+        ok([
+          {
+            id: 'g-3',
+            grantor: { orgId: COMPANY, name: 'Azienda Agricola Collio' },
+            granteeType: 'ORGANIZATION',
+            operations: ['READ', 'UPDATE'],
+            registers: [],
+            profile: true,
+            validUntil: '2027-05-01T10:00:00Z',
+            state: 'ACTIVE',
+            usable: true,
+            beneficiaries: [],
+          },
+        ]),
+      'GET /grants/g-3/profile': () => ok(profile),
+      'POST /grants/g-3/profile/review': () => ok(profile),
+    });
+    openAt('/deleghe');
+    await userEvent.click(await screen.findByRole('link', { name: 'Profilo aziendale' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Profilo aziendale di Azienda Agricola Collio' }),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Servono informazioni' }));
+    expect(screen.getByRole('alert').textContent).toContain('quali informazioni servono');
+    await userEvent.type(
+      screen.getByLabelText('Nota (obbligatoria se servono informazioni)'),
+      'Manca la superficie',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Servono informazioni' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.path === '/grants/g-3/profile/review')?.body).toEqual({
+        outcome: 'NEEDS_INFO',
+        note: 'Manca la superficie',
+        expectedVersion: 2,
+      }),
+    );
+  });
+
   it('opens the practices of the grantor with its name always in view', async () => {
     api('OPERATOR', 'NETWORK', {
       'POST /grants/g-2/practices/p-1/transition': () => ok({ id: 'p-1', status: 'VALIDATED' }),

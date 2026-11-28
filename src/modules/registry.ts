@@ -72,3 +72,11 @@ export {
   type SectorFeatureDefinition,
 } from './sector-features.js';
 export type { SectorRecordKind } from './sector-records.js';
+
+/** The questionnaire of the company profile of each sector (Fase 1C). */
+export {
+  AGRI_PROFILE,
+  profileDefinitionOf,
+  type CompanyProfileDefinition,
+  type ProfileActivity,
+} from './agri-profile.js';

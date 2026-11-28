@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   auditDelegatedUse,
+  DelegationError,
   delegatedPracticeOwner,
   issueGrant,
   listIssuedGrants,
@@ -12,6 +13,12 @@ import {
   revokeGrant,
   setBeneficiary,
 } from '../../../core/delegation/delegation.service.js';
+import {
+  getCompanyProfile,
+  listProfileVersions,
+  reviewCompanyProfile,
+  saveCompanyProfile,
+} from '../../../core/organization/company-profile.service.js';
 import { validateAttachment } from '../../../core/practice/attachment-validation.js';
 import {
   practiceChecklist,
@@ -43,6 +50,7 @@ import {
 
 import { ValidationBodySchema } from './attachment-review.routes.js';
 import { attachmentBodyLimit, readAttachmentUpload } from './attachment-upload.js';
+import { ProfileBodySchema } from './organization.routes.js';
 
 import type { DelegatedAccess } from '../../../core/delegation/delegation.service.js';
 import type { PracticeApplicationService } from '../../../core/practice/practice.application.service.js';
@@ -74,6 +82,15 @@ const IssueBodySchema = z
       .array(z.string().regex(/^[a-z_]{2,40}$/))
       .max(20)
       .optional(),
+    /** Fase 1C: the company profile of the grantor too. */
+    profile: z.boolean().optional(),
+  })
+  .strict();
+const ReviewBodySchema = z
+  .object({
+    outcome: z.enum(['VERIFIED', 'NEEDS_INFO']),
+    note: z.string().max(2000).optional(),
+    expectedVersion: z.number().int().min(1).optional(),
   })
   .strict();
 const IdSchema = z.object({ id: z.string().uuid() });
@@ -141,6 +158,7 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
         operations: body.operations,
         validUntil: body.validUntil,
         registers: body.registers,
+        profile: body.profile,
       });
       return reply.status(201).send(ok(created));
     } catch (err: unknown) {
@@ -617,6 +635,94 @@ export const delegationRoutes: FastifyPluginCallback<DelegationRoutesDeps> = (ap
       return sendError(reply, err);
     }
   });
+
+  // --- Fase 1C: the company profile of the grantor -----------------------------------------------
+  // READ reads it and its history; UPDATE writes a new version (marked as written by a delegate)
+  // and checks it. The company never checks itself: checking exists only here.
+  const profileAccess = async (
+    req: Parameters<typeof requirePermission>[0],
+    grantId: string,
+    operation: 'READ' | 'UPDATE',
+  ) => {
+    const result = await access(req, grantId, operation);
+    if (!result.access.profile) {
+      throw new DelegationError(
+        'Il profilo aziendale non è compreso nella delega',
+        403,
+        'PROFILE_NOT_DELEGATED',
+      );
+    }
+    return result;
+  };
+
+  app.get('/grants/:id/profile', { config: { permission: 'grant.use' } }, async (req, reply) => {
+    try {
+      const { id } = IdSchema.parse(req.params);
+      const { access: a, userId } = await profileAccess(req, id, 'READ');
+      const profile = await getCompanyProfile(deps.prisma, a.grantorOrgId);
+      await auditDelegatedUse(deps.prisma, a, userId, 'profile');
+      return reply.send(ok({ ...profile, delegation: delegationView(a) }));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.get(
+    '/grants/:id/profile/versions',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id } = IdSchema.parse(req.params);
+        const { access: a, userId } = await profileAccess(req, id, 'READ');
+        const versions = await listProfileVersions(deps.prisma, a.grantorOrgId);
+        await auditDelegatedUse(deps.prisma, a, userId, 'profile_history');
+        return reply.send(ok(versions));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.put('/grants/:id/profile', { config: { permission: 'grant.use' } }, async (req, reply) => {
+    try {
+      const { id } = IdSchema.parse(req.params);
+      const { access: a, userId } = await profileAccess(req, id, 'UPDATE');
+      const body = ProfileBodySchema.parse(req.body);
+      const profile = await saveCompanyProfile(deps.prisma, {
+        orgId: a.grantorOrgId,
+        userId,
+        source: 'DELEGATE',
+        grantId: a.grantId,
+        ...body,
+      });
+      await auditDelegatedUse(deps.prisma, a, userId, 'profile_update');
+      return reply.send(ok({ ...profile, delegation: delegationView(a) }));
+    } catch (err: unknown) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post(
+    '/grants/:id/profile/review',
+    { config: { permission: 'grant.use' } },
+    async (req, reply) => {
+      try {
+        const { id } = IdSchema.parse(req.params);
+        const { access: a, userId } = await profileAccess(req, id, 'UPDATE');
+        const body = ReviewBodySchema.parse(req.body);
+        const profile = await reviewCompanyProfile(deps.prisma, {
+          orgId: a.grantorOrgId,
+          userId,
+          grantId: a.grantId,
+          ...body,
+        });
+        await auditDelegatedUse(deps.prisma, a, userId, 'profile_review');
+        return reply.send(ok({ ...profile, delegation: delegationView(a) }));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   done();
 };

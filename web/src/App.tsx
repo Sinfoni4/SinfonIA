@@ -6,6 +6,7 @@ import { ActivityPage, AssistantUsagePage } from './pages/ActivityPage';
 import { AssistancePage } from './pages/AssistancePage';
 import { BoardPage } from './pages/BoardPage';
 import { ChooseOrganizationPage } from './pages/ChooseOrganizationPage';
+import { CompanyProfilePage, DelegatedProfilePage } from './pages/CompanyProfilePage';
 import { DeadlinesPage } from './pages/DeadlinesPage';
 import {
   DelegatedPracticeDetailPage,
@@ -66,6 +67,7 @@ export function App() {
         <Route path="adesioni" element={<MembershipsPage me={me} />} />
         <Route path="deleghe" element={<DelegationsPage me={me} />} />
         <Route path="deleghe/:grantId" element={<DelegatedPracticesPage />} />
+        <Route path="deleghe/:grantId/profilo" element={<DelegatedProfilePage />} />
         <Route
           path="deleghe/:grantId/registri/:featureId"
           element={<DelegatedRegisterPage me={me} />}
@@ -88,6 +90,7 @@ export function App() {
         <Route path="attivita/consumi" element={<OrganizationUsagePage me={me} />} />
         <Route path="settore/:featureId" element={<SectorFeaturePage me={me} />} />
         <Route path="impostazioni" element={<SettingsPage me={me} />} />
+        <Route path="profilo-aziendale" element={<CompanyProfilePage me={me} />} />
         <Route path="profilo" element={<ProfilePage me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
