@@ -4,6 +4,11 @@ import { listAuditEvents } from '../../../core/audit/audit-view.service.js';
 import { authorize, scopedUserId } from '../../../core/authz/authorization.service.js';
 import { dashboardSummary } from '../../../core/dashboard/dashboard.service.js';
 import { miniAppSummary } from '../../../core/miniapp/miniapp.service.js';
+import {
+  getCompanyProfile,
+  listProfileVersions,
+  saveCompanyProfile,
+} from '../../../core/organization/company-profile.service.js';
 import { readOrganizationAppearance } from '../../../core/organization/organization-appearance.js';
 import {
   LOGO_MAX_BYTES,
@@ -39,6 +44,14 @@ export type OrganizationRoutesDeps = {
 };
 
 const AppChatBodySchema = z.object({ text: z.string().trim().min(1).max(2000) }).strict();
+/** Fase 1C: a new version of the company profile (activities and answers, checked by the service). */
+export const ProfileBodySchema = z
+  .object({
+    activities: z.array(z.string().max(40)).max(30),
+    data: z.record(z.string(), z.unknown()),
+    expectedVersion: z.number().int().min(0).optional(),
+  })
+  .strict();
 
 /** An export the person already received, to have it as Excel or PDF (no data is read here). */
 export const TableFileBodySchema = z
@@ -329,6 +342,56 @@ export const organizationRoutes: FastifyPluginCallback<OrganizationRoutesDeps> =
           userId: auth.userId,
         });
         return reply.send(ok(settings));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // --- Fase 1C: the company profile, by its administrators ----------------------------------
+  app.get(
+    '/organization/profile',
+    { config: { permission: 'organization.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'organization.manage').principal;
+        return reply.send(ok(await getCompanyProfile(deps.prisma, auth.tenantId)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.get(
+    '/organization/profile/versions',
+    { config: { permission: 'organization.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'organization.manage').principal;
+        return reply.send(ok(await listProfileVersions(deps.prisma, auth.tenantId)));
+      } catch (err: unknown) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.put(
+    '/organization/profile',
+    { config: { permission: 'organization.manage' } },
+    async (req, reply) => {
+      try {
+        const auth = requirePermission(req, 'organization.manage').principal;
+        const body = ProfileBodySchema.parse(req.body);
+        return reply.send(
+          ok(
+            await saveCompanyProfile(deps.prisma, {
+              orgId: auth.tenantId,
+              userId: auth.userId,
+              source: 'ORGANIZATION',
+              ...body,
+            }),
+          ),
+        );
       } catch (err: unknown) {
         return sendError(reply, err);
       }

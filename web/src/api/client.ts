@@ -75,7 +75,7 @@ type Envelope<T> =
   { success: true; data: T } | { success: false; error: { code: string; message: string } };
 
 export type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   /** JSON body. */
   body?: unknown;
   /** Multipart body (file uploads); the browser sets its content type. */

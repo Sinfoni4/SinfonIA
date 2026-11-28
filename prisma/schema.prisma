@@ -63,6 +63,8 @@ model Tenant {
   sectorRecords       SectorRecord[]
   sectorAttachments   SectorRecordAttachment[]
   sectorVersions      SectorRecordVersion[]
+  profileVersions     CompanyProfileVersion[]
+  profileReviews      CompanyProfileReview[]
   whatsappIdentities  WhatsappIdentity[]
   aiTraces            AiTrace[]
   conversationStates  ConversationState[]
@@ -130,6 +132,8 @@ model User {
   sectorRecords       SectorRecord[]
   sectorAttachments   SectorRecordAttachment[]
   sectorVersions      SectorRecordVersion[]
+  profileVersions     CompanyProfileVersion[]
+  profileReviews      CompanyProfileReview[]
   whatsappIdentity    WhatsappIdentity?
   conversationState   ConversationState?
   memberships         Membership[]
@@ -986,4 +990,60 @@ model SectorRecordAttachment {
   @@index([recordId])
   @@index([orgId])
   @@map("sector_record_attachment")
+}
+
+/// Fase 1C: who wrote a version of a company profile: the company itself or a delegate.
+enum ProfileSource {
+  ORGANIZATION
+  DELEGATE
+}
+
+enum ProfileReviewOutcome {
+  VERIFIED
+  NEEDS_INFO
+}
+
+/// The profile of a company (activities and their details, src/modules/agri-profile.ts): one row
+/// per version, written at each change and never changed afterwards.
+model CompanyProfileVersion {
+  id         String        @id @default(uuid()) @db.Uuid
+  orgId      String        @map("org_id") @db.Uuid
+  version    Int
+  /// The declared activities (ids of the questionnaire), also inside `data`.
+  activities String[]      @default([])
+  /// `{ common: {...}, activities: { <activity>: {...} } }`, validated by the application.
+  data       Json          @default("{}")
+  source     ProfileSource
+  /// The delegation it was written through, when by a delegate.
+  grantId    String?       @map("grant_id") @db.Uuid
+  createdBy  String?       @map("created_by") @db.Uuid
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  org     Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  author  User?                  @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  reviews CompanyProfileReview[]
+
+  @@unique([orgId, version])
+  @@map("company_profile_version")
+}
+
+/// A check of a version of a company profile by a delegate (network, CAA, consultant): never by
+/// the company itself; never changed afterwards.
+model CompanyProfileReview {
+  id         String               @id @default(uuid()) @db.Uuid
+  orgId      String               @map("org_id") @db.Uuid
+  versionId  String               @map("version_id") @db.Uuid
+  outcome    ProfileReviewOutcome
+  note       String?
+  grantId    String?              @map("grant_id") @db.Uuid
+  reviewedBy String?              @map("reviewed_by") @db.Uuid
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  org      Tenant                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  version  CompanyProfileVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  reviewer User?                 @relation(fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([versionId])
+  @@map("company_profile_review")
 }

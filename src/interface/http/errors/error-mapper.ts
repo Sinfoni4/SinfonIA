@@ -35,6 +35,7 @@ import {
 } from '../../../core/index.js';
 import { NetworkError } from '../../../core/network/network.service.js';
 import { CompanyIdentifiersError } from '../../../core/organization/company-identifiers.js';
+import { CompanyProfileError } from '../../../core/organization/company-profile.service.js';
 import { AppearanceRejectedError } from '../../../core/organization/organization-appearance.js';
 import { LogoRejectedError } from '../../../core/organization/organization-logo.js';
 import { OrganizationSettingsError } from '../../../core/organization/organization-settings.service.js';
@@ -91,7 +92,8 @@ export function mapErrorToHttp(err: unknown): NormalizedError {
     err instanceof PracticeModuleError ||
     err instanceof NetworkError ||
     err instanceof DelegationError ||
-    err instanceof SectorRecordError
+    err instanceof SectorRecordError ||
+    err instanceof CompanyProfileError
   ) {
     return { statusCode: err.statusCode, code: err.code, message: err.message };
   }

@@ -82,6 +82,9 @@ export function roleStatements(
     `REVOKE UPDATE, DELETE ON public.platform_audit_log FROM ${ident(app)}`,
     // The history of the register entries: written with each change, never changed or deleted.
     `REVOKE UPDATE, DELETE ON public.sector_record_version FROM ${ident(app)}`,
+    // Company profiles and their reviews (Fase 1C): written once, never changed or deleted.
+    `REVOKE UPDATE, DELETE ON public.company_profile_version FROM ${ident(app)}`,
+    `REVOKE UPDATE, DELETE ON public.company_profile_review FROM ${ident(app)}`,
     // Migration history is for the owner only.
     `REVOKE ALL ON public._prisma_migrations FROM ${ident(app)}`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA public

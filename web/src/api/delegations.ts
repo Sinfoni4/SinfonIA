@@ -20,6 +20,8 @@ export type IssuedGrant = {
   operations: GrantOperation[];
   /** Missing on older APIs: none. */
   registers?: GrantRegister[];
+  /** Fase 1C: the company profile is covered (missing on older APIs: no). */
+  profile?: boolean;
   validFrom: string;
   validUntil: string;
   state: GrantState;
@@ -33,6 +35,7 @@ export type ReceivedGrant = {
   granteeType: 'USER' | 'ORGANIZATION';
   operations: GrantOperation[];
   registers?: GrantRegister[];
+  profile?: boolean;
   validUntil: string;
   state: GrantState;
   usable: boolean;

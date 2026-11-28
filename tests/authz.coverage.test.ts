@@ -185,6 +185,8 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'GET /grants/:id/practices',
       'GET /grants/:id/practices/:practiceId',
       'GET /grants/:id/practices/:practiceId/attachments/:attachmentId/download',
+      'GET /grants/:id/profile',
+      'GET /grants/:id/profile/versions',
       'GET /miniapp/sector/:feature/records/:id',
       'GET /miniapp/sector/:feature/records/:id/attachments/:attachmentId/download',
       'GET /miniapp/sector/:feature/records/:id/versions',
@@ -218,6 +220,7 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'POST /grants/:id/practices/:practiceId/document-requests/:requestId/fulfil',
       'POST /grants/:id/practices/:practiceId/sub-state',
       'POST /grants/:id/practices/:practiceId/transition',
+      'POST /grants/:id/profile/review',
       'POST /grants/:id/renew',
       'POST /grants/:id/revoke',
       'POST /me/channels/:id/revoke',
@@ -241,6 +244,7 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       'POST /practices/:id/transition',
       'POST /sector/:feature/records/:id/attachments',
       'POST /sector/:feature/records/:id/void',
+      'PUT /grants/:id/profile',
     ]);
     const payloads: Record<string, unknown> = {
       '/sector/:feature/records/:id': { data: {}, reason: 'Errore di battitura' },
@@ -272,6 +276,8 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
       '/grants/:id/practices/:practiceId/attachments/:attachmentId/expected': { expectedKey: null },
       '/practices/:id/sub-state': { subState: null },
       '/grants/:id/renew': { validUntil: '2030-01-01' },
+      '/grants/:id/profile': { activities: [], data: {} },
+      '/grants/:id/profile/review': { outcome: 'VERIFIED' },
       '/grants/:id/beneficiaries': { userId: randomUUID() },
       '/grants/:id/beneficiaries/approve': { userId: randomUUID() },
       '/grants/:id/beneficiaries/remove': { userId: randomUUID() },
@@ -304,13 +310,13 @@ describe.runIf(Boolean(DATABASE_URL))('authorization coverage with PostgreSQL', 
           ? ids.assistance
           : ids.practice;
       const res = await app.inject({
-        method: String(route.method) as 'GET' | 'POST' | 'PATCH' | 'DELETE',
+        method: String(route.method) as 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
         url: route.url
           .replace(':feature', 'field_book')
           .replace(':id', id)
           .replace(/:[a-zA-Z]+/g, () => randomUUID()),
         headers: authHeaders(other.tenantId, other.adminId, 'ADMIN'),
-        ...(route.method === 'POST' || route.method === 'PATCH'
+        ...(route.method === 'POST' || route.method === 'PATCH' || route.method === 'PUT'
           ? { payload: payloads[route.url] ?? {} }
           : {}),
       });

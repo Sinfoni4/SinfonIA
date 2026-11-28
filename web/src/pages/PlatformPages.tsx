@@ -658,6 +658,18 @@ function OrganizationPage() {
             />
           )}
 
+          {org.profileActivities && (
+            <section className="card" aria-labelledby="profile-activities-title">
+              <h2 id="profile-activities-title">Attività dichiarate</h2>
+              {org.profileActivities.length === 0 ? (
+                <p className="muted">Il profilo aziendale non è ancora stato compilato.</p>
+              ) : (
+                <p>{org.profileActivities.map((a) => a.label).join(', ')}</p>
+              )}
+              <p className="muted">Dal profilo aziendale: qui solo le attività, mai i dettagli.</p>
+            </section>
+          )}
+
           <NetworkLinksCard org={org} />
 
           <section className="card" aria-labelledby="admins-title">

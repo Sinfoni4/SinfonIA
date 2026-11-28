@@ -21,6 +21,7 @@ import {
   sameRefs,
   type ExternalRefs,
 } from '../organization/company-identifiers.js';
+import { profileActivitiesOf } from '../organization/company-profile.service.js';
 import { replaceOrganizationLogo } from '../organization/organization-logo.js';
 
 import type { StorageService } from '../../data/storage/storage.service.js';
@@ -182,6 +183,11 @@ export type OrganizationDetail = OrganizationRow & {
   identifiers: CompanyIdentifiers;
   /** When the logo shown in the Mini App last changed; null without a logo. */
   logoUpdatedAt: Date | null;
+  /**
+   * Fase 1C: the activities the company declared in its profile, by label, never the details;
+   * null when the organization has no company profile.
+   */
+  profileActivities: Array<{ id: string; label: string }> | null;
 };
 
 export type CompanyIdentifiers = {
@@ -258,6 +264,7 @@ export async function getOrganization(
       externalRefs: readExternalRefs(org.externalRefs),
     },
     logoUpdatedAt: org.logoPath ? org.logoUpdatedAt : null,
+    profileActivities: await profileActivitiesOf(prisma, org),
   };
 }
 

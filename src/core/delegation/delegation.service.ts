@@ -2,6 +2,7 @@ import { NotFoundError } from '../../data/errors/errors.js';
 import { AuditService } from '../../data/services/audit.service.js';
 import { withTransaction } from '../../data/transactions/transaction.js';
 import { getModule, sectorFeature, sectorFeatureApplies } from '../../modules/registry.js';
+import { profileApplies } from '../organization/company-profile.service.js';
 
 import type { PrismaLike } from '../../data/types/prisma.js';
 import type {
@@ -129,6 +130,13 @@ export function grantState(
  * scope as `sector:<function>` (e.g. `sector:field_book`).
  */
 const REGISTER_PREFIX = 'sector:';
+/** Fase 1C: the company profile of the grantor, read (READ) or updated and checked (UPDATE). */
+const PROFILE_TYPE = 'profile';
+
+export function coversProfile(scope: unknown): boolean {
+  const types = (scope as { types?: unknown } | null)?.types;
+  return Array.isArray(types) && types.includes(PROFILE_TYPE);
+}
 
 export function registersOf(scope: unknown): string[] {
   const types = (scope as { types?: unknown } | null)?.types;
@@ -155,6 +163,8 @@ export type IssuedGrant = {
   operations: GrantOperation[];
   /** Registers of sector functions covered besides the practices. */
   registers: GrantRegister[];
+  /** Whether the company profile of the grantor is covered (Fase 1C). */
+  profile: boolean;
   validFrom: Date;
   validUntil: Date;
   state: GrantState;
@@ -194,6 +204,7 @@ function toIssued(g: GrantRow, now: Date): IssuedGrant {
       : { name: emailOf(g.granteeUser?.email ?? '') ?? 'persona senza email' },
     operations: g.operations,
     registers: registerViews(g.scope),
+    profile: coversProfile(g.scope),
     validFrom: g.validFrom,
     validUntil: g.validUntil,
     state: grantState(g, now),
@@ -232,6 +243,8 @@ export async function issueGrant(
     validUntil: Date;
     /** Registers of sector functions to cover besides the practices (built, of its sector). */
     registers?: readonly string[];
+    /** Whether the company profile of the grantor is covered too (Fase 1C). */
+    profile?: boolean;
   },
 ): Promise<{ id: string }> {
   const operations = checkDelegation(input.operations, input.validUntil);
@@ -244,8 +257,11 @@ export async function issueGrant(
   return withTransaction(prisma, async (tx) => {
     const grantor = await tx.tenant.findUniqueOrThrow({
       where: { id: input.grantorOrgId },
-      select: { name: true, module: true },
+      select: { name: true, module: true, type: true },
     });
+    if (input.profile && !profileApplies(grantor)) {
+      throw new DelegationError('Il profilo aziendale non è previsto per questa organizzazione');
+    }
     for (const id of registers) {
       if (!sectorFeature(id)?.ready || !sectorFeatureApplies(id, getModule(grantor.module).id)) {
         throw new DelegationError(`Registro non disponibile per la delega: ${id}`);
@@ -289,7 +305,13 @@ export async function issueGrant(
       data: {
         grantorOrgId: input.grantorOrgId,
         ...grantee,
-        scope: { types: ['practices', ...registers.map((r) => `${REGISTER_PREFIX}${r}`)] },
+        scope: {
+          types: [
+            'practices',
+            ...registers.map((r) => `${REGISTER_PREFIX}${r}`),
+            ...(input.profile ? [PROFILE_TYPE] : []),
+          ],
+        },
         operations,
         validUntil: input.validUntil,
         createdBy: input.actorUserId,
@@ -456,6 +478,8 @@ export type ReceivedGrant = {
   operations: GrantOperation[];
   /** Registers of sector functions covered besides the practices. */
   registers: GrantRegister[];
+  /** Whether the company profile of the grantor is covered (Fase 1C). */
+  profile: boolean;
   validUntil: Date;
   state: GrantState;
   /** Whether the person asking can use it now. */
@@ -491,6 +515,7 @@ export async function listReceivedGrants(
       granteeType: g.granteeType,
       operations: g.operations,
       registers: registerViews(g.scope),
+      profile: coversProfile(g.scope),
       validUntil: g.validUntil,
       state,
       usable,
@@ -576,6 +601,8 @@ export type DelegatedAccess = {
   operations: GrantOperation[];
   /** Registers of sector functions the delegation covers besides the practices. */
   registers: string[];
+  /** Whether it covers the company profile of the grantor (Fase 1C). */
+  profile: boolean;
   validUntil: Date;
 };
 
@@ -633,6 +660,7 @@ export async function resolveDelegatedAccess(
     grantorName: grant.grantor.name,
     operations: grant.operations,
     registers: registersOf(grant.scope),
+    profile: coversProfile(grant.scope),
     validUntil: grant.validUntil,
   };
 }
