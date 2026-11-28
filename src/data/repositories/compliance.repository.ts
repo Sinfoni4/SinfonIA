@@ -6,6 +6,7 @@ import type {
   ComplianceCategory,
   ComplianceDeadline,
   ComplianceDeadlineStatus,
+  DeadlineCertainty,
 } from '@prisma/client';
 
 export type ComplianceDeadlineDTO = ComplianceDeadline;
@@ -18,11 +19,13 @@ export type CreateComplianceDeadlineInput = {
   title: string;
   dueDate: Date;
   notes?: string | null;
+  certainty?: DeadlineCertainty;
 };
 
 export type ComplianceDeadlineFilter = {
   status?: ComplianceDeadlineStatus;
   category?: ComplianceCategory;
+  certainty?: DeadlineCertainty;
   userId?: string;
   dueBefore?: Date;
   limit?: number;
@@ -47,6 +50,7 @@ export class ComplianceRepository {
           title: input.title,
           dueDate: input.dueDate,
           notes: input.notes ?? null,
+          certainty: input.certainty ?? 'CONFIRMED',
         },
       });
     } catch (err: unknown) {
@@ -62,6 +66,7 @@ export class ComplianceRepository {
           tenantId,
           ...(filter.status ? { status: filter.status } : {}),
           ...(filter.category ? { category: filter.category } : {}),
+          ...(filter.certainty ? { certainty: filter.certainty } : {}),
           ...(filter.userId ? { userId: filter.userId } : {}),
           ...(filter.dueBefore ? { dueDate: { lte: filter.dueBefore } } : {}),
         },
@@ -116,12 +121,45 @@ export class ComplianceRepository {
     return this.getById(tenantId, id);
   }
 
-  /** Open deadlines due on or before `dueBefore`, across tenants or for one tenant/deadline. */
+  /**
+   * Sets how sure a deadline is; confirming one that was to be checked records who and when.
+   * Returns null when the deadline is not the tenant's.
+   */
+  async setCertainty(
+    tenantId: string,
+    id: string,
+    certainty: DeadlineCertainty,
+    by: string,
+    now: Date,
+  ): Promise<ComplianceDeadlineDTO | null> {
+    requireTenantId(tenantId);
+    try {
+      const { count } = await this.prisma.complianceDeadline.updateMany({
+        where: { tenantId, id },
+        data: {
+          certainty,
+          ...(certainty === 'CONFIRMED'
+            ? { verifiedAt: now, verifiedBy: by }
+            : { verifiedAt: null, verifiedBy: null }),
+        },
+      });
+      if (count === 0) return null;
+    } catch (err: unknown) {
+      throw new DatabaseError('Failed to change compliance deadline', err);
+    }
+    return this.getById(tenantId, id);
+  }
+
+  /**
+   * Open deadlines due on or before `dueBefore`, across tenants or for one tenant/deadline.
+   * Deadlines for information only are never reminded.
+   */
   async findDueOpen(filter: { dueBefore: Date; tenantId?: string; deadlineId?: string }) {
     try {
       return await this.prisma.complianceDeadline.findMany({
         where: {
           status: 'OPEN',
+          certainty: { not: 'INFORMATIONAL' },
           dueDate: { lte: filter.dueBefore },
           ...(filter.tenantId ? { tenantId: filter.tenantId } : {}),
           ...(filter.deadlineId ? { id: filter.deadlineId } : {}),

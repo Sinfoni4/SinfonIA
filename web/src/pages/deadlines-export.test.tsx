@@ -163,12 +163,61 @@ describe('deadlines (FE3)', () => {
       category: 'PATENTINO',
       title: 'Patentino muletto',
       dueDate: '2027-03-31',
+      certainty: 'CONFIRMED',
     });
 
     await user.click(screen.getByRole('button', { name: 'Chiudi' }));
     expect(calls.some((c) => c.path.endsWith('/close'))).toBe(false);
     await user.click(screen.getByRole('button', { name: 'Conferma chiusura' }));
     expect(await screen.findByText('Nessuna scadenza.')).toBeTruthy();
+  });
+
+  it('adds one to be checked, confirms it, and filters by certainty', async () => {
+    let certainty = 'TO_VERIFY';
+    const id = deadline().id;
+    api('ADMIN', {
+      'GET /compliance/deadlines': () => ok([deadline({ certainty })]),
+      'POST /compliance/deadlines': () => ({
+        status: 201,
+        body: { success: true, data: deadline({ certainty: 'INFORMATIONAL' }) },
+      }),
+      [`POST /compliance/deadlines/${id}/certainty`]: (c) => {
+        certainty = (c.body as { certainty: string }).certainty;
+        return ok(deadline({ certainty }));
+      },
+    });
+    openAt('/scadenze');
+    const user = userEvent.setup();
+    const form = (await screen.findByRole('heading', { name: 'Nuova scadenza' })).closest('form')!;
+    await user.type(within(form).getByLabelText('Titolo'), 'Bando regionale');
+    await user.type(within(form).getByLabelText('Data di scadenza'), '2027-03-31');
+    await user.selectOptions(within(form).getByLabelText('Affidabilità'), 'INFORMATIONAL');
+    await user.click(within(form).getByRole('button', { name: 'Aggiungi scadenza' }));
+    expect(
+      await screen.findByText('Scadenza aggiunta come informativa: nessun promemoria.'),
+    ).toBeTruthy();
+    expect(
+      calls.find((c) => c.method === 'POST' && c.path === '/compliance/deadlines')?.body,
+    ).toMatchObject({ certainty: 'INFORMATIONAL' });
+
+    await user.click(await screen.findByRole('button', { name: `Conferma ${deadline().title}` }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.path.endsWith('/certainty'))?.body).toEqual({
+        certainty: 'CONFIRMED',
+      }),
+    );
+    expect(
+      await screen.findByRole('combobox', { name: `Affidabilità di ${deadline().title}` }),
+    ).toHaveProperty('value', 'CONFIRMED');
+
+    await user.selectOptions(screen.getAllByLabelText('Affidabilità')[0], 'TO_VERIFY');
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.path === '/compliance/deadlines' && c.query.get('certainty') === 'TO_VERIFY',
+        ),
+      ).toBe(true),
+    );
   });
 
   it('shows a MEMBER their deadlines without adding or closing', async () => {

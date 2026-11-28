@@ -32,6 +32,8 @@ export type MiniAppSummary = {
     category: string;
     dueDate: string;
     daysLeft: number;
+    /** Fase 1B; missing on older APIs: confirmed. */
+    certainty?: 'CONFIRMED' | 'TO_VERIFY' | 'INFORMATIONAL';
   }>;
   feed: Array<{
     type: string;

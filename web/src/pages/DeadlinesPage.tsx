@@ -4,16 +4,20 @@ import { useState, type FormEvent } from 'react';
 import { describeError, type Me } from '../api/client';
 import {
   CATEGORY_LABELS,
+  CERTAINTY_HINTS,
+  CERTAINTY_LABELS,
   daysLabel,
   deadlinesQuery,
   isoToItalian,
   type Deadline,
   type DeadlineCategory,
+  type DeadlineCertainty,
   type DeadlineFilters,
 } from '../api/compliance';
 import { useSession } from '../session/session';
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as DeadlineCategory[];
+const CERTAINTIES = Object.keys(CERTAINTY_LABELS) as DeadlineCertainty[];
 
 /** P6: compliance deadlines; ADMIN and OPERATOR add and close them, a MEMBER sees their own. */
 export function DeadlinesPage({ me }: { me: Me }) {
@@ -21,7 +25,11 @@ export function DeadlinesPage({ me }: { me: Me }) {
   const queryClient = useQueryClient();
   // compliance.manage: ADMIN and OPERATOR (the backend decides anyway).
   const canManage = me.current.role !== 'MEMBER';
-  const [filters, setFilters] = useState<DeadlineFilters>({ status: 'OPEN', category: '' });
+  const [filters, setFilters] = useState<DeadlineFilters>({
+    status: 'OPEN',
+    category: '',
+    certainty: '',
+  });
   const [closing, setClosing] = useState<string | null>(null);
 
   const query = useQuery({
@@ -34,6 +42,18 @@ export function DeadlinesPage({ me }: { me: Me }) {
       api(`/compliance/deadlines/${id}/close`, { method: 'POST', body: {} }),
     onSuccess: async () => {
       setClosing(null);
+      await queryClient.invalidateQueries({ queryKey: ['deadlines'] });
+    },
+  });
+
+  // Fase 1B: confirmed, to be checked, or for information only.
+  const certainty = useMutation({
+    mutationFn: (input: { id: string; certainty: DeadlineCertainty }) =>
+      api(`/compliance/deadlines/${input.id}/certainty`, {
+        method: 'POST',
+        body: { certainty: input.certainty },
+      }),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['deadlines'] });
     },
   });
@@ -71,6 +91,22 @@ export function DeadlinesPage({ me }: { me: Me }) {
             ))}
           </select>
         </label>
+        <label>
+          Affidabilità
+          <select
+            value={filters.certainty}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, certainty: e.target.value as DeadlineCertainty | '' }))
+            }
+          >
+            <option value="">Tutte</option>
+            {CERTAINTIES.map((c) => (
+              <option key={c} value={c}>
+                {CERTAINTY_LABELS[c]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {query.isError && (
@@ -87,6 +123,7 @@ export function DeadlinesPage({ me }: { me: Me }) {
               <th scope="col">Scadenza</th>
               <th scope="col">Categoria</th>
               <th scope="col">Titolo</th>
+              <th scope="col">Affidabilità</th>
               {canManage && <th scope="col">Azioni</th>}
             </tr>
           </thead>
@@ -109,8 +146,43 @@ export function DeadlinesPage({ me }: { me: Me }) {
                   {d.title}
                   {d.notes && <div className="muted">{d.notes}</div>}
                 </td>
+                <td>
+                  {canManage && d.status === 'OPEN' ? (
+                    <select
+                      aria-label={`Affidabilità di ${d.title}`}
+                      value={d.certainty ?? 'CONFIRMED'}
+                      disabled={certainty.isPending}
+                      onChange={(e) =>
+                        certainty.mutate({
+                          id: d.id,
+                          certainty: e.target.value as DeadlineCertainty,
+                        })
+                      }
+                    >
+                      {CERTAINTIES.map((c) => (
+                        <option key={c} value={c}>
+                          {CERTAINTY_LABELS[c]}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={`state ${d.certainty === 'TO_VERIFY' ? 'state-failed' : ''}`}>
+                      {CERTAINTY_LABELS[d.certainty ?? 'CONFIRMED']}
+                    </span>
+                  )}
+                </td>
                 {canManage && (
                   <td>
+                    {d.status === 'OPEN' && d.certainty === 'TO_VERIFY' && (
+                      <button
+                        type="button"
+                        aria-label={`Conferma ${d.title}`}
+                        disabled={certainty.isPending}
+                        onClick={() => certainty.mutate({ id: d.id, certainty: 'CONFIRMED' })}
+                      >
+                        Conferma
+                      </button>
+                    )}{' '}
                     {d.status === 'OPEN' &&
                       (closing === d.id ? (
                         <span className="actions">
@@ -141,9 +213,9 @@ export function DeadlinesPage({ me }: { me: Me }) {
           </tbody>
         </table>
       )}
-      {close.isError && (
+      {(close.isError || certainty.isError) && (
         <p className="error" role="alert">
-          {describeError(close.error)}
+          {describeError(close.error ?? certainty.error)}
         </p>
       )}
       {canManage && <NewDeadlineForm />}
@@ -158,15 +230,17 @@ function NewDeadlineForm() {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [certainty, setCertainty] = useState<DeadlineCertainty>('CONFIRMED');
 
   const create = useMutation({
     mutationFn: () =>
-      api('/compliance/deadlines', {
+      api<Deadline>('/compliance/deadlines', {
         method: 'POST',
         body: {
           category,
           title: title.trim(),
           dueDate,
+          certainty,
           ...(notes.trim() ? { notes: notes.trim() } : {}),
         },
       }),
@@ -174,6 +248,7 @@ function NewDeadlineForm() {
       setTitle('');
       setDueDate('');
       setNotes('');
+      setCertainty('CONFIRMED');
       await queryClient.invalidateQueries({ queryKey: ['deadlines'] });
     },
   });
@@ -208,6 +283,18 @@ function NewDeadlineForm() {
       />
       <label htmlFor="due">Data di scadenza</label>
       <input id="due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+      <label htmlFor="certainty">Affidabilità</label>
+      <select
+        id="certainty"
+        value={certainty}
+        onChange={(e) => setCertainty(e.target.value as DeadlineCertainty)}
+      >
+        {CERTAINTIES.map((c) => (
+          <option key={c} value={c}>
+            {CERTAINTY_LABELS[c]} — {CERTAINTY_HINTS[c]}
+          </option>
+        ))}
+      </select>
       <label htmlFor="notes">Note (facoltative)</label>
       <input id="notes" maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} />
       <p className="muted">
@@ -221,7 +308,13 @@ function NewDeadlineForm() {
           {describeError(create.error)}
         </p>
       )}
-      {create.isSuccess && <p role="status">Scadenza aggiunta: riceverai i promemoria.</p>}
+      {create.isSuccess && (
+        <p role="status">
+          {create.data?.certainty === 'INFORMATIONAL'
+            ? 'Scadenza aggiunta come informativa: nessun promemoria.'
+            : 'Scadenza aggiunta: riceverai i promemoria.'}
+        </p>
+      )}
     </form>
   );
 }

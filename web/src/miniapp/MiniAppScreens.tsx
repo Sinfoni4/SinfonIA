@@ -136,8 +136,10 @@ export function TodayScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetInt
   const org = me.organizations.find((o) => o.orgId === me.current.orgId);
   const staff = me.current.role !== 'MEMBER';
   const aiOn = !(me.current.disabledFeatures ?? []).includes('ai_chat');
-  const week = (s?.deadlines ?? []).filter((d) => d.daysLeft <= 7);
-  const overdue = (s?.deadlines ?? []).filter((d) => d.daysLeft < 0);
+  // Fase 1B: deadlines for information only are listed, never counted.
+  const counted = (s?.deadlines ?? []).filter((d) => d.certainty !== 'INFORMATIONAL');
+  const week = counted.filter((d) => d.daysLeft <= 7);
+  const overdue = counted.filter((d) => d.daysLeft < 0);
 
   const ask = (event: FormEvent) => {
     event.preventDefault();
@@ -327,7 +329,9 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
   const query = useSummary(me);
   const s = query.data;
   const today = new Date();
-  const week = (s?.deadlines ?? []).filter((d) => d.daysLeft <= 7);
+  const week = (s?.deadlines ?? []).filter(
+    (d) => d.certainty !== 'INFORMATIONAL' && d.daysLeft <= 7,
+  );
   const firstRequest = s?.requests[0];
   const percent = s?.documents.percent ?? null;
 
@@ -427,7 +431,15 @@ export function AgendaScreen({ me, openSheet }: { me: Me; openSheet: (i: SheetIn
                 <span className="ma-tile small">
                   <CalendarIcon size={17} />
                 </span>
-                <span className="ma-row-title">{d.title}</span>
+                <span className="ma-row-title">
+                  {d.title}
+                  {d.certainty === 'TO_VERIFY' && (
+                    <small className="ma-row-sub">da verificare</small>
+                  )}
+                  {d.certainty === 'INFORMATIONAL' && (
+                    <small className="ma-row-sub">informativa</small>
+                  )}
+                </span>
                 <span className="ma-row-when">{deadlineWhen(d.daysLeft)}</span>
               </div>
             ))}

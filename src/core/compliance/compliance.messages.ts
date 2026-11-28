@@ -20,6 +20,10 @@ export function formatReminderMessage(payload: ComplianceReminderPayload): strin
   return [
     `${icon} Scadenza ${COMPLIANCE_CATEGORY_LABELS[payload.category]}: ${whenText(payload.daysLeft)}`,
     `📌 ${payload.title}`,
+    // Fase 1B: a deadline not yet confirmed says so, it is reminded all the same.
+    ...(payload.certainty === 'TO_VERIFY'
+      ? ['🔎 Da verificare: la data non è ancora stata confermata']
+      : []),
     `📅 ${dueDate ? formatItalianDate(dueDate) : payload.dueDate}`,
     '',
     `Quando è rinnovata: "chiudi scadenza ${payload.deadlineId.slice(0, 8)}"`,

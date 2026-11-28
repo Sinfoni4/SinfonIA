@@ -11,6 +11,9 @@ export type Deadline = {
   dueDate: string;
   daysLeft: number;
   status: 'OPEN' | 'CLOSED';
+  /** Fase 1B; missing on older APIs: confirmed. */
+  certainty?: DeadlineCertainty;
+  verifiedAt?: string | null;
   userId: string | null;
   notes: string | null;
   closedAt: string | null;
@@ -26,12 +29,35 @@ export const CATEGORY_LABELS: Record<DeadlineCategory, string> = {
   ALTRO: 'Altro',
 };
 
-export type DeadlineFilters = { status: 'OPEN' | 'CLOSED' | ''; category: DeadlineCategory | '' };
+/**
+ * Fase 1B: how sure a deadline is. Confirmed is reminded as usual, to be checked is reminded
+ * saying so, for information only is never reminded nor counted.
+ */
+export type DeadlineCertainty = 'CONFIRMED' | 'TO_VERIFY' | 'INFORMATIONAL';
+
+export const CERTAINTY_LABELS: Record<DeadlineCertainty, string> = {
+  CONFIRMED: 'Confermata',
+  TO_VERIFY: 'Da verificare',
+  INFORMATIONAL: 'Informativa',
+};
+
+export const CERTAINTY_HINTS: Record<DeadlineCertainty, string> = {
+  CONFIRMED: 'promemoria come sempre',
+  TO_VERIFY: 'promemoria con «da verificare», finché qualcuno la conferma',
+  INFORMATIONAL: 'nessun promemoria, non conta tra le scadute',
+};
+
+export type DeadlineFilters = {
+  status: 'OPEN' | 'CLOSED' | '';
+  category: DeadlineCategory | '';
+  certainty?: DeadlineCertainty | '';
+};
 
 export function deadlinesQuery(filters: DeadlineFilters): string {
   const params = new URLSearchParams({ limit: '200' });
   if (filters.status) params.set('status', filters.status);
   if (filters.category) params.set('category', filters.category);
+  if (filters.certainty) params.set('certainty', filters.certainty);
   return `/compliance/deadlines?${params.toString()}`;
 }
 

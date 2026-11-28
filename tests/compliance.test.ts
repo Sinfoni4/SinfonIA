@@ -116,6 +116,8 @@ describe('compliance Telegram commands', () => {
     dueDate: '2026-12-31',
     daysLeft: 5,
     status: 'OPEN',
+    certainty: 'CONFIRMED',
+    verifiedAt: null,
     userId: null,
     notes: null,
     closedAt: null,

@@ -344,20 +344,32 @@ enum ComplianceDeadlineStatus {
   CLOSED
 }
 
+/// Fase 1B: how sure a deadline is. CONFIRMED is reminded as usual; TO_VERIFY is reminded saying it
+/// is to be checked, until someone confirms it; INFORMATIONAL is shown but never reminded.
+enum DeadlineCertainty {
+  CONFIRMED
+  TO_VERIFY
+  INFORMATIONAL
+}
+
 model ComplianceDeadline {
-  id        String                   @id @default(uuid()) @db.Uuid
-  tenantId  String                   @map("tenant_id") @db.Uuid
+  id         String                   @id @default(uuid()) @db.Uuid
+  tenantId   String                   @map("tenant_id") @db.Uuid
   // Member the deadline refers to; null = the cooperative itself.
-  userId    String?                  @map("user_id") @db.Uuid
-  createdBy String?                  @map("created_by") @db.Uuid
-  category  ComplianceCategory
-  title     String
-  dueDate   DateTime                 @map("due_date") @db.Date
-  notes     String?
-  status    ComplianceDeadlineStatus @default(OPEN)
-  closedAt  DateTime?                @map("closed_at")
-  createdAt DateTime                 @default(now()) @map("created_at")
-  updatedAt DateTime                 @updatedAt @map("updated_at")
+  userId     String?                  @map("user_id") @db.Uuid
+  createdBy  String?                  @map("created_by") @db.Uuid
+  category   ComplianceCategory
+  title      String
+  dueDate    DateTime                 @map("due_date") @db.Date
+  notes      String?
+  status     ComplianceDeadlineStatus @default(OPEN)
+  closedAt   DateTime?                @map("closed_at")
+  certainty  DeadlineCertainty        @default(CONFIRMED)
+  /// Who set the deadline as confirmed after it was to be checked, and when.
+  verifiedAt DateTime?                @map("verified_at")
+  verifiedBy String?                  @map("verified_by") @db.Uuid
+  createdAt  DateTime                 @default(now()) @map("created_at")
+  updatedAt  DateTime                 @updatedAt @map("updated_at")
 
   /// The entry of a sector register this deadline follows (its expiry), if any.
   sectorRecordId String? @unique @map("sector_record_id") @db.Uuid
